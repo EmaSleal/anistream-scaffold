@@ -98,7 +98,8 @@ async function SimulcastsTab() {
 
 async function GenresTab() {
   const series = await getDiscoverSeries();
-  const shuffled = [...series].sort(() => Math.random() - 0.5);
+  const consolidated = consolidateFranchises(series);
+  const shuffled = [...consolidated].sort(() => Math.random() - 0.5);
   return (
     <>
       <div className={styles.header}>
