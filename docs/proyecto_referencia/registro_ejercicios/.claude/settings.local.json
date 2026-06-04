@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm --version)",
+      "Bash(npx --version)",
+      "Bash(npx -y @angular/cli@19 new registro-ejercicios --style=scss --ssr=false --skip-git --skip-tests=false --routing --defaults)",
+      "Bash(npm install *)",
+      "Bash(npx tailwindcss *)",
+      "Bash(npx -y ng add @angular/material@19 --theme=azure-blue --typography=true --animations=enabled --skip-confirmation --defaults)",
+      "Bash(npx -y ng add @angular/material@19 --theme=azure-blue --typography --animations=enabled --skip-confirmation --defaults)",
+      "Bash(npx ng *)"
+    ]
+  }
+}

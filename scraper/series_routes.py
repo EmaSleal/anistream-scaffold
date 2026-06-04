@@ -1,0 +1,225 @@
+"""Flask Blueprint for public series endpoints."""
+import logging
+import threading
+from flask import Blueprint, request, jsonify, g
+from db import series as db_series
+from db import episodes as db_episodes
+from db import progress as db_progress
+from domain.series import (
+    map_series_row,
+    consolidate_franchises,
+    build_seasons,
+)
+from auth import require_admin, require_auth
+from fetcher import fetch_recommendations
+
+series_bp = Blueprint("series", __name__, url_prefix="/api/series")
+
+
+@series_bp.get("")
+def list_series():
+    """GET /api/series — list series with optional filters."""
+    try:
+        limit = int(request.args.get("limit", 20))
+    except (TypeError, ValueError):
+        limit = 20
+
+    sort = request.args.get("sort", "score")
+    featured_param = request.args.get("featured")
+    franchise_id = request.args.get("franchise_id")
+    consolidated_param = request.args.get("consolidated")
+
+    featured = featured_param is not None and featured_param.lower() not in ("false", "0", "")
+    consolidated = consolidated_param is not None and consolidated_param.lower() not in ("false", "0", "")
+
+    rows = db_series.get_series_list(
+        limit=limit,
+        sort=sort,
+        featured=featured if featured else None,
+        franchise_id=franchise_id,
+        consolidated=consolidated,
+    )
+    mapped = [map_series_row(r) for r in rows]
+
+    if consolidated:
+        mapped = consolidate_franchises(mapped)
+        mapped = mapped[:limit]
+
+    return jsonify(mapped)
+
+
+@series_bp.get("/search")
+def search_series():
+    """GET /api/series/search?q=&limit= — title search."""
+    q = request.args.get("q")
+    if not q:
+        return jsonify({"error": "Missing required parameter: q"}), 400
+
+    try:
+        limit = int(request.args.get("limit", 8))
+    except (TypeError, ValueError):
+        limit = 8
+
+    rows = db_series.search_series(q, limit=limit)
+    # Return minimal projection: malId, title, slug
+    result = [
+        {
+            "malId": r.get("mal_id"),
+            "title": r.get("title"),
+            "slug": r.get("slug"),
+        }
+        for r in rows
+    ]
+    return jsonify(result)
+
+
+@series_bp.get("/recommendations")
+@require_auth
+def series_recommendations():
+    """GET /api/series/recommendations — personalized recommendations for the authenticated user.
+
+    Pipeline:
+    1. Fetch the 5 most-recent progress entries (progress_sec > 0 enforced by query).
+    2. Resolve mal_id for each seed series; skip seeds without one.
+    3. Call Jikan recommendations for each seed (top 3 each, fail-open).
+    4. Deduplicate candidates by mal_id; remove already-watched mal_ids.
+    5. Batch-query the series table for matched candidates.
+    6. Spawn daemon threads to ingest unmatched candidates as stubs.
+    7. Fallback: if no seeds resolved, return top-scored series from DB.
+    """
+    user_id = g.user_id
+
+    # Step 1 — seed series from watch history
+    progress_rows = db_progress.get_recent_progress(user_id, limit=5)
+    series_ids = list({row["series_id"] for row in progress_rows})
+
+    # Step 2 — resolve mal_ids; empty result triggers fallback
+    mal_id_map = db_progress.get_mal_ids_for_series(series_ids) if series_ids else {}
+
+    if not mal_id_map:
+        # Fallback: no history or no seeds with mal_id
+        rows = db_series.get_series_list(limit=10, sort="score")
+        return jsonify([map_series_row(r) for r in rows])
+
+    # Build the watched mal_id set for filtering
+    all_progress = db_progress.get_recent_progress(user_id, limit=500)
+    watched_series_ids = {row["series_id"] for row in all_progress}
+    watched_mal_ids = set(db_progress.get_mal_ids_for_series(list(watched_series_ids)).values())
+
+    # Step 3 — fetch recommendations for each seed (fail-open, top 3)
+    candidates: dict[int, dict] = {}
+    for mal_id in mal_id_map.values():
+        entries = fetch_recommendations(mal_id)
+        for entry in entries:
+            anime_entry = entry.get("entry", {})
+            candidate_mal_id = anime_entry.get("mal_id")
+            if candidate_mal_id and candidate_mal_id not in candidates:
+                candidates[candidate_mal_id] = anime_entry
+
+    # Step 4 — filter out already-watched candidates
+    filtered_mal_ids = [
+        mid for mid in candidates
+        if mid not in watched_mal_ids
+    ]
+
+    if not filtered_mal_ids:
+        rows = db_series.get_series_list(limit=10, sort="score")
+        return jsonify([map_series_row(r) for r in rows])
+
+    # Step 5 — cross-reference against series table
+    matched = db_series.get_series_by_mal_ids(filtered_mal_ids)
+    matched_mal_ids = {s["malId"] for s in matched if s.get("malId")}
+
+    # Step 6 — spawn daemon threads for unmatched candidates
+    unmatched_mal_ids = [mid for mid in filtered_mal_ids if mid not in matched_mal_ids]
+    for unmatched_mal_id in unmatched_mal_ids:
+        try:
+            t = threading.Thread(
+                target=db_series.upsert_series_stub,
+                args=(unmatched_mal_id,),
+                daemon=True,
+            )
+            t.start()
+        except Exception:
+            logging.exception(
+                "Failed to spawn stub ingest thread for mal_id=%s", unmatched_mal_id
+            )
+
+    return jsonify(matched)
+
+
+@series_bp.get("/<series_id>")
+def series_detail(series_id: str):
+    """GET /api/series/<id> — single series detail."""
+    row = db_series.get_series_by_id(series_id)
+    if not row:
+        return jsonify({"error": "Series not found"}), 404
+    return jsonify(map_series_row(row))
+
+
+@series_bp.get("/<series_id>/seasons")
+def series_seasons(series_id: str):
+    """GET /api/series/<id>/seasons — part-merged, labelled season list."""
+    # Look up the series to get its franchise_id
+    row = db_series.get_series_by_id(series_id)
+    if not row:
+        return jsonify({"error": "Series not found"}), 404
+
+    franchise_id = row.get("franchise_id")
+    if franchise_id:
+        members_raw = db_series.get_series_by_franchise(franchise_id)
+    else:
+        members_raw = [row]
+
+    members = [map_series_row(r) for r in members_raw]
+
+    # Fetch episodes for each member
+    episodes_by_series: dict[str, list[dict]] = {}
+    for member in members:
+        sid = member["id"]
+        eps_raw = db_episodes.get_episodes_by_series(sid)
+        from domain.series import map_episode_row
+        episodes_by_series[sid] = [map_episode_row(e) for e in eps_raw]
+
+    payload = build_seasons(members, episodes_by_series)
+    return jsonify(payload)
+
+
+@series_bp.get("/<series_id>/episodes")
+def series_episodes(series_id: str):
+    """GET /api/series/<id>/episodes — episodes ordered by episode_number."""
+    from domain.series import map_episode_row
+    rows = db_episodes.get_episodes_by_series(series_id)
+    return jsonify([map_episode_row(r) for r in rows])
+
+
+@series_bp.patch("/<series_id>/stream-source")
+@require_admin
+def update_stream_source(series_id: str):
+    """PATCH /api/series/<id>/stream-source — set animeav1 slug and disable animeflv."""
+    body = request.get_json(silent=True) or {}
+    animeav1_slug = body.get("animeav1_slug")
+    if not animeav1_slug:
+        return jsonify({"error": "animeav1_slug is required"}), 400
+
+    updated = db_series.update_stream_source(series_id, animeav1_slug)
+    if not updated:
+        return jsonify({"error": "Series not found"}), 404
+
+    return jsonify({
+        "id": series_id,
+        "animeav1Slug": animeav1_slug,
+        "animeflv_disabled": True,
+    }), 200
+
+
+@series_bp.get("/<series_id>/stream-config")
+def series_stream_config(series_id: str):
+    """GET /api/series/<id>/stream-config — streaming flags."""
+    config = db_series.get_stream_config(series_id)
+    if not config:
+        return jsonify({"error": "Series not found"}), 404
+    return jsonify({
+        "animeflvDisabled": config.get("animeflv_disabled", False),
+        "animeav1Slug": config.get("animeav1_slug"),
+    })

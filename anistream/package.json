@@ -1,0 +1,35 @@
+{
+  "name": "anistream",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "type-check": "tsc --noEmit",
+    "audit": "pnpm audit --audit-level=moderate"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.106.2",
+    "hls.js": "^1.6.16",
+    "next": "^15.5.18",
+    "next-auth": "^5.0.0-beta.31",
+    "react": "19.1.0",
+    "react-dom": "19.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "22.15.21",
+    "@types/react": "19.1.5",
+    "@types/react-dom": "19.1.5",
+    "eslint": "9.27.0",
+    "eslint-config-next": "15.3.2",
+    "typescript": "5.8.3",
+    "vitest": "^4.1.8"
+  },
+  "engines": {
+    "node": ">=20.0.0",
+    "pnpm": ">=9.0.0"
+  },
+  "packageManager": "pnpm@9.15.4"
+}

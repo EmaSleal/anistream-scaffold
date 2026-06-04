@@ -1,0 +1,8 @@
+requests==2.32.3
+supabase==2.15.1
+python-dotenv==1.0.1
+flask==3.1.0
+cloudscraper==1.2.71
+beautifulsoup4==4.14.3
+lxml==6.1.0
+PyJWT>=2.8.0

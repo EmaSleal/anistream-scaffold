@@ -1,0 +1,36 @@
+.badge {
+  display: inline-flex;
+  align-items: center;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.rating {
+  font-size: 10px;
+  padding: 3px 7px;
+  border-radius: var(--radius-sm);
+  background: rgba(255,255,255,0.12);
+  color: rgba(255,255,255,0.75);
+}
+
+.format {
+  font-size: 11px;
+  color: var(--color-text-secondary);
+}
+
+.brand {
+  font-size: 10px;
+  padding: 3px 8px;
+  border-radius: var(--radius-sm);
+  background: var(--color-brand-dim);
+  color: var(--color-brand);
+}
+
+.seen {
+  font-size: 9px;
+  padding: 2px 5px;
+  border-radius: var(--radius-sm);
+  background: rgba(0,0,0,0.75);
+  color: rgba(255,255,255,0.75);
+}

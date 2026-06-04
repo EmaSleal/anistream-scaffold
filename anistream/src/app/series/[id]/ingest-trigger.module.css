@@ -1,0 +1,171 @@
+.status {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 48px 24px;
+  font-size: 0.9rem;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  border-top-color: var(--color-brand);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+  flex-shrink: 0;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.75);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  padding: var(--space-4);
+}
+
+.modal {
+  background: var(--color-bg-card);
+  border: 1px solid var(--color-border-base);
+  border-radius: var(--radius-lg);
+  padding: var(--space-8);
+  width: 100%;
+  max-width: 480px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.modalTitle {
+  font-size: 1.2rem;
+  font-weight: 700;
+  margin: 0;
+}
+
+.modalDesc {
+  font-size: 0.875rem;
+  color: var(--color-text-secondary);
+  margin: 0;
+  line-height: 1.6;
+}
+
+.code {
+  background: var(--color-bg-surface);
+  border: 1px solid var(--color-border-base);
+  border-radius: var(--radius-sm);
+  padding: 1px 6px;
+  font-size: 0.8rem;
+  font-family: monospace;
+}
+
+.modalError {
+  font-size: 0.8rem;
+  color: #fca5a5;
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  background: color-mix(in srgb, #ef4444 15%, transparent);
+  border: 1px solid color-mix(in srgb, #ef4444 40%, transparent);
+  border-radius: var(--radius-md);
+}
+
+.modalForm {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.modalInput {
+  padding: var(--space-3);
+  background: var(--color-bg-surface);
+  border: 1px solid var(--color-border-base);
+  border-radius: var(--radius-md);
+  color: var(--color-text-primary);
+  font-size: 0.95rem;
+  font-family: inherit;
+  outline: none;
+  transition: border-color var(--transition-fast);
+}
+
+.modalInput:focus {
+  border-color: var(--color-brand);
+}
+
+.modalInput:disabled {
+  opacity: 0.5;
+}
+
+.modalBtn {
+  padding: var(--space-3);
+  background: var(--color-brand);
+  border: none;
+  border-radius: var(--radius-md);
+  color: #fff;
+  font-size: 0.95rem;
+  font-weight: 700;
+  font-family: inherit;
+  cursor: pointer;
+  transition: opacity var(--transition-fast);
+}
+
+.modalBtn:hover:not(:disabled) {
+  opacity: 0.85;
+}
+
+.modalBtn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.statusRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: 0.8rem;
+}
+
+.statusDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.statusFailed { background: #ef4444; }
+.statusOk     { background: #22c55e; }
+
+.statusLabel { color: var(--color-text-secondary); }
+
+.modalFieldGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.modalLabel {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.required { color: #ef4444; }
+
+.optional {
+  font-size: 0.72rem;
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--color-text-secondary);
+  opacity: 0.7;
+}

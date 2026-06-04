@@ -1,0 +1,45 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+env/
+*.egg-info/
+dist/
+.pytest_cache/
+
+# Env
+.env
+.env*.local
+.env.production
+scraper/.env
+scraper/.env.local
+
+# Next.js
+anistream/.next/
+anistream/out/
+anistream/node_modules/
+anistream/.pnp
+anistream/.pnp.js
+anistream/build/
+
+# npm/pnpm
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OS
+.DS_Store
+Thumbs.db
+*.pem
+
+# IDE
+.vscode/*
+!.vscode/extensions.json
+.idea/
+
+# TypeScript
+*.tsbuildinfo
+anistream/next-env.d.ts

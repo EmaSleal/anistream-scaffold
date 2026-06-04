@@ -1,0 +1,114 @@
+.header {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: var(--z-nav);
+  height: var(--nav-height);
+  background: linear-gradient(to bottom, #7f7f7f 0%, transparent 100%);
+  transition: background var(--transition-slow);
+}
+
+.header.scrolled {
+  background: rgba(0,0,0,0.97);
+  backdrop-filter: blur(8px);
+}
+
+.nav {
+  display: flex;
+  align-items: center;
+  gap: 32px;
+  height: 100%;
+  max-width: var(--container-max);
+  margin: 0 auto;
+  padding: 0 24px;
+}
+
+.logo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.logoText {
+  font-size: 16px;
+  font-weight: 800;
+  color: #fff;
+  letter-spacing: -0.02em;
+}
+
+.navList {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 1;
+}
+
+.navItem {
+  font-size: 14px;
+  font-weight: 500;
+  color: rgba(255,255,255,0.65);
+  padding: 6px 14px;
+  border-radius: var(--radius-pill);
+  transition: color var(--transition-fast), background var(--transition-fast);
+}
+.navItem:hover { color: #fff; }
+.navItem.active {
+  background: rgba(255,255,255,0.15);
+  color: #fff;
+  font-weight: 600;
+}
+
+.adminItem {
+  color: var(--color-brand);
+}
+.adminItem:hover { color: var(--color-brand); opacity: 0.8; }
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.iconBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  background: transparent;
+  border: none;
+  color: rgba(255,255,255,0.75);
+  border-radius: 50%;
+  transition: color var(--transition-fast), background var(--transition-fast);
+}
+.iconBtn:hover { color: #fff; background: rgba(255,255,255,0.08); }
+
+.avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--color-brand);
+  border: none;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-family: var(--font-sans);
+  overflow: hidden;
+  padding: 0;
+  transition: opacity var(--transition-fast);
+}
+
+.avatar:hover { opacity: 0.85; }
+
+.avatarImg {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 50%;
+}

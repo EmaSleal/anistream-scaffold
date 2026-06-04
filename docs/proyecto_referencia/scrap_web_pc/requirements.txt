@@ -1,0 +1,25 @@
+# Web scraping
+requests==2.32.3
+cloudscraper==1.2.71
+beautifulsoup4==4.14.3
+lxml==6.1.0
+
+# Web framework
+Flask==3.1.0
+flask-apscheduler==1.13.1
+
+# Data
+pandas==2.1.1
+
+# Fuzzy matching
+rapidfuzz==3.13.0
+
+# Scheduling
+APScheduler==3.10.4
+
+# Environment
+python-dotenv==1.0.1
+
+# Testing
+pytest==7.4.2
+pytest-mock==3.14.0

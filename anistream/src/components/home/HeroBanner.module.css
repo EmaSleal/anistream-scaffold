@@ -1,0 +1,114 @@
+.hero {
+  position: relative;
+  width: 100%;
+  min-height: 52rem;
+  display: flex;
+  align-items: flex-end;
+  padding-bottom: 60px;
+  overflow: hidden;
+}
+
+@media (max-width: 768px) {
+  .hero { min-height: 40rem; }
+  .content { max-width: 100%; }
+  .title { font-size: 28px; }
+}
+
+.backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+}
+.backdropImage { object-fit: cover; object-position: center top; }
+
+.gradientLeft {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to right, #000 0%, rgba(0,0,0,0.7) 40%, transparent 70%);
+}
+.gradientBottom {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to top, #000 0%, transparent 40%);
+}
+
+.content {
+  position: relative;
+  z-index: 1;
+  padding: 0 32px;
+  max-width: 560px;
+}
+
+.meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+.formats { font-size: 12px; color: var(--color-text-secondary); }
+.genreDot { color: var(--color-text-muted); }
+.genres { font-size: 12px; color: var(--color-text-secondary); }
+
+.title {
+  font-size: 36px;
+  font-weight: 800;
+  color: #fff;
+  line-height: 1.1;
+  margin-bottom: 12px;
+  letter-spacing: -0.01em;
+}
+
+.description {
+  font-size: 14px;
+  color: rgba(255,255,255,0.65);
+  line-height: 1.6;
+  margin-bottom: 24px;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.bookmarkBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  background: rgba(255,255,255,0.10);
+  border: 1.5px solid rgba(255,255,255,0.30);
+  border-radius: var(--radius-md);
+  color: rgba(255,255,255,0.80);
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+.bookmarkBtn:hover { background: rgba(255,255,255,0.20); color: #fff; }
+.bookmarkBtn.bookmarked { color: var(--color-brand); border-color: var(--color-brand); }
+
+.dots {
+  position: absolute;
+  bottom: 28px;
+  left: 32px;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 4px;
+  background: rgba(255,255,255,0.30);
+  border: none;
+  transition: width var(--transition-base), background var(--transition-base);
+}
+.dotActive {
+  width: 24px;
+  background: var(--color-brand);
+}

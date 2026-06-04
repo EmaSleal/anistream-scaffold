@@ -1,0 +1,183 @@
+"use client";
+
+import { useCallback, useEffect, useRef, useState } from "react";
+import type { PlayerState } from "@/types";
+import { clamp, debounce } from "@/lib/utils";
+
+const CONTROLS_HIDE_DELAY = 3000;
+
+interface UsePlayerControlsReturn {
+  playerState: PlayerState;
+  videoRef: React.RefObject<HTMLVideoElement | null>;
+  togglePlay: () => void;
+  seek: (seconds: number) => void;
+  setVolume: (volume: number) => void;
+  toggleMute: () => void;
+  setPlaybackRate: (rate: number) => void;
+  toggleFullscreen: (containerRef: React.RefObject<HTMLDivElement | null>) => void;
+  handleMouseMove: () => void;
+  skipSeconds: (delta: number) => void;
+}
+
+export function usePlayerControls(initialDuration = 0, initialTime = 0): UsePlayerControlsReturn {
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const [playerState, setPlayerState] = useState<PlayerState>({
+    isPlaying: false,
+    currentTime: 0,
+    duration: initialDuration,
+    volume: 1,
+    isMuted: false,
+    playbackRate: 1,
+    isFullscreen: false,
+    showControls: true,
+  });
+
+  const scheduleHideControls = useCallback(() => {
+    if (hideTimer.current) clearTimeout(hideTimer.current);
+    hideTimer.current = setTimeout(() => {
+      setPlayerState((prev) =>
+        prev.isPlaying ? { ...prev, showControls: false } : prev
+      );
+    }, CONTROLS_HIDE_DELAY);
+  }, []);
+
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const handleMouseMove = useCallback(
+    debounce(() => {
+      setPlayerState((prev) => ({ ...prev, showControls: true }));
+      scheduleHideControls();
+    }, 50),
+    [scheduleHideControls]
+  );
+
+  const togglePlay = useCallback(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    if (video.paused) {
+      video.play().catch((err: unknown) => {
+        if (err instanceof Error && err.name !== "AbortError") {
+          console.error(err);
+        }
+      });
+    } else {
+      video.pause();
+    }
+  }, []);
+
+  const seek = useCallback((seconds: number) => {
+    const video = videoRef.current;
+    if (!video) return;
+    video.currentTime = clamp(seconds, 0, video.duration || 0);
+  }, []);
+
+  const skipSeconds = useCallback((delta: number) => {
+    const video = videoRef.current;
+    if (!video) return;
+    seek(video.currentTime + delta);
+  }, [seek]);
+
+  const setVolume = useCallback((volume: number) => {
+    const video = videoRef.current;
+    if (!video) return;
+    const clamped = clamp(volume, 0, 1);
+    video.volume = clamped;
+    video.muted = clamped === 0;
+    setPlayerState((prev) => ({
+      ...prev,
+      volume: clamped,
+      isMuted: clamped === 0,
+    }));
+  }, []);
+
+  const toggleMute = useCallback(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    video.muted = !video.muted;
+    setPlayerState((prev) => ({ ...prev, isMuted: !prev.isMuted }));
+  }, []);
+
+  const setPlaybackRate = useCallback((rate: number) => {
+    const video = videoRef.current;
+    if (!video) return;
+    video.playbackRate = rate;
+    setPlayerState((prev) => ({ ...prev, playbackRate: rate }));
+  }, []);
+
+  const toggleFullscreen = useCallback(
+    (containerRef: React.RefObject<HTMLDivElement | null>) => {
+      const el = containerRef.current;
+      if (!el) return;
+      if (!document.fullscreenElement) {
+        void el.requestFullscreen();
+      } else {
+        void document.exitFullscreen();
+      }
+    },
+    []
+  );
+
+  // Sync video events → state
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+
+    const onPlay = () => setPlayerState((p) => ({ ...p, isPlaying: true }));
+    const onPause = () =>
+      setPlayerState((p) => ({ ...p, isPlaying: false, showControls: true }));
+    const onTimeUpdate = () =>
+      setPlayerState((p) => ({ ...p, currentTime: video.currentTime }));
+    const onDurationChange = () =>
+      setPlayerState((p) => ({ ...p, duration: video.duration }));
+    const onLoadedMetadata = () => {
+      if (initialTime > 0) {
+        video.currentTime = Math.min(initialTime, video.duration);
+      }
+      setPlayerState((p) => ({ ...p, duration: video.duration }));
+    };
+    const onVolumeChange = () =>
+      setPlayerState((p) => ({
+        ...p,
+        volume: video.volume,
+        isMuted: video.muted,
+      }));
+    const onFullscreenChange = () =>
+      setPlayerState((p) => ({
+        ...p,
+        isFullscreen: !!document.fullscreenElement,
+      }));
+
+    video.addEventListener("play", onPlay);
+    video.addEventListener("pause", onPause);
+    video.addEventListener("timeupdate", onTimeUpdate);
+    video.addEventListener("durationchange", onDurationChange);
+    video.addEventListener("loadedmetadata", onLoadedMetadata);
+    video.addEventListener("volumechange", onVolumeChange);
+    document.addEventListener("fullscreenchange", onFullscreenChange);
+
+    return () => {
+      video.removeEventListener("play", onPlay);
+      video.removeEventListener("pause", onPause);
+      video.removeEventListener("timeupdate", onTimeUpdate);
+      video.removeEventListener("durationchange", onDurationChange);
+      video.removeEventListener("loadedmetadata", onLoadedMetadata);
+      video.removeEventListener("volumechange", onVolumeChange);
+      document.removeEventListener("fullscreenchange", onFullscreenChange);
+      if (hideTimer.current) clearTimeout(hideTimer.current);
+    };
+  }, []);
+
+  return {
+    playerState,
+    videoRef,
+    togglePlay,
+    seek,
+    setVolume,
+    toggleMute,
+    setPlaybackRate,
+    toggleFullscreen,
+    handleMouseMove,
+    skipSeconds,
+  };
+}
