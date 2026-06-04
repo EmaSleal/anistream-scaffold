@@ -3,7 +3,7 @@ export const dynamic = "force-dynamic";
 import Link from "next/link";
 import { AnimeCard } from "@/components/home/AnimeCard";
 import { SeriesRow } from "@/components/home/SeriesRow";
-import { getSeriesList, getSimulcastSeries, consolidateFranchises } from "@/lib/series";
+import { getSeriesList, getSimulcastSeries, getDiscoverSeries, consolidateFranchises } from "@/lib/series";
 import { topGenres } from "@/lib/genres";
 import type { Metadata } from "next";
 import type { Series } from "@/types";
@@ -97,7 +97,7 @@ async function SimulcastsTab() {
 }
 
 async function GenresTab() {
-  const series = await getSeriesList(50);
+  const series = await getDiscoverSeries();
   const shuffled = [...series].sort(() => Math.random() - 0.5);
   return (
     <>

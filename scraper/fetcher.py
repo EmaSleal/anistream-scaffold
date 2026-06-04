@@ -249,3 +249,16 @@ def fetch_kitsu_series_status(kitsu_id: str) -> str | None:
         return resp.json().get("data", {}).get("attributes", {}).get("status")
     except Exception:
         return None
+
+
+def fetch_jikan_by_genre(genre_id: int, limit: int = 15) -> list[dict]:
+    """Fetch top-scored anime for a Jikan genre ID.
+
+    Returns up to `limit` raw Jikan anime dicts (same shape as fetch_anime_by_id).
+    Returns [] on any error (fail-open).
+    """
+    try:
+        resp = _get("anime", params={"genres": genre_id, "order_by": "score", "sort": "desc", "limit": 25})
+        return (resp.get("data") or [])[:limit]
+    except Exception:
+        return []

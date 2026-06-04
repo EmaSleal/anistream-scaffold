@@ -70,6 +70,11 @@ export async function getSimulcastSeries(limit = 50): Promise<Series[]> {
   return rows.map(mapRow);
 }
 
+export async function getDiscoverSeries(): Promise<Series[]> {
+  const rows = await apiFetch<Record<string, unknown>[]>("/api/series/discover", []);
+  return rows.map(mapRow);
+}
+
 export async function getFeaturedSeries(): Promise<Series[]> {
   const rows = await apiFetch<Record<string, unknown>[]>(
     `/api/series?featured=true`,

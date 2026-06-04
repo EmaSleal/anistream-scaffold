@@ -11,7 +11,7 @@ from domain.series import (
     build_seasons,
 )
 from auth import require_admin, require_auth
-from fetcher import fetch_recommendations
+from fetcher import fetch_recommendations, fetch_jikan_by_genre
 
 series_bp = Blueprint("series", __name__, url_prefix="/api/series")
 
@@ -226,3 +226,72 @@ def series_stream_config(series_id: str):
         "animeflvDisabled": config.get("animeflv_disabled", False),
         "animeav1Slug": config.get("animeav1_slug"),
     })
+
+
+# Genre name → Jikan genre ID (MAL genre IDs via Jikan v4)
+_JIKAN_GENRE_IDS: dict[str, int] = {
+    "Action": 1, "Adventure": 2, "Comedy": 4, "Drama": 8,
+    "Fantasy": 10, "Horror": 14, "Mystery": 7, "Romance": 22,
+    "Sci-Fi": 24, "Slice of Life": 36, "Sports": 30,
+    "Supernatural": 37, "Thriller": 41, "Isekai": 62,
+    "Mecha": 18, "Psychological": 40, "Shounen": 27, "Shoujo": 25,
+}
+
+
+@series_bp.get("/discover")
+def discover_series():
+    """GET /api/series/discover — genre discovery feed with background Jikan enrichment.
+
+    Returns shuffled catalog series matching the top 3 genres in the DB.
+    Spawns a daemon thread that fetches Jikan top series for those genres
+    and upserts new ones as stubs — catalog grows on each visit.
+    """
+    import random
+    from collections import Counter
+    from normalizer import normalize
+    from storage import upsert_many
+    import storage
+
+    # 1. Aggregate genres and mal_ids from existing catalog
+    rows = storage.get_client().table("series").select("genres, mal_id").limit(500).execute().data or []
+    counter: Counter = Counter()
+    known_mal_ids: set[int] = set()
+    for row in rows:
+        for g in (row.get("genres") or []):
+            counter[g] += 1
+        if row.get("mal_id"):
+            known_mal_ids.add(int(row["mal_id"]))
+
+    top_genres = [g for g, _ in counter.most_common(3)]
+
+    # 2. Return shuffled DB series matching top genres
+    all_series = db_series.get_series_list(limit=200, sort="score")
+    filtered = [s for s in all_series if any(g in (s.get("genres") or []) for g in top_genres)]
+    random.shuffle(filtered)
+    mapped = [map_series_row(s) for s in filtered[:50]]
+
+    # 3. Background: fetch Jikan for top genres, upsert new series as stubs
+    def _enrich_catalog(genres: list[str], known: set[int]) -> None:
+        import time as _time
+        for genre in genres:
+            genre_id = _JIKAN_GENRE_IDS.get(genre)
+            if not genre_id:
+                continue
+            try:
+                jikan_results = fetch_jikan_by_genre(genre_id, limit=15)
+                new_entries = []
+                for raw in jikan_results:
+                    mal_id = raw.get("mal_id")
+                    if mal_id and int(mal_id) not in known:
+                        entry = normalize(raw)
+                        if entry:
+                            new_entries.append(entry)
+                if new_entries:
+                    upsert_many(new_entries)
+            except Exception as exc:
+                logging.warning("[discover] genre=%s enrich error: %s", genre, exc)
+            _time.sleep(0.5)
+
+    threading.Thread(target=_enrich_catalog, args=(top_genres, known_mal_ids), daemon=True).start()
+
+    return jsonify(mapped), 200
