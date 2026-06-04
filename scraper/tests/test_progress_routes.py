@@ -224,6 +224,70 @@ class TestContinueWatching:
 
 
 # ---------------------------------------------------------------------------
+# POST /api/progress/advance
+# ---------------------------------------------------------------------------
+
+class TestAdvanceEpisode:
+    def test_advance_200(self, client):
+        """Authenticated POST with all required fields returns 200 {"advanced": true}."""
+        with patch("db.progress.advance_episode") as mock_advance:
+            res = client.post(
+                "/api/progress/advance",
+                headers=_auth_header(),
+                data=json.dumps({
+                    "current_episode_id": "ep1",
+                    "current_series_id": "s1",
+                    "duration_sec": 1440,
+                    "next_episode_id": "ep2",
+                    "next_series_id": "s1",
+                }),
+                content_type="application/json",
+            )
+        assert res.status_code == 200
+        data = json.loads(res.data)
+        assert data == {"advanced": True}
+        mock_advance.assert_called_once_with(
+            user_id="u-1",
+            current_ep_id="ep1",
+            current_series_id="s1",
+            duration_sec=1440.0,
+            next_ep_id="ep2",
+            next_series_id="s1",
+        )
+
+    def test_advance_400_missing_next_episode_id(self, client):
+        """Authenticated POST without next_episode_id returns 400."""
+        res = client.post(
+            "/api/progress/advance",
+            headers=_auth_header(),
+            data=json.dumps({
+                "current_episode_id": "ep1",
+                "current_series_id": "s1",
+                "duration_sec": 1440,
+            }),
+            content_type="application/json",
+        )
+        assert res.status_code == 400
+        data = json.loads(res.data)
+        assert "error" in data
+
+    def test_advance_401_unauthenticated(self, client):
+        """POST without auth token returns 401."""
+        res = client.post(
+            "/api/progress/advance",
+            data=json.dumps({
+                "current_episode_id": "ep1",
+                "current_series_id": "s1",
+                "duration_sec": 1440,
+                "next_episode_id": "ep2",
+                "next_series_id": "s1",
+            }),
+            content_type="application/json",
+        )
+        assert res.status_code == 401
+
+
+# ---------------------------------------------------------------------------
 # Unit tests: build_continue_watching (domain/progress.py)
 # ---------------------------------------------------------------------------
 

@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
+import { useRouter } from "next/navigation";
 import type { Episode } from "@/types";
 import { usePlayerControls } from "@/hooks/usePlayerControls";
-import { saveWatchProgress } from "@/app/actions/watchProgress";
+import { saveWatchProgress, advanceToNextEpisode } from "@/app/actions/watchProgress";
 import { PlayerControls } from "./PlayerControls";
 import { Badge } from "@/components/ui/Badge";
 import { formatDuration, formatEpisodeLabel } from "@/lib/utils";
@@ -28,7 +29,10 @@ export function VideoPlayer({
   streamUrl,
   streamType = "mp4",
 }: VideoPlayerProps) {
+  const router = useRouter();
   const containerRef = useRef<HTMLDivElement>(null);
+  const hasTriggered = useRef<boolean>(false);
+  const [countdown, setCountdown] = useState<number | null>(null);
   const {
     playerState,
     videoRef,
@@ -88,6 +92,67 @@ export function VideoPlayer({
     };
   }, [episode.id, episode.seriesId, episode.duration, videoRef]);
 
+  // Auto-advance trigger: fires on video end OR when entering the last 2 minutes
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video || !nextEpisode) return;
+
+    const startCountdown = () => {
+      if (hasTriggered.current) return;
+      hasTriggered.current = true;
+      setCountdown(5);
+    };
+
+    const handleEnded = () => {
+      startCountdown();
+    };
+
+    const handleTimeUpdate = () => {
+      if (
+        video.duration > 0 &&
+        video.currentTime >= video.duration - 120
+      ) {
+        startCountdown();
+      }
+    };
+
+    video.addEventListener("ended", handleEnded);
+    video.addEventListener("timeupdate", handleTimeUpdate);
+
+    return () => {
+      video.removeEventListener("ended", handleEnded);
+      video.removeEventListener("timeupdate", handleTimeUpdate);
+    };
+  }, [nextEpisode, videoRef]);
+
+  // Countdown ticker: decrement every second; navigate when it reaches 0
+  useEffect(() => {
+    if (countdown === null || countdown <= 0) {
+      if (countdown === 0 && nextEpisode) {
+        void advanceToNextEpisode(
+          episode.id,
+          episode.seriesId,
+          Math.floor(videoRef.current?.duration ?? episode.duration),
+          nextEpisode.id,
+          nextEpisode.seriesId
+        ).then(() => {
+          router.push(`/watch/${nextEpisode.id}`);
+        });
+      }
+      return;
+    }
+
+    const timer = setInterval(() => {
+      setCountdown((prev) => (prev !== null ? prev - 1 : null));
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [countdown, nextEpisode, episode.id, episode.seriesId, episode.duration, videoRef, router]);
+
+  const handleCancelAdvance = () => {
+    setCountdown(null);
+  };
+
   return (
     <div className={styles.page}>
       {/* ── Video zone ──────────────────────────────────── */}
@@ -137,6 +202,21 @@ export function VideoPlayer({
           onToggleFullscreen={() => toggleFullscreen(containerRef)}
           show={playerState.showControls}
         />
+
+        {countdown !== null && (
+          <div className={styles.autoAdvanceOverlay}>
+            <p className={styles.autoAdvanceText}>
+              Next episode in {countdown}s
+            </p>
+            <button
+              className={styles.autoAdvanceCancelBtn}
+              onClick={(e) => { e.stopPropagation(); handleCancelAdvance(); }}
+              aria-label="Cancel auto-advance"
+            >
+              Cancel
+            </button>
+          </div>
+        )}
       </div>
 
       {/* ── Metadata panel ───────────────────────────────── */}

@@ -47,6 +47,37 @@ def upsert_progress():
     return jsonify({"ok": True}), 200
 
 
+@progress_bp.post("/progress/advance")
+@require_auth
+def advance_episode():
+    """POST /api/progress/advance — mark current episode watched, seed next at 0.
+
+    Required body fields: current_episode_id, current_series_id, duration_sec,
+                          next_episode_id, next_series_id
+    Returns 400 if next_episode_id is absent.
+    """
+    body = request.get_json(force=True, silent=True) or {}
+
+    next_episode_id = body.get("next_episode_id")
+    if not next_episode_id:
+        return jsonify({"error": "missing next_episode_id"}), 400
+
+    current_episode_id = body.get("current_episode_id")
+    current_series_id = body.get("current_series_id")
+    duration_sec = body.get("duration_sec", 0)
+    next_series_id = body.get("next_series_id", "")
+
+    db_progress.advance_episode(
+        user_id=g.user_id,
+        current_ep_id=current_episode_id,
+        current_series_id=current_series_id,
+        duration_sec=float(duration_sec),
+        next_ep_id=next_episode_id,
+        next_series_id=next_series_id,
+    )
+    return jsonify({"advanced": True}), 200
+
+
 # IMPORTANT: This route is defined BEFORE /progress/<episode_id> to prevent
 # Flask from matching "continue-watching" as an episode_id parameter.
 @progress_bp.get("/progress/continue-watching")

@@ -63,6 +63,35 @@ export async function getEpisodeProgress(episodeId: string): Promise<number> {
   return data.progress_sec ?? 0;
 }
 
+export async function advanceToNextEpisode(
+  currentEpisodeId: string,
+  currentSeriesId: string,
+  durationSec: number,
+  nextEpisodeId: string,
+  nextSeriesId: string
+): Promise<void> {
+  try {
+    const cookieHeader = await getCookieHeader();
+    await fetch(`${getBaseUrl()}/api/progress/advance`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: cookieHeader,
+      },
+      body: JSON.stringify({
+        current_episode_id: currentEpisodeId,
+        current_series_id: currentSeriesId,
+        duration_sec: durationSec,
+        next_episode_id: nextEpisodeId,
+        next_series_id: nextSeriesId,
+      }),
+      cache: "no-store",
+    });
+  } catch {
+    // Fire-and-forget: progress failure must never block navigation
+  }
+}
+
 export async function getContinueWatching() {
   const cookieHeader = await getCookieHeader();
   const res = await fetch(`${getBaseUrl()}/api/progress/continue-watching`, {

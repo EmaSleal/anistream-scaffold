@@ -31,6 +31,43 @@ def upsert_progress(
     ).execute()
 
 
+def advance_episode(
+    user_id: str,
+    current_ep_id: str,
+    current_series_id: str,
+    duration_sec: float,
+    next_ep_id: str,
+    next_series_id: str,
+) -> None:
+    """Mark current episode as fully watched and seed the next episode at 0.
+
+    Calls upsert_progress twice in sequence:
+      1. current episode at progress_sec=duration_sec (fully watched)
+      2. next episode at progress_sec=0 (seeds it in Continue Watching)
+    """
+    upsert_progress(
+        user_id=user_id,
+        episode_id=current_ep_id,
+        series_id=current_series_id,
+        progress_sec=float(duration_sec),
+        duration_sec=float(duration_sec),
+    )
+    # Seed next episode at progress_sec=1 (not 0) so get_recent_progress
+    # (.gt("progress_sec", 0)) picks it up for the Continue Watching row.
+    client = storage.get_client()
+    client.table("watch_progress").upsert(
+        {
+            "user_id": user_id,
+            "episode_id": next_ep_id,
+            "series_id": next_series_id,
+            "progress_sec": 1,
+            "duration_sec": 0,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        },
+        on_conflict="user_id,episode_id",
+    ).execute()
+
+
 def get_episode_progress(user_id: str, episode_id: str) -> float:
     """Return progress_sec for the (user_id, episode_id) row, or 0 if absent."""
     client = storage.get_client()
