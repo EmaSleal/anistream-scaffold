@@ -182,13 +182,13 @@ def fetch_kitsu_episodes(kitsu_anime_id: str) -> dict[int, dict]:
     return episodes
 
 
-def fetch_jikan_episodes(mal_id: int) -> dict[int, str]:
-    """Fetch episode titles for an anime from Jikan.
+def fetch_jikan_episodes(mal_id: int) -> dict[int, dict]:
+    """Fetch episode metadata for an anime from Jikan.
 
     Handles pagination (100 episodes per page). Returns a dict keyed by
-    episode number with the English title (falls back to romanji or default title).
+    episode number with {"title": str | None, "aired_at": str | None}.
     """
-    titles: dict[int, str] = {}
+    episodes: dict[int, dict] = {}
     page = 1
     while True:
         try:
@@ -199,14 +199,16 @@ def fetch_jikan_episodes(mal_id: int) -> dict[int, str]:
             num = ep.get("mal_id")
             if not num:
                 continue
-            title = ep.get("title") or ep.get("title_romanji") or ep.get("title_japanese") or ""
-            if title:
-                titles[int(num)] = title
+            title = ep.get("title") or ep.get("title_romanji") or ep.get("title_japanese") or None
+            episodes[int(num)] = {
+                "title": title,
+                "aired_at": ep.get("aired"),
+            }
         pagination = data.get("pagination", {})
         if not pagination.get("has_next_page"):
             break
         page += 1
-    return titles
+    return episodes
 
 
 def search_anime_by_title(title: str) -> dict | None:

@@ -60,7 +60,7 @@ def _build_episodes(
     canonical_id: str,
     animeflv_slug: str,
     kitsu_eps: dict,
-    jikan_titles: dict[int, str] | None = None,
+    jikan_titles: dict[int, dict] | None = None,
 ) -> list[dict]:
     """Scrape animeflv episodes and merge with Kitsu + Jikan metadata."""
     try:
@@ -72,11 +72,10 @@ def _build_episodes(
     for ep in raw_episodes:
         num = ep["episode_number"]
         kitsu = kitsu_eps.get(num, {})
-        title = (
-            jikan_titles.get(num)
-            if jikan_titles
-            else None
-        ) or kitsu.get("title") or ep.get("title")
+        jikan = (jikan_titles.get(num) or {}) if jikan_titles else {}
+        title = jikan.get("title") or kitsu.get("title") or ep.get("title")
+        # Kitsu aired_at takes priority; fall back to Jikan aired field
+        aired_at = kitsu.get("aired_at") or jikan.get("aired_at")
         episodes.append({
             "id": f"{canonical_id}-ep-{num}",
             "series_id": canonical_id,
@@ -84,7 +83,7 @@ def _build_episodes(
             "title": title,
             "description": kitsu.get("description"),
             "thumbnail_url": kitsu.get("thumbnail_url") or ep.get("thumbnail_url"),
-            "aired_at": kitsu.get("aired_at"),
+            "aired_at": aired_at,
             "duration_sec": kitsu.get("duration_sec") or None,
             "animeflv_slug": f"{animeflv_slug}-{num}",
         })
