@@ -4,10 +4,12 @@ import { HeroBanner } from "@/components/home/HeroBanner";
 import { SeriesRow } from "@/components/home/SeriesRow";
 import { ContinueWatchingRow } from "@/components/home/ContinueWatchingRow";
 import { getSeriesList, getFeaturedSeries, consolidateFranchises } from "@/lib/series";
+import { topGenres } from "@/lib/genres";
 import { getWatchlistIds } from "@/app/actions/watchlist";
 import { getContinueWatching } from "@/app/actions/watchProgress";
 import { getRecommendations } from "@/app/actions/recommendations";
 import type { Metadata } from "next";
+import type { Genre } from "@/types";
 
 export const metadata: Metadata = { title: "Home" };
 
@@ -23,9 +25,8 @@ export default async function HomePage() {
   const consolidated = consolidateFranchises(allSeries);
 
   const topPicks = consolidated.slice(0, 10);
-  const isekai = consolidated.filter((s) => s.genres.includes("Isekai"));
-  const action = consolidated.filter((s) => s.genres.includes("Action"));
   const simulcasts = consolidated.filter((s) => s.isSimulcast);
+  const genres = topGenres(consolidated, 5);
 
   return (
     <>
@@ -37,13 +38,16 @@ export default async function HomePage() {
         {simulcasts.length > 0 && (
           <SeriesRow title="Simulcasts" series={simulcasts} />
         )}
-        {isekai.length > 0 && (
-          <SeriesRow title="Isekai" series={isekai} />
-        )}
-        {action.length > 0 && (
-          <SeriesRow title="Action" series={action} />
-        )}
         <SeriesRow title="Popular" series={consolidated} />
+        {genres.map((genre) => {
+          const rows = consolidated
+            .filter((s) => s.genres?.includes(genre as Genre))
+            .sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
+            .slice(0, 10);
+          return rows.length > 0 ? (
+            <SeriesRow key={genre} title={`Top ${genre}`} series={rows} />
+          ) : null;
+        })}
       </div>
     </>
   );

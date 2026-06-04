@@ -12,6 +12,7 @@ def get_series_list(
     featured: bool | None = None,
     franchise_id: str | None = None,
     consolidated: bool = False,
+    simulcast: bool = False,
 ) -> list[dict]:
     """Return a list of series rows.
 
@@ -22,12 +23,16 @@ def get_series_list(
         franchise_id: If set, filter to a specific franchise UUID.
         consolidated: If True, fetch enough rows for consolidation upstream.
             When consolidating, we bypass the limit and let the domain layer trim.
+        simulcast: If True, filter to is_simulcast=true.
     """
     client = storage.get_client()
     query = client.table("series").select("*")
 
     if featured is True:
         query = query.eq("is_featured", True)
+
+    if simulcast is True:
+        query = query.eq("is_simulcast", True)
 
     if franchise_id:
         query = query.eq("franchise_id", franchise_id)

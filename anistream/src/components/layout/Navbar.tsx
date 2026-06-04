@@ -12,7 +12,7 @@ const NAV_ITEMS = [
   { label: "Home",       href: "/" },
   { label: "My Lists",   href: "/my-lists" },
   { label: "Browse",     href: "/browse" },
-  { label: "Simulcasts", href: "/browse?filter=simulcast" },
+  { label: "Simulcasts", href: "/simulcast" },
   { label: "Account",    href: "/account" },
 ] as const;
 

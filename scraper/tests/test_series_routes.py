@@ -144,6 +144,26 @@ class TestSeriesList:
         kwargs = mock_fn.call_args
         assert kwargs[1].get("limit", kwargs[0][0] if kwargs[0] else 20) == 20
 
+    def test_simulcast_filter_returns_only_simulcast_rows(self, client):
+        simulcast_row = {**_series_row(id="sim1"), "is_simulcast": True}
+        with patch("series_routes.db_series.get_series_list", return_value=[simulcast_row]) as mock_fn:
+            res = client.get("/api/series?simulcast=true")
+        assert res.status_code == 200
+        data = json.loads(res.data)
+        assert len(data) == 1
+        assert data[0]["isSimulcast"] is True
+        mock_fn.assert_called_once()
+        assert mock_fn.call_args[1].get("simulcast") is True
+
+    def test_no_simulcast_param_does_not_apply_filter(self, client):
+        rows = [_series_row(id=f"s{i}") for i in range(3)]
+        with patch("series_routes.db_series.get_series_list", return_value=rows) as mock_fn:
+            res = client.get("/api/series")
+        assert res.status_code == 200
+        data = json.loads(res.data)
+        assert len(data) == 3
+        assert mock_fn.call_args[1].get("simulcast") is False
+
 
 # ---------------------------------------------------------------------------
 # GET /api/series/search

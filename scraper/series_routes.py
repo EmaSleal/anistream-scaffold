@@ -28,9 +28,11 @@ def list_series():
     featured_param = request.args.get("featured")
     franchise_id = request.args.get("franchise_id")
     consolidated_param = request.args.get("consolidated")
+    simulcast_param = request.args.get("simulcast")
 
     featured = featured_param is not None and featured_param.lower() not in ("false", "0", "")
     consolidated = consolidated_param is not None and consolidated_param.lower() not in ("false", "0", "")
+    simulcast = simulcast_param is not None and simulcast_param.lower() not in ("false", "0", "")
 
     rows = db_series.get_series_list(
         limit=limit,
@@ -38,6 +40,7 @@ def list_series():
         featured=featured if featured else None,
         franchise_id=franchise_id,
         consolidated=consolidated,
+        simulcast=simulcast,
     )
     mapped = [map_series_row(r) for r in rows]
 

@@ -62,6 +62,14 @@ export async function getSeriesList(limit = 50): Promise<Series[]> {
   return rows.map(mapRow);
 }
 
+export async function getSimulcastSeries(limit = 50): Promise<Series[]> {
+  const rows = await apiFetch<Record<string, unknown>[]>(
+    `/api/series?simulcast=true&limit=${limit}`,
+    [],
+  );
+  return rows.map(mapRow);
+}
+
 export async function getFeaturedSeries(): Promise<Series[]> {
   const rows = await apiFetch<Record<string, unknown>[]>(
     `/api/series?featured=true`,
