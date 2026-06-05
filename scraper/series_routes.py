@@ -15,6 +15,18 @@ from fetcher import fetch_recommendations, fetch_jikan_by_genre
 
 series_bp = Blueprint("series", __name__, url_prefix="/api/series")
 
+_SEASON_MONTHS: dict[str, tuple[int, int]] = {
+    "winter": (1, 3),
+    "spring": (4, 6),
+    "summer": (7, 9),
+    "fall": (10, 12),
+}
+
+
+def _season_months(season: str) -> tuple[int, int] | None:
+    """Return the (start_month, end_month) range for a season name, or None if unknown."""
+    return _SEASON_MONTHS.get(season.lower())
+
 
 @series_bp.get("")
 def list_series():
@@ -29,6 +41,9 @@ def list_series():
     franchise_id = request.args.get("franchise_id")
     consolidated_param = request.args.get("consolidated")
     simulcast_param = request.args.get("simulcast")
+    genre = request.args.get("genre")
+    year = request.args.get("year", type=int)
+    season = request.args.get("season")
 
     featured = featured_param is not None and featured_param.lower() not in ("false", "0", "")
     consolidated = consolidated_param is not None and consolidated_param.lower() not in ("false", "0", "")
@@ -41,8 +56,27 @@ def list_series():
         franchise_id=franchise_id,
         consolidated=consolidated,
         simulcast=simulcast,
+        genre=genre,
+        year=year,
     )
     mapped = [map_series_row(r) for r in rows]
+
+    if season:
+        month_range = _season_months(season)
+        if month_range:
+            start_month, end_month = month_range
+            filtered_by_season = []
+            for s in mapped:
+                aired_from = s.get("airedFrom")
+                if not aired_from:
+                    continue
+                try:
+                    month = int(aired_from[5:7])
+                except (TypeError, ValueError, IndexError):
+                    continue
+                if start_month <= month <= end_month:
+                    filtered_by_season.append(s)
+            mapped = filtered_by_season
 
     if consolidated:
         mapped = consolidate_franchises(mapped)
@@ -184,7 +218,26 @@ def series_seasons(series_id: str):
         from domain.series import map_episode_row
         episodes_by_series[sid] = [map_episode_row(e) for e in eps_raw]
 
-    payload = build_seasons(members, episodes_by_series)
+    # For simulcast franchise members with elapsed cooldown, discover new episodes
+    # in the background so they appear on the next page load.
+    from domain.simulcast import cooldown_elapsed
+    from simulcast_check import run_simulcast_update
+
+    for member in members:
+        if not member.get("isSimulcast") or not member.get("animeflvSlug"):
+            continue
+        if not cooldown_elapsed(member.get("lastSimulcastCheck")):
+            continue
+        sid = member["id"]
+        eps = episodes_by_series.get(sid, [])
+        current_max_ep = max((e.get("episode", 0) for e in eps), default=0)
+        threading.Thread(
+            target=run_simulcast_update,
+            args=(sid, member["animeflvSlug"], current_max_ep),
+            daemon=True,
+        ).start()
+
+    payload = build_seasons(members, episodes_by_series, requested_series_id=series_id)
     return jsonify(payload)
 
 
@@ -192,7 +245,23 @@ def series_seasons(series_id: str):
 def series_episodes(series_id: str):
     """GET /api/series/<id>/episodes — episodes ordered by episode_number."""
     from domain.series import map_episode_row
+    from domain.simulcast import cooldown_elapsed
+    from simulcast_check import run_simulcast_update
+
     rows = db_episodes.get_episodes_by_series(series_id)
+
+    # If this is a simulcast series and conditions are met, discover new episodes
+    # in the background — works even when the user has no watch_progress.
+    series_row = db_series.get_series_by_id(series_id)
+    if series_row and series_row.get("is_simulcast") and series_row.get("animeflv_slug"):
+        if cooldown_elapsed(series_row.get("last_simulcast_check")):
+            current_max_ep = max((r["episode_number"] for r in rows), default=0)
+            threading.Thread(
+                target=run_simulcast_update,
+                args=(series_id, series_row["animeflv_slug"], current_max_ep),
+                daemon=True,
+            ).start()
+
     return jsonify([map_episode_row(r) for r in rows])
 
 

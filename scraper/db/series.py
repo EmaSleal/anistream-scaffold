@@ -13,6 +13,8 @@ def get_series_list(
     franchise_id: str | None = None,
     consolidated: bool = False,
     simulcast: bool = False,
+    genre: str | None = None,
+    year: int | None = None,
 ) -> list[dict]:
     """Return a list of series rows.
 
@@ -24,6 +26,8 @@ def get_series_list(
         consolidated: If True, fetch enough rows for consolidation upstream.
             When consolidating, we bypass the limit and let the domain layer trim.
         simulcast: If True, filter to is_simulcast=true.
+        genre: If set, filter to series containing this genre (case-sensitive).
+        year: If set (and non-zero), filter to series with this release year.
     """
     client = storage.get_client()
     query = client.table("series").select("*")
@@ -36,6 +40,12 @@ def get_series_list(
 
     if franchise_id:
         query = query.eq("franchise_id", franchise_id)
+
+    if genre:
+        query = query.contains("genres", [genre])
+
+    if year:
+        query = query.eq("year", year)
 
     if sort == "title":
         query = query.order("title", desc=False)

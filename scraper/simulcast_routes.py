@@ -9,7 +9,7 @@ POST /api/simulcast/refresh/<series_id>
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from flask import Blueprint, jsonify
 
@@ -23,6 +23,47 @@ from storage import upsert_episodes
 simulcast_bp = Blueprint("simulcast", __name__, url_prefix="/api/simulcast")
 
 _COOLDOWN_SECONDS = 3600
+
+
+def _fill_aired_at_from_cadence(episodes: list[dict]) -> None:
+    """Fill null aired_at fields using 7-day weekly cadence from adjacent dated episodes.
+
+    Mutates the list in-place. For each episode missing aired_at, finds the
+    closest preceding episode that has a date and extrapolates forward at 7 days
+    per episode. If no preceding dated episode exists, looks forward instead.
+    Falls back to today's UTC date only when no reference point is available.
+    """
+    today = datetime.now(timezone.utc).date().isoformat()
+    # Build a sorted map of episode_number → aired_at for dated episodes
+    dated: dict[int, str] = {
+        ep["episode_number"]: ep["aired_at"]
+        for ep in episodes
+        if ep.get("aired_at")
+    }
+    if not dated:
+        for ep in episodes:
+            if not ep.get("aired_at"):
+                ep["aired_at"] = today
+        return
+
+    for ep in episodes:
+        if ep.get("aired_at"):
+            continue
+        num = ep["episode_number"]
+        # Find closest preceding dated episode
+        preceding = {n: d for n, d in dated.items() if n < num}
+        if preceding:
+            ref_num = max(preceding)
+            ref_date_str = preceding[ref_num]
+        else:
+            # No preceding — use the closest following dated episode, subtract days
+            ref_num = min(n for n in dated if n > num)
+            ref_date_str = dated[ref_num]
+        try:
+            ref_date = datetime.fromisoformat(ref_date_str[:10]).date()
+            ep["aired_at"] = (ref_date + timedelta(days=7 * (num - ref_num))).isoformat()
+        except Exception:
+            ep["aired_at"] = today
 
 
 @simulcast_bp.post("/refresh/<series_id>")
@@ -139,6 +180,7 @@ def refresh_simulcast(series_id: str):
             kitsu_eps = fetch_kitsu_episodes(kitsu_id) if kitsu_id else {}
             jikan_titles = fetch_jikan_episodes(jikan_mal_id)
             new_episodes = _build_episodes(series_id, animeflv_slug, kitsu_eps, jikan_titles)
+            _fill_aired_at_from_cadence(new_episodes)
             if new_episodes:
                 episodes_ingested = upsert_episodes(new_episodes)
                 # Update episode_count in the series row

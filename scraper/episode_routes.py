@@ -50,6 +50,40 @@ def watch_episode_stream(watch_id: str):
         return jsonify({"error": "Upstream scraping error"}), 503
 
 
+def _map_recent_episode(row: dict) -> dict:
+    """Map a raw DB row from get_recent_simulcast_episodes to a flat camelCase DTO."""
+    s = row.get("series") or {}
+    # Use aired_at if set; fall back to created_at date portion for episodes
+    # discovered before Jikan indexed them (created_at is always present).
+    aired_at = row.get("aired_at") or row.get("_effective_date") or (row.get("created_at") or "")[:10]
+    return {
+        "id": row.get("id"),
+        "seriesId": row.get("series_id"),
+        "episodeNumber": row.get("episode_number"),
+        "title": row.get("title"),
+        "thumbnailUrl": row.get("thumbnail_url"),
+        "airedAt": aired_at or None,
+        "animeflvSlug": row.get("animeflv_slug"),
+        "seriesTitle": s.get("title"),
+        "seriesThumbnailUrl": s.get("thumbnail_url"),
+    }
+
+
+@episode_bp.get("/recent-simulcast")
+def recent_simulcast_episodes():
+    """GET /api/episodes/recent-simulcast — public list of recently aired simulcast episodes.
+
+    Query params:
+        limit (int, optional): number of episodes to return; default 20, clamped to 50.
+
+    Returns:
+        200  JSON array of episode DTOs ordered by airedAt DESC.
+    """
+    limit = min(request.args.get("limit", 20, type=int), 50)
+    rows = db_episodes.get_recent_simulcast_episodes(limit)
+    return jsonify([_map_recent_episode(r) for r in rows]), 200
+
+
 @episode_bp.get("/<series_id>/adjacent")
 def adjacent_episodes(series_id: str):
     """GET /api/episodes/<series_id>/adjacent?episode_number=N — prev/next."""

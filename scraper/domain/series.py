@@ -186,17 +186,24 @@ def part_merge(members_with_episodes: list[dict]) -> list[dict]:
     return list(part_map.values())
 
 
-def build_seasons(franchise_members: list[dict], episodes_by_series: dict[str, list[dict]]) -> dict:
+def build_seasons(
+    franchise_members: list[dict],
+    episodes_by_series: dict[str, list[dict]],
+    requested_series_id: str | None = None,
+) -> dict:
     """Build the seasons payload for the /seasons endpoint.
 
     Args:
         franchise_members: camelCase series dicts (from map_series_row), ordered by seasonOrder.
         episodes_by_series: mapping of seriesId -> list of camelCase episode dicts.
+        requested_series_id: the series_id that was originally requested (used to set
+            initialSeasonIdx to the correct season instead of always defaulting to the
+            first franchise member).
 
     Returns:
         {
             "seasons": [{"label": str, "seriesId": str, "episodes": list}],
-            "initialSeasonIdx": int   (index of the first member passed in, after merging)
+            "initialSeasonIdx": int
         }
 
     Steps:
@@ -204,7 +211,8 @@ def build_seasons(franchise_members: list[dict], episodes_by_series: dict[str, l
         2. Call part_merge to collapse Part splits.
         3. Re-number TV seasons sequentially (Temporada 1, 2, …).
         4. Filter out seasons with zero episodes.
-        5. Compute initialSeasonIdx from the first franchise_member's baseTitle.
+        5. Compute initialSeasonIdx: prefer the slot matching requested_series_id,
+           fall back to the first franchise_member's baseTitle.
     """
     if not franchise_members:
         return {"seasons": [], "initialSeasonIdx": 0}
@@ -245,9 +253,27 @@ def build_seasons(franchise_members: list[dict], episodes_by_series: dict[str, l
             slot = {**slot, "label": f"Temporada {tv_count}"}
         seasons.append({"label": slot["label"], "seriesId": slot["seriesId"], "episodes": slot["episodes"]})
 
-    # initialSeasonIdx: index of the first franchise member's base title after merge
-    first_base = _PART_RE.sub("", (franchise_members[0].get("title") or "")).strip()
-    base_titles = [s.get("baseTitle", "") for s in merged]
-    initial_idx = base_titles.index(first_base) if first_base in base_titles else 0
+    # initialSeasonIdx: prefer the slot that matches the requested series, then fall
+    # back to the first franchise member's baseTitle.
+    initial_idx = 0
+    if requested_series_id:
+        for i, s in enumerate(seasons):
+            if s["seriesId"] == requested_series_id:
+                initial_idx = i
+                break
+        else:
+            # requested series may have been part-merged under a different seriesId;
+            # fall back to baseTitle matching against the requested series title
+            req_title = next(
+                (m.get("title") or "" for m in franchise_members if m.get("id") == requested_series_id),
+                "",
+            )
+            req_base = _PART_RE.sub("", req_title).strip()
+            base_titles = [s.get("baseTitle", "") for s in merged]
+            initial_idx = base_titles.index(req_base) if req_base in base_titles else 0
+    else:
+        first_base = _PART_RE.sub("", (franchise_members[0].get("title") or "")).strip()
+        base_titles = [s.get("baseTitle", "") for s in merged]
+        initial_idx = base_titles.index(first_base) if first_base in base_titles else 0
 
     return {"seasons": seasons, "initialSeasonIdx": initial_idx}

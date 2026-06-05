@@ -37,32 +37,40 @@ class TestResolveSimulcastStatus:
             has_kitsu=True,
         ) is False
 
-    def test_kitsu_finished_returns_false(self):
-        """jikan airing but kitsu finished → False."""
+    def test_kitsu_finished_ignored_jikan_decides(self):
+        """jikan airing + kitsu finished → True (kitsu is ignored, jikan wins)."""
         assert resolve_simulcast_status(
             jikan_airing=True,
             kitsu_status="finished",
             has_kitsu=True,
-        ) is False
+        ) is True
 
-    def test_kitsu_upcoming_returns_false(self):
-        """jikan airing but kitsu upcoming (not 'current') → False."""
+    def test_kitsu_upcoming_ignored_jikan_decides(self):
+        """jikan airing + kitsu upcoming → True (kitsu is ignored, jikan wins)."""
         assert resolve_simulcast_status(
             jikan_airing=True,
             kitsu_status="upcoming",
             has_kitsu=True,
-        ) is False
+        ) is True
 
-    def test_kitsu_none_with_has_kitsu_returns_false(self):
-        """kitsu_status is None despite has_kitsu=True (fetch failed) → False."""
+    def test_kitsu_none_ignored_jikan_decides(self):
+        """jikan airing + kitsu_status None → True (kitsu is ignored)."""
         assert resolve_simulcast_status(
             jikan_airing=True,
             kitsu_status=None,
             has_kitsu=True,
+        ) is True
+
+    def test_jikan_false_kitsu_current_returns_false(self):
+        """jikan not airing + kitsu current → False (jikan is source of truth)."""
+        assert resolve_simulcast_status(
+            jikan_airing=False,
+            kitsu_status="current",
+            has_kitsu=True,
         ) is False
 
     def test_no_kitsu_id_jikan_true_returns_true(self):
-        """Confirmed override: no kitsu_id + jikan airing → True (fallback to jikan alone)."""
+        """No kitsu_id + jikan airing → True."""
         assert resolve_simulcast_status(
             jikan_airing=True,
             kitsu_status=None,
@@ -77,11 +85,11 @@ class TestResolveSimulcastStatus:
             has_kitsu=False,
         ) is False
 
-    def test_no_kitsu_id_ignores_kitsu_status(self):
-        """When has_kitsu=False, kitsu_status is irrelevant; jikan alone decides."""
+    def test_kitsu_params_always_ignored(self):
+        """kitsu_status and has_kitsu are irrelevant — only jikan_airing matters."""
         assert resolve_simulcast_status(
             jikan_airing=True,
-            kitsu_status="current",  # should be ignored
+            kitsu_status="current",  # ignored
             has_kitsu=False,
         ) is True
 

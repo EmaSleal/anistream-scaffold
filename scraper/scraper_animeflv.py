@@ -62,6 +62,29 @@ def scrape_episode_list(slug: str) -> list[dict]:
     return episodes
 
 
+def scrape_next_episode_date(slug: str) -> str | None:
+    """Return the next episode air date for an anime from animeflv.
+
+    Parses the ``<li class="fa-play-circle Next">`` card in the episode list,
+    which contains a ``<span class="Date ...">YYYY-MM-DD</span>``.
+
+    Returns the date string (e.g. ``"2026-06-05"``) or None if not found.
+    """
+    url = f"{ANIMEFLV_BASE}/anime/{slug}"
+    try:
+        response = _scraper.get(url, timeout=15)
+        response.raise_for_status()
+    except Exception:
+        return None
+
+    match = re.search(
+        r'class="fa-play-circle Next".*?<span[^>]*class="Date[^"]*"[^>]*>\s*(\d{4}-\d{2}-\d{2})\s*</span>',
+        response.text,
+        re.DOTALL,
+    )
+    return match.group(1) if match else None
+
+
 def scrape_related_series(slug: str) -> list[dict]:
     """Return related series listed on the animeflv series page.
 

@@ -154,3 +154,73 @@ def get_episodes_by_ids(episode_ids: list[str]) -> list[dict]:
         .execute()
     )
     return result.data or []
+
+
+def get_series_simulcast_meta(series_ids: list[str]) -> dict[str, dict]:
+    """Return simulcast-relevant metadata for the given series IDs.
+
+    Executes a single batched query against the ``series`` table for all
+    requested IDs and also computes the maximum known episode number for
+    each series from the ``episodes`` table.
+
+    Args:
+        series_ids: List of series ID strings to look up.
+
+    Returns:
+        A dict keyed by series_id. Each value contains:
+          ``id``, ``is_simulcast``, ``animeflv_slug``, ``broadcast_day``,
+          ``broadcast_time``, ``broadcast_timezone``, ``last_simulcast_check``,
+          ``max_episode_number`` (int | None — the highest episode_number in DB
+          for that series, or None if no episodes exist).
+        Returns an empty dict when ``series_ids`` is empty.
+    """
+    if not series_ids:
+        return {}
+
+    client = storage.get_client()
+
+    # Fetch simulcast fields from series table.
+    series_result = (
+        client.table("series")
+        .select(
+            "id, is_simulcast, animeflv_slug, broadcast_day, broadcast_time, "
+            "broadcast_timezone, last_simulcast_check"
+        )
+        .in_("id", series_ids)
+        .execute()
+    )
+
+    meta: dict[str, dict] = {}
+    for row in series_result.data or []:
+        sid = row["id"]
+        meta[sid] = {
+            "id": sid,
+            "is_simulcast": row.get("is_simulcast") or False,
+            "animeflv_slug": row.get("animeflv_slug"),
+            "broadcast_day": row.get("broadcast_day"),
+            "broadcast_time": row.get("broadcast_time"),
+            "broadcast_timezone": row.get("broadcast_timezone"),
+            "last_simulcast_check": row.get("last_simulcast_check"),
+            "max_episode_number": None,
+        }
+
+    if not meta:
+        return meta
+
+    # Fetch max episode_number per series in a single query.
+    eps_result = (
+        client.table("episodes")
+        .select("series_id, episode_number")
+        .in_("series_id", list(meta.keys()))
+        .execute()
+    )
+
+    for ep in eps_result.data or []:
+        sid = ep.get("series_id")
+        ep_num = ep.get("episode_number")
+        if sid in meta and ep_num is not None:
+            current_max = meta[sid]["max_episode_number"]
+            if current_max is None or ep_num > current_max:
+                meta[sid]["max_episode_number"] = ep_num
+
+    return meta
