@@ -4,7 +4,9 @@ import Link from "next/link";
 import { AnimeCard } from "@/components/home/AnimeCard";
 import { SeriesRow } from "@/components/home/SeriesRow";
 import { getSeriesList, getSimulcastSeries, getDiscoverSeries, consolidateFranchises } from "@/lib/series";
+import type { SeriesListParams } from "@/lib/series";
 import { topGenres } from "@/lib/genres";
+import { FilterBar } from "./FilterBar";
 import type { Metadata } from "next";
 import type { Series } from "@/types";
 import styles from "./browse.module.css";
@@ -22,9 +24,9 @@ type Tab = "all" | "simulcasts" | "genres";
 export default async function BrowsePage({
   searchParams,
 }: {
-  searchParams: Promise<{ tab?: string }>;
+  searchParams: Promise<{ tab?: string; genre?: string; year?: string; season?: string }>;
 }) {
-  const { tab: tabParam } = await searchParams;
+  const { tab: tabParam, genre, year, season } = await searchParams;
   const activeTab: Tab =
     tabParam === "simulcasts" ? "simulcasts"
     : tabParam === "genres" ? "genres"
@@ -47,7 +49,7 @@ export default async function BrowsePage({
 
       {activeTab === "all"        && <AllAnimeTab />}
       {activeTab === "simulcasts" && <SimulcastsTab />}
-      {activeTab === "genres"     && <GenresTab />}
+      {activeTab === "genres"     && <GenresTab genre={genre} year={year} season={season} />}
     </div>
   );
 }
@@ -96,22 +98,55 @@ async function SimulcastsTab() {
   );
 }
 
-async function GenresTab() {
-  const series = await getDiscoverSeries();
-  const consolidated = consolidateFranchises(series);
-  const shuffled = [...consolidated].sort(() => Math.random() - 0.5);
+interface GenresTabProps {
+  genre?: string;
+  year?: string;
+  season?: string;
+}
+
+async function GenresTab({ genre, year, season }: GenresTabProps) {
+  const hasFilter = Boolean(genre || year || season);
+
+  let consolidated: Series[];
+  if (hasFilter) {
+    const params: SeriesListParams = {
+      limit: 100,
+      genre,
+      year: year ? Number(year) : undefined,
+      season,
+    };
+    const series = await getSeriesList(params);
+    consolidated = consolidateFranchises(series);
+  } else {
+    const series = await getDiscoverSeries();
+    const raw = consolidateFranchises(series);
+    consolidated = [...raw].sort(() => Math.random() - 0.5);
+  }
+
+  const genres = topGenres(consolidated, 12);
+
   return (
     <>
-      <div className={styles.header}>
-        <h1 className={styles.heading}>Discover</h1>
-      </div>
-      <div className={styles.grid} role="list">
-        {shuffled.map((s) => (
-          <div key={s.id} role="listitem">
-            <AnimeCard series={s} />
-          </div>
-        ))}
-      </div>
+      <FilterBar
+        title="Discover"
+        genres={genres}
+        activeGenre={genre}
+        activeYear={year}
+        activeSeason={season}
+      />
+      {hasFilter && consolidated.length === 0 ? (
+        <p style={{ color: "var(--color-text-secondary)", fontSize: "1.6rem" }}>
+          No series match these filters.
+        </p>
+      ) : (
+        <div className={styles.grid} role="list">
+          {consolidated.map((s) => (
+            <div key={s.id} role="listitem">
+              <AnimeCard series={s} />
+            </div>
+          ))}
+        </div>
+      )}
     </>
   );
 }

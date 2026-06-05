@@ -54,13 +54,32 @@ async function apiFetch<T>(path: string, fallback: T): Promise<T> {
 // Public API — same signatures as the old Supabase-backed lib
 // ---------------------------------------------------------------------------
 
-export async function getSeriesList(limit = 50): Promise<Series[]> {
+export interface SeriesListParams {
+  limit?: number;
+  sort?: string;
+  genre?: string;
+  year?: number;
+  season?: string;
+}
+
+export async function getSeriesList(arg: number | SeriesListParams = 50): Promise<Series[]> {
+  const params: SeriesListParams = typeof arg === "number" ? { limit: arg } : arg;
+  const { limit = 50, sort = "score", genre, year, season } = params;
+
+  const qs = new URLSearchParams({ limit: String(limit), sort });
+  if (genre) qs.set("genre", genre);
+  if (year) qs.set("year", String(year));
+  if (season) qs.set("season", season);
+
   const rows = await apiFetch<Record<string, unknown>[]>(
-    `/api/series?limit=${limit}&sort=score`,
+    `/api/series?${qs.toString()}`,
     [],
   );
   return rows.map(mapRow);
 }
+
+
+
 
 export async function getSimulcastSeries(limit = 50): Promise<Series[]> {
   const rows = await apiFetch<Record<string, unknown>[]>(
