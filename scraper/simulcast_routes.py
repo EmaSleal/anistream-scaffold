@@ -6,19 +6,25 @@ POST /api/simulcast/refresh/<series_id>
   - Recomputes is_simulcast and persists broadcast/Kitsu metadata.
   - Auto-ingests new episodes when jikan.episode_count > db.episode_count.
   - Gates itself with a 1-hour cooldown via last_simulcast_check.
+
+Admin endpoints (require @require_admin):
+  GET  /api/simulcast/list             — list all simulcast series (camelCase DTO)
+  PATCH /api/simulcast/<id>/slug       — update animeflv_slug for a series
+  POST /api/simulcast/sync-jikan       — sync DB with Jikan seasons/now
 """
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
-from flask import Blueprint, jsonify
+from flask import Blueprint, jsonify, request
 
-from auth import require_service
+from auth import require_admin, require_service
+from db.series import get_series_list, get_series_by_id, upsert_series_stub
 from db.simulcast import get_series_simulcast_data, update_simulcast_fields
 from domain.simulcast import resolve_simulcast_status
-from fetcher import fetch_anime_by_id, fetch_kitsu_series_status, fetch_kitsu_episodes, fetch_jikan_episodes
+from fetcher import fetch_anime_by_id, fetch_kitsu_series_status, fetch_kitsu_episodes, fetch_jikan_episodes, fetch_simulcasts
 from routes import _build_episodes
-from storage import upsert_episodes
+from storage import get_series_by_mal_id, get_client, upsert_episodes
 
 simulcast_bp = Blueprint("simulcast", __name__, url_prefix="/api/simulcast")
 
@@ -196,3 +202,123 @@ def refresh_simulcast(series_id: str):
         "is_simulcast": is_simulcast,
         "episodes_ingested": episodes_ingested,
     }), 200
+
+
+# ---------------------------------------------------------------------------
+# Admin routes — all protected by @require_admin
+# ---------------------------------------------------------------------------
+
+
+@simulcast_bp.get("/list")
+@require_admin
+def list_simulcast():
+    """GET /api/simulcast/list
+
+    Returns all series with is_simulcast=True ordered by title ASC,
+    mapped to a camelCase DTO.
+
+    Returns:
+        200  [{id, title, animeflvSlug, malId, isSimulcast, lastSimulcastCheck}]
+        401/403  via @require_admin
+    """
+    rows = get_series_list(simulcast=True, sort="title", limit=200)
+    return jsonify([
+        {
+            "id": r["id"],
+            "title": r["title"],
+            "animeflvSlug": r.get("animeflv_slug"),
+            "malId": r.get("mal_id"),
+            "isSimulcast": r.get("is_simulcast"),
+            "lastSimulcastCheck": r.get("last_simulcast_check"),
+        }
+        for r in rows
+    ]), 200
+
+
+@simulcast_bp.patch("/<series_id>/slug")
+@require_admin
+def update_slug(series_id: str):
+    """PATCH /api/simulcast/<series_id>/slug
+
+    Updates animeflv_slug for the given series.
+
+    Request body: {"slug": "<value>"}  — value may be "" or null to clear the field.
+
+    Returns:
+        200  {id, animeflvSlug}
+        400  {"error": "Missing 'slug' field"}  — if body lacks the key entirely
+        404  {"error": "Series not found"}
+        401/403  via @require_admin
+    """
+    body = request.get_json(silent=True) or {}
+    if "slug" not in body:
+        return jsonify({"error": "Missing 'slug' field"}), 400
+
+    if get_series_by_id(series_id) is None:
+        return jsonify({"error": "Series not found"}), 404
+
+    # Allow empty string or None to clear the field
+    slug = body.get("slug") or None
+    get_client().table("series").update({"animeflv_slug": slug}).eq("id", series_id).execute()
+    return jsonify({"id": series_id, "animeflvSlug": slug}), 200
+
+
+@simulcast_bp.post("/sync-jikan")
+@require_admin
+def sync_jikan():
+    """POST /api/simulcast/sync-jikan
+
+    Fetches currently airing anime from Jikan seasons/now and reconciles
+    the database:
+      - mal_id not in DB → upsert_series_stub + set is_simulcast=True → added
+      - mal_id in DB, is_simulcast=False → set is_simulcast=True → updated
+      - mal_id in DB, is_simulcast=True → skipped
+
+    Returns:
+        200  {added, updated, skipped}
+        502  {"error": "Jikan fetch failed"}  — if Jikan is unreachable
+        401/403  via @require_admin
+    """
+    try:
+        entries = fetch_simulcasts()
+    except Exception:
+        return jsonify({"error": "Jikan fetch failed"}), 502
+
+    added = 0
+    updated = 0
+    skipped = 0
+
+    for entry in entries:
+        # Only process currently airing entries
+        if not entry.get("airing"):
+            continue
+
+        mal_id = entry.get("mal_id")
+        if mal_id is None:
+            continue
+
+        existing = get_series_by_mal_id(mal_id)
+        if existing is None:
+            # New series — create a stub and mark as simulcast immediately
+            upsert_series_stub(mal_id)
+            # upsert_series_stub may not set is_simulcast=True via normalizer,
+            # so we set it explicitly via a direct update (avoids update_simulcast_fields
+            # which stamps last_simulcast_check and resets the cooldown).
+            new_series = get_series_by_mal_id(mal_id)
+            if new_series is not None:
+                get_client().table("series").update({"is_simulcast": True}).eq(
+                    "id", new_series["id"]
+                ).execute()
+            added += 1
+        else:
+            # get_series_by_mal_id only returns {id}; read full row for is_simulcast
+            row = get_series_by_id(existing["id"])
+            if row is not None and not row.get("is_simulcast"):
+                get_client().table("series").update({"is_simulcast": True}).eq(
+                    "id", existing["id"]
+                ).execute()
+                updated += 1
+            else:
+                skipped += 1
+
+    return jsonify({"added": added, "updated": updated, "skipped": skipped}), 200
