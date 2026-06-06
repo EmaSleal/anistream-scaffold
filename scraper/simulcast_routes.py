@@ -294,6 +294,16 @@ def sync_jikan():
         if not entry.get("airing"):
             continue
 
+        # Filter out Hentai genre
+        genres = [g.get("name") for g in entry.get("genres", []) if g.get("name")]
+        if "Hentai" in genres:
+            continue
+
+        # Filter out entries with no score (score <= 0)
+        score = entry.get("score")
+        if not score or float(score) <= 0:
+            continue
+
         mal_id = entry.get("mal_id")
         if mal_id is None:
             continue
