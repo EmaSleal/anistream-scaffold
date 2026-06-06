@@ -9,6 +9,12 @@ export interface SeriesResult {
   slug: string;
 }
 
+export interface AnimeFlvResult {
+  title: string;
+  slug: string;
+  animeflv_url: string;
+}
+
 export async function searchSeries(query: string): Promise<SeriesResult[]> {
   if (!query || query.trim().length < 2) return [];
   const params = new URLSearchParams({ q: query.trim(), limit: "8" });
@@ -16,6 +22,14 @@ export async function searchSeries(query: string): Promise<SeriesResult[]> {
   if (!res.ok) return [];
   const raw = (await res.json()) as Array<{ malId: number; title: string; slug: string }>;
   return raw.map((r) => ({ mal_id: r.malId, title: r.title, slug: r.slug }));
+}
+
+export async function searchAnimeFlv(query: string): Promise<AnimeFlvResult[]> {
+  if (!query || query.trim().length < 2) return [];
+  const params = new URLSearchParams({ q: query.trim(), limit: "10" });
+  const res = await flaskFetch("/api/series/search-animeflv", params);
+  if (!res.ok) return [];
+  return (await res.json()) as AnimeFlvResult[];
 }
 
 interface IngestResult {

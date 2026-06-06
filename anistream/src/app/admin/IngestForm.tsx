@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { ingestSeries, searchSeries, type SeriesResult } from "@/app/actions/ingest";
+import AnimeFlvSlugSearch from "./AnimeFlvSlugSearch";
 import styles from "./admin.module.css";
 
 interface IngestResult {
@@ -121,9 +122,13 @@ export default function IngestForm({ initialSlug }: Props) {
       </div>
 
       <div className={styles.field}>
-        <label className={styles.label} htmlFor="slug">
-          AnimeFlv slug
-        </label>
+        <label className={styles.label}>AnimeFlv slug</label>
+        <AnimeFlvSlugSearch
+          onSelect={(selectedSlug, selectedTitle) => {
+            setSlug(selectedSlug);
+          }}
+          disabled={loading}
+        />
         <input
           id="slug"
           className={styles.input}

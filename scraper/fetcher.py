@@ -278,3 +278,48 @@ def fetch_jikan_by_genre(genre_id: int, limit: int = 15) -> list[dict]:
         return (resp.get("data") or [])[:limit]
     except Exception:
         return []
+
+
+def search_animeflv(query: str, limit: int = 10) -> list[dict]:
+    """Search AnimeFlv by title and return matching anime with slugs.
+
+    Returns list of dicts with {title, slug, animeflv_url}.
+    Returns [] on any error (fail-open).
+    """
+    if not query or len(query.strip()) < 2:
+        return []
+
+    try:
+        # AnimeFlv search URL
+        url = "https://www4.animeflv.net/browse"
+        params = {"q": query}
+
+        resp = requests.get(url, params=params, timeout=10)
+        resp.raise_for_status()
+
+        # Extract anime cards from the response HTML
+        # Pattern: href="/anime/{slug}"
+        pattern = r'<a\s+href="/anime/([^"]+)"[^>]*>\s*<div[^>]*class="[^"]*Image[^"]*"[^>]*>.*?<h3[^>]*class="[^"]*Title[^"]*"[^>]*>([^<]+)</h3>'
+        matches = re.findall(pattern, resp.text, re.DOTALL)
+
+        results = []
+        seen_slugs = set()
+
+        for slug, title in matches:
+            if slug in seen_slugs:
+                continue
+            seen_slugs.add(slug)
+
+            results.append({
+                "title": title.strip(),
+                "slug": slug.strip(),
+                "animeflv_url": f"https://www4.animeflv.net/anime/{slug}",
+            })
+
+            if len(results) >= limit:
+                break
+
+        return results
+
+    except Exception:
+        return []

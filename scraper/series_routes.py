@@ -11,7 +11,7 @@ from domain.series import (
     build_seasons,
 )
 from auth import require_admin, require_auth
-from fetcher import fetch_recommendations, fetch_jikan_by_genre
+from fetcher import fetch_recommendations, fetch_jikan_by_genre, search_animeflv
 
 series_bp = Blueprint("series", __name__, url_prefix="/api/series")
 
@@ -108,6 +108,26 @@ def search_series():
         for r in rows
     ]
     return jsonify(result)
+
+
+@series_bp.get("/search-animeflv")
+@require_admin
+def search_animeflv_results():
+    """GET /api/series/search-animeflv?q= — search AnimeFlv for slugs.
+
+    Returns list of {title, slug, animeflv_url} from AnimeFlv search.
+    """
+    q = request.args.get("q")
+    if not q:
+        return jsonify({"error": "Missing required parameter: q"}), 400
+
+    try:
+        limit = int(request.args.get("limit", 10))
+    except (TypeError, ValueError):
+        limit = 10
+
+    results = search_animeflv(q, limit=limit)
+    return jsonify(results)
 
 
 @series_bp.get("/recommendations")

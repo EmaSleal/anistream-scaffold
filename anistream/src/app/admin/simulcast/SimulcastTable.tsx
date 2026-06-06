@@ -36,7 +36,7 @@ export default function SimulcastTable({ series }: Props) {
   const [sortKey, setSortKey] = useState<SortKey>("title");
   const [sortDir, setSortDir] = useState<SortDirection>("asc");
   const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 10;
+  const itemsPerPage = 15;
 
   const [syncing, startSync] = useTransition();
   const [syncResult, setSyncResult] = useState<SyncResult | null>(null);
