@@ -38,12 +38,14 @@ export async function searchAnimeFlv(query: string): Promise<AnimeFlvResult[]> {
   const { mintInternalToken } = await import("@/lib/internal-token");
   const { flaskAuthGet } = await import("@/lib/flask-client");
 
-  // Get the JWT from auth session (not from Next.js request, since we don't have one here)
-  // We'll need to construct a minimal JWT-like object from the session
+  // Construct JWT-like object from Auth.js session
+  // Note: session.user.role is set by the callbacks in auth.ts
   const token = {
     sub: session.user?.email || "unknown",
-    role: (session as any).role || "USER",
+    role: (session.user as any)?.role || "USER",
   };
+
+  console.log("[searchAnimeFlv] Token payload:", token);
 
   const internalToken = await mintInternalToken(token as any);
   const params = new URLSearchParams({ q: query.trim(), limit: "10" });
