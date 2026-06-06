@@ -26,8 +26,20 @@ export async function searchSeries(query: string): Promise<SeriesResult[]> {
 
 export async function searchAnimeFlv(query: string): Promise<AnimeFlvResult[]> {
   if (!query || query.trim().length < 2) return [];
+
+  const cookieStore = await cookies();
+  const appUrl = getAppUrl();
   const params = new URLSearchParams({ q: query.trim(), limit: "10" });
-  const res = await flaskFetch("/api/series/search-animeflv", params);
+
+  const res = await fetch(`${appUrl}/api/series/search-animeflv?${params}`, {
+    method: "GET",
+    headers: {
+      "Content-Type": "application/json",
+      Cookie: cookieStore.toString(),
+    },
+    cache: "no-store",
+  });
+
   if (!res.ok) return [];
   return (await res.json()) as AnimeFlvResult[];
 }
