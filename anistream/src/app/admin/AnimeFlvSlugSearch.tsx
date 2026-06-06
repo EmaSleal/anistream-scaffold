@@ -27,7 +27,10 @@ export default function AnimeFlvSlugSearch({ onSelect, disabled = false }: Props
     setResults([]);
 
     try {
+      console.log("[AnimeFlvSlugSearch] Searching for:", query);
       const res = await searchAnimeFlv(query);
+      console.log("[AnimeFlvSlugSearch] Got results:", res.length);
+
       if (res.length === 0) {
         setError("No results found on AnimeFlv");
       } else {
@@ -35,7 +38,9 @@ export default function AnimeFlvSlugSearch({ onSelect, disabled = false }: Props
         setOpen(true);
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Search failed");
+      const errMsg = err instanceof Error ? err.message : "Search failed";
+      console.error("[AnimeFlvSlugSearch] Error:", errMsg);
+      setError(errMsg);
     } finally {
       setLoading(false);
     }

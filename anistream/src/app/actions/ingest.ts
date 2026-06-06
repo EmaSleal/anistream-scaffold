@@ -24,17 +24,30 @@ export async function searchSeries(query: string): Promise<SeriesResult[]> {
 }
 
 export async function searchAnimeFlv(query: string): Promise<AnimeFlvResult[]> {
-  if (!query || query.trim().length < 2) return [];
+  if (!query || query.trim().length < 2) {
+    console.log("[searchAnimeFlv] Query too short:", query);
+    return [];
+  }
 
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
   const params = new URLSearchParams({ q: query.trim(), limit: "10" });
+  const url = `${appUrl}/api/admin/series/search-animeflv?${params}`;
 
-  const res = await fetch(`${appUrl}/api/admin/series/search-animeflv?${params}`, {
-    cache: "no-store",
-  });
+  console.log("[searchAnimeFlv] Fetching:", url);
 
-  if (!res.ok) return [];
-  return (await res.json()) as AnimeFlvResult[];
+  const res = await fetch(url, { cache: "no-store" });
+
+  console.log("[searchAnimeFlv] Response status:", res.status);
+
+  if (!res.ok) {
+    const errBody = await res.text();
+    console.error("[searchAnimeFlv] Error response:", res.status, errBody);
+    throw new Error(`Search failed: ${res.status} ${errBody}`);
+  }
+
+  const body = (await res.json()) as AnimeFlvResult[];
+  console.log("[searchAnimeFlv] Results:", body.length, "items");
+  return body;
 }
 
 interface IngestResult {
