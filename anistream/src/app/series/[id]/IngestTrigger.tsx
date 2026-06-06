@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ingestSeries } from "@/app/actions/ingest";
 import { saveAnimeav1Source } from "@/app/actions/stream";
+import AnimeFlvSlugSearch from "@/app/admin/AnimeFlvSlugSearch";
 import styles from "./ingest-trigger.module.css";
 
 type Phase = "loading" | "success" | "failed";
@@ -105,6 +106,10 @@ export default function IngestTrigger({ seriesId, malId, animeflvSlug }: Props) 
               <label className={styles.modalLabel}>
                 AnimeFlv slug <span className={styles.required}>*</span>
               </label>
+              <AnimeFlvSlugSearch
+                onSelect={(slug) => setAnimeflvCustom(slug)}
+                disabled={retrying}
+              />
               <input
                 className={styles.modalInput}
                 type="text"
