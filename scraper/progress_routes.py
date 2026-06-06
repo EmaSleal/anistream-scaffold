@@ -187,3 +187,31 @@ def get_episode_progress(episode_id: str):
     """
     progress_sec = db_progress.get_episode_progress(g.user_id, episode_id)
     return jsonify({"progress_sec": progress_sec}), 200
+
+
+@progress_bp.get("/progress/<user_id>/watched-episodes")
+@require_auth
+def get_watched_episodes(user_id: str):
+    """GET /api/progress/<user_id>/watched-episodes — list of episode IDs watched by user.
+
+    Only returns episodes where progress_sec > 0 (started watching).
+    Authenticated users can only fetch their own data.
+    """
+    if g.user_id != user_id:
+        return jsonify({"error": "Forbidden: can only fetch your own data"}), 403
+
+    try:
+        from storage import get_client
+        result = (
+            get_client()
+            .table("watch_progress")
+            .select("episode_id")
+            .eq("user_id", user_id)
+            .gt("progress_sec", 0)
+            .execute()
+        )
+        episode_ids = [row["episode_id"] for row in (result.data or [])]
+        return jsonify(episode_ids), 200
+    except Exception as e:
+        logging.error("get_watched_episodes failed: %s", e)
+        return jsonify({"error": "Failed to fetch watched episodes"}), 500

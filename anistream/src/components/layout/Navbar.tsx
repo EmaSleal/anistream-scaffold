@@ -50,8 +50,8 @@ export function Navbar() {
           {session?.user?.role === "ADMIN" && (
             <li>
               <Link
-                href="/admin"
-                className={cn(styles.navItem, styles.adminItem, pathname === "/admin" && styles.active)}
+                href="/admin/simulcast"
+                className={cn(styles.navItem, styles.adminItem, pathname === "/admin/simulcast" && styles.active)}
               >
                 Admin
               </Link>

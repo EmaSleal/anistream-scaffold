@@ -1,5 +1,6 @@
 export const dynamic = "force-dynamic";
 
+import { auth } from "@/auth";
 import { AnimeCard } from "@/components/home/AnimeCard";
 import { getSimulcastSeries, consolidateFranchises } from "@/lib/series";
 import { getRecentSimulcastEpisodes } from "@/lib/simulcast-episodes";
@@ -36,17 +37,53 @@ function RecentEpisodeCard({ episode }: { episode: RecentEpisode }) {
       }}
     >
       {thumbnail && (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
-          src={thumbnail}
-          alt={episode.seriesTitle}
+        <div
           style={{
+            position: "relative",
             width: "100%",
             aspectRatio: "16/9",
-            objectFit: "cover",
-            borderRadius: "0.4rem",
           }}
-        />
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={thumbnail}
+            alt={episode.seriesTitle}
+            style={{
+              width: "100%",
+              height: "100%",
+              objectFit: "cover",
+              borderRadius: "0.4rem",
+            }}
+          />
+          {episode.isWatched && (
+            <div
+              style={{
+                position: "absolute",
+                inset: 0,
+                background: "rgba(0, 0, 0, 0.6)",
+                borderRadius: "0.4rem",
+                display: "flex",
+                alignItems: "flex-start",
+                justifyContent: "flex-end",
+                padding: "0.5rem",
+              }}
+            >
+              <span
+                style={{
+                  background: "rgba(0, 0, 0, 0.8)",
+                  color: "#fff",
+                  padding: "0.3rem 0.6rem",
+                  borderRadius: "0.3rem",
+                  fontSize: "0.75rem",
+                  fontWeight: 700,
+                  letterSpacing: "0.05em",
+                }}
+              >
+                VISTO
+              </span>
+            </div>
+          )}
+        </div>
       )}
       <p
         style={{
@@ -74,10 +111,12 @@ function RecentEpisodeCard({ episode }: { episode: RecentEpisode }) {
 }
 
 export default async function SimulcastPage() {
-  const [recent,series ] = await Promise.all([
-    getRecentSimulcastEpisodes(12),
+  const session = await auth();
+  const userId = session?.user?.id;
+
+  const [recent, series] = await Promise.all([
+    getRecentSimulcastEpisodes(12, userId),
     getSimulcastSeries(50),
-    
   ]);
   const consolidated = consolidateFranchises(series);
 
