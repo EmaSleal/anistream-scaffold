@@ -1,7 +1,12 @@
 "use server";
 
+import { cookies } from "next/headers";
 import { auth } from "@/auth";
 import { flaskFetch } from "@/lib/flask-client";
+
+function getAppUrl(): string {
+  return process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
+}
 
 export interface SeriesResult {
   mal_id: number;
