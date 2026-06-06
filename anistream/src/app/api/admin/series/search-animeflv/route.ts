@@ -30,12 +30,41 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   const query = searchParams.get("q") || "";
   const limit = searchParams.get("limit") || "10";
 
-  const flaskParams = new URLSearchParams({ q: query, limit });
-  const flaskRes = await flaskAuthGet(
-    `/api/series/search-animeflv?${flaskParams}`,
-    internalToken,
-  );
+  console.log(`[search-animeflv] Query: ${query}, Limit: ${limit}`);
 
-  const body = await flaskRes.json().catch(() => ({}));
-  return NextResponse.json(body, { status: flaskRes.status });
+  if (!query || query.trim().length < 2) {
+    console.log("[search-animeflv] Query too short, returning empty");
+    return NextResponse.json([], { status: 200 });
+  }
+
+  try {
+    console.log(`[search-animeflv] Minting token...`);
+    console.log(`[search-animeflv] Query: "${query}", Limit: "${limit}"`);
+
+    const flaskParams = new URLSearchParams({ q: query, limit });
+    const queryString = flaskParams.toString();
+    console.log(`[search-animeflv] Query string: ${queryString}`);
+
+    const flaskPath = `/api/series/search-animeflv?${queryString}`;
+    console.log(`[search-animeflv] Calling Flask at: ${flaskPath}`);
+    console.log(`[search-animeflv] Token: ${internalToken.substring(0, 20)}...`);
+
+    const flaskRes = await flaskAuthGet(flaskPath, internalToken);
+
+    console.log(`[search-animeflv] Flask response status: ${flaskRes.status}`);
+
+    const body = await flaskRes.json().catch(() => {
+      console.error("[search-animeflv] Failed to parse Flask response as JSON");
+      return {};
+    });
+    console.log(`[search-animeflv] Flask response:`, body);
+
+    return NextResponse.json(body, { status: flaskRes.status });
+  } catch (err) {
+    console.error("[search-animeflv] Exception:", err);
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : String(err) },
+      { status: 500 }
+    );
+  }
 }
