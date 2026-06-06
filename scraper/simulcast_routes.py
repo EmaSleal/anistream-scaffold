@@ -230,6 +230,7 @@ def list_simulcast():
             "malId": r.get("mal_id"),
             "isSimulcast": r.get("is_simulcast"),
             "lastSimulcastCheck": r.get("last_simulcast_check"),
+            "score": r.get("score"),
         }
         for r in rows
     ]), 200

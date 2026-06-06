@@ -16,11 +16,14 @@ interface Props {
 function formatLastCheck(value: string | null): string {
   if (!value) return "Never";
   try {
-    return new Date(value).toLocaleDateString();
+    return new Date(value).toLocaleDateString("en-CA", { timeZone: "UTC" });
   } catch {
     return value;
   }
 }
+
+type SortKey = "title" | "score" | "lastSimulcastCheck";
+type SortDirection = "asc" | "desc";
 
 export default function SimulcastTable({ series }: Props) {
   const router = useRouter();
@@ -29,6 +32,11 @@ export default function SimulcastTable({ series }: Props) {
   const cancelledRef = useRef(false);
   const [editValue, setEditValue] = useState<string>("");
   const [slugError, setSlugError] = useState<string | null>(null);
+
+  const [sortKey, setSortKey] = useState<SortKey>("title");
+  const [sortDir, setSortDir] = useState<SortDirection>("asc");
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 10;
 
   const [syncing, startSync] = useTransition();
   const [syncResult, setSyncResult] = useState<SyncResult | null>(null);
@@ -99,6 +107,63 @@ export default function SimulcastTable({ series }: Props) {
         );
       }
     });
+  }
+
+  function handleSort(key: SortKey) {
+    if (sortKey === key) {
+      setSortDir(sortDir === "asc" ? "desc" : "asc");
+    } else {
+      setSortKey(key);
+      setSortDir("asc");
+    }
+    setCurrentPage(1);
+  }
+
+  const sortedRows = [...rows].sort((a, b) => {
+    let aVal: string | number | null;
+    let bVal: string | number | null;
+
+    if (sortKey === "title") {
+      aVal = a.title.toLowerCase();
+      bVal = b.title.toLowerCase();
+    } else if (sortKey === "score") {
+      aVal = a.score ?? 0;
+      bVal = b.score ?? 0;
+    } else {
+      aVal = a.lastSimulcastCheck ?? "";
+      bVal = b.lastSimulcastCheck ?? "";
+    }
+
+    const cmp = aVal < bVal ? -1 : aVal > bVal ? 1 : 0;
+    return sortDir === "asc" ? cmp : -cmp;
+  });
+
+  const totalPages = Math.ceil(sortedRows.length / itemsPerPage);
+  const startIdx = (currentPage - 1) * itemsPerPage;
+  const paginatedRows = sortedRows.slice(startIdx, startIdx + itemsPerPage);
+
+  function SortableHeader({ label, sortKeyVal }: { label: string; sortKeyVal: SortKey }) {
+    const isActive = sortKey === sortKeyVal;
+    const arrow = isActive ? (sortDir === "asc" ? " ↑" : " ↓") : "";
+    return (
+      <th
+        onClick={() => handleSort(sortKeyVal)}
+        style={{
+          padding: "0.5rem 0.75rem",
+          fontWeight: 600,
+          cursor: "pointer",
+          userSelect: "none",
+          color: isActive ? "var(--color-brand)" : "inherit",
+          backgroundColor: isActive
+            ? "color-mix(in srgb, var(--color-brand) 8%, transparent)"
+            : undefined,
+        }}
+        title="Click to sort"
+      >
+        {label}
+        {arrow}
+      </th>
+    );
   }
 
   return (
@@ -198,14 +263,15 @@ export default function SimulcastTable({ series }: Props) {
                 textAlign: "left",
               }}
             >
-              <th style={{ padding: "0.5rem 0.75rem", fontWeight: 600 }}>Title</th>
+              <SortableHeader label="Title" sortKeyVal="title" />
               <th style={{ padding: "0.5rem 0.75rem", fontWeight: 600 }}>AnimeFlv Slug</th>
               <th style={{ padding: "0.5rem 0.75rem", fontWeight: 600 }}>MAL ID</th>
-              <th style={{ padding: "0.5rem 0.75rem", fontWeight: 600 }}>Last Check</th>
+              <SortableHeader label="Score" sortKeyVal="score" />
+              <SortableHeader label="Last Check" sortKeyVal="lastSimulcastCheck" />
             </tr>
           </thead>
           <tbody>
-            {rows.map((row) => (
+            {paginatedRows.map((row) => (
               <tr
                 key={row.id}
                 style={{ borderBottom: "1px solid var(--color-border-base)" }}
@@ -254,6 +320,9 @@ export default function SimulcastTable({ series }: Props) {
                   {row.malId ?? "—"}
                 </td>
                 <td style={{ padding: "0.5rem 0.75rem", color: "var(--color-text-secondary)" }}>
+                  {row.score ? row.score.toFixed(1) : "—"}
+                </td>
+                <td style={{ padding: "0.5rem 0.75rem", color: "var(--color-text-secondary)" }}>
                   {formatLastCheck(row.lastSimulcastCheck)}
                 </td>
               </tr>
@@ -261,7 +330,7 @@ export default function SimulcastTable({ series }: Props) {
             {rows.length === 0 && (
               <tr>
                 <td
-                  colSpan={4}
+                  colSpan={5}
                   style={{
                     padding: "2rem",
                     textAlign: "center",
@@ -275,6 +344,66 @@ export default function SimulcastTable({ series }: Props) {
           </tbody>
         </table>
       </div>
+
+      {rows.length > 0 && (
+        <div
+          style={{
+            marginTop: "1.5rem",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            fontSize: "0.875rem",
+            color: "var(--color-text-secondary)",
+          }}
+        >
+          <span>
+            Showing {Math.min(startIdx + 1, sortedRows.length)}–{Math.min(
+              startIdx + itemsPerPage,
+              sortedRows.length,
+            )}{" "}
+            of {sortedRows.length}
+          </span>
+          <div style={{ display: "flex", gap: "0.5rem" }}>
+            <button
+              onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
+              disabled={currentPage === 1}
+              style={{
+                padding: "0.4rem 0.8rem",
+                background: "var(--color-surface)",
+                border: "1px solid var(--color-border)",
+                borderRadius: "var(--radius-md)",
+                color: "var(--color-text-primary)",
+                cursor: currentPage === 1 ? "not-allowed" : "pointer",
+                opacity: currentPage === 1 ? 0.5 : 1,
+                fontFamily: "inherit",
+                fontSize: "0.875rem",
+              }}
+            >
+              Previous
+            </button>
+            <span style={{ padding: "0.4rem 0.8rem" }}>
+              Page {currentPage} of {totalPages || 1}
+            </span>
+            <button
+              onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))}
+              disabled={currentPage === totalPages}
+              style={{
+                padding: "0.4rem 0.8rem",
+                background: "var(--color-surface)",
+                border: "1px solid var(--color-border)",
+                borderRadius: "var(--radius-md)",
+                color: "var(--color-text-primary)",
+                cursor: currentPage === totalPages ? "not-allowed" : "pointer",
+                opacity: currentPage === totalPages ? 0.5 : 1,
+                fontFamily: "inherit",
+                fontSize: "0.875rem",
+              }}
+            >
+              Next
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

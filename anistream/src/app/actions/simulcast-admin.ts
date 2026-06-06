@@ -9,6 +9,7 @@ export interface SimulcastSeries {
   malId: number | null;
   isSimulcast: boolean;
   lastSimulcastCheck: string | null;
+  score: number | null;
 }
 
 export interface SyncResult {
