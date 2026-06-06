@@ -134,9 +134,13 @@ export default function AnimeFlvSlugSearch({ onSelect, disabled = false }: Props
           {results.map((result) => (
             <li
               key={result.slug}
-              onMouseDown={() => handleSelect(result)}
+              onMouseDown={(e) => {
+                e.preventDefault();
+                handleSelect(result);
+              }}
               style={{
                 display: "flex",
+                flexDirection: "column",
                 justifyContent: "space-between",
                 alignItems: "center",
                 gap: "0.8rem",
