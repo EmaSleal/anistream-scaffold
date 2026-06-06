@@ -300,7 +300,8 @@ def sync_jikan():
         existing = get_series_by_mal_id(mal_id)
         if existing is None:
             # New series — create a stub and mark as simulcast immediately
-            upsert_series_stub(mal_id)
+            # Pass entry as fallback in case fetch_anime_by_id fails (e.g., Jikan 500 error)
+            upsert_series_stub(mal_id, entry)
             # upsert_series_stub may not set is_simulcast=True via normalizer,
             # so we set it explicitly via a direct update (avoids update_simulcast_fields
             # which stamps last_simulcast_check and resets the cooldown).

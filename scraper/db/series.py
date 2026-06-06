@@ -135,10 +135,11 @@ def get_series_by_mal_ids(mal_ids: list[int]) -> list[dict]:
     return [map_series_row(row) for row in result.data or []]
 
 
-def upsert_series_stub(mal_id: int) -> None:
+def upsert_series_stub(mal_id: int, entry: dict | None = None) -> None:
     """Fetch full Jikan data for mal_id and upsert a metadata-only stub series.
 
-    The stub will have animeflv_slug=None (no playable source yet).
+    If entry is provided (from seasons/now), use it as a fallback when individual
+    fetch fails. The stub will have animeflv_slug=None (no playable source yet).
     Errors are caught and logged; this function never raises.
     """
     import logging
@@ -146,10 +147,17 @@ def upsert_series_stub(mal_id: int) -> None:
         from fetcher import fetch_anime_by_id
         from normalizer import normalize
         import storage as storage_module
-        raw = fetch_anime_by_id(mal_id)
-        entry = normalize(raw)
-        if entry:
-            storage_module.upsert_many([entry])
+        raw = None
+        try:
+            raw = fetch_anime_by_id(mal_id)
+        except Exception as e:
+            logging.warning("fetch_anime_by_id failed for mal_id=%s, using fallback entry", mal_id)
+            raw = entry
+
+        if raw:
+            normalized = normalize(raw)
+            if normalized:
+                storage_module.upsert_many([normalized])
     except Exception:
         logging.exception("upsert_series_stub failed for mal_id=%s", mal_id)
 
