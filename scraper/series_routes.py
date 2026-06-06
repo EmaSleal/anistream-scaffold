@@ -111,10 +111,10 @@ def search_series():
 
 
 @series_bp.get("/search-animeflv")
-@require_admin
 def search_animeflv_results():
     """GET /api/series/search-animeflv?q= — search AnimeFlv for slugs.
 
+    Public endpoint (no auth required). Scrapes AnimeFlv public search results.
     Returns list of {title, slug, animeflv_url} from AnimeFlv search.
     """
     q = request.args.get("q")
