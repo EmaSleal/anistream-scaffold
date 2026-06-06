@@ -8,6 +8,7 @@ import {
   updateSimulcastSlug,
   syncFromJikan,
 } from "@/app/actions/simulcast-admin";
+import AnimeFlvSlugSearch from "@/app/admin/AnimeFlvSlugSearch";
 
 interface Props {
   series: SimulcastSeries[];
@@ -279,24 +280,30 @@ export default function SimulcastTable({ series }: Props) {
                 <td style={{ padding: "0.5rem 0.75rem" }}>{row.title}</td>
                 <td style={{ padding: "0.5rem 0.75rem" }}>
                   {editingId === row.id ? (
-                    <input
-                      autoFocus
-                      value={editValue}
-                      onChange={(e) => setEditValue(e.target.value)}
-                      onKeyDown={(e) => handleKeyDown(e, row)}
-                      onBlur={() => void handleSave(row)}
-                      style={{
-                        padding: "0.25rem 0.5rem",
-                        background: "var(--color-bg-surface)",
-                        border: "1px solid var(--color-brand)",
-                        borderRadius: "var(--radius-md)",
-                        color: "var(--color-text-primary)",
-                        fontSize: "0.875rem",
-                        fontFamily: "inherit",
-                        width: "100%",
-                        outline: "none",
-                      }}
-                    />
+                    <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+                      <AnimeFlvSlugSearch
+                        onSelect={(slug) => setEditValue(slug)}
+                        disabled={false}
+                      />
+                      <input
+                        autoFocus
+                        value={editValue}
+                        onChange={(e) => setEditValue(e.target.value)}
+                        onKeyDown={(e) => handleKeyDown(e, row)}
+                        onBlur={() => void handleSave(row)}
+                        style={{
+                          padding: "0.25rem 0.5rem",
+                          background: "var(--color-bg-surface)",
+                          border: "1px solid var(--color-brand)",
+                          borderRadius: "var(--radius-md)",
+                          color: "var(--color-text-primary)",
+                          fontSize: "0.875rem",
+                          fontFamily: "inherit",
+                          width: "100%",
+                          outline: "none",
+                        }}
+                      />
+                    </div>
                   ) : (
                     <span
                       onClick={() => startEdit(row)}
