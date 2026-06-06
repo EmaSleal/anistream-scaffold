@@ -1,5 +1,6 @@
 "use server";
 
+import { auth } from "@/auth";
 import { flaskFetch } from "@/lib/flask-client";
 
 export interface SeriesResult {
