@@ -281,10 +281,12 @@ export default function SimulcastTable({ series }: Props) {
                 <td style={{ padding: "0.5rem 0.75rem" }}>
                   {editingId === row.id ? (
                     <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
-                      <AnimeFlvSlugSearch
-                        onSelect={(slug) => setEditValue(slug)}
-                        disabled={false}
-                      />
+                      <div onMouseDown={(e) => e.preventDefault()}>
+                        <AnimeFlvSlugSearch
+                          onSelect={(slug) => setEditValue(slug)}
+                          disabled={false}
+                        />
+                      </div>
                       <input
                         autoFocus
                         value={editValue}
