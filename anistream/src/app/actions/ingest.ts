@@ -25,29 +25,40 @@ export async function searchSeries(query: string): Promise<SeriesResult[]> {
 
 export async function searchAnimeFlv(query: string): Promise<AnimeFlvResult[]> {
   if (!query || query.trim().length < 2) {
-    console.log("[searchAnimeFlv] Query too short:", query);
     return [];
   }
 
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
-  const params = new URLSearchParams({ q: query.trim(), limit: "10" });
-  const url = `${appUrl}/api/admin/series/search-animeflv?${params}`;
-
-  console.log("[searchAnimeFlv] Fetching:", url);
-
-  const res = await fetch(url, { cache: "no-store" });
-
-  console.log("[searchAnimeFlv] Response status:", res.status);
-
-  if (!res.ok) {
-    const errBody = await res.text();
-    console.error("[searchAnimeFlv] Error response:", res.status, errBody);
-    throw new Error(`Search failed: ${res.status} ${errBody}`);
+  const session = await auth();
+  if (!session) {
+    throw new Error("Unauthorized");
   }
 
-  const body = (await res.json()) as AnimeFlvResult[];
-  console.log("[searchAnimeFlv] Results:", body.length, "items");
-  return body;
+  // Since this is a server action, we need to call Flask directly with the internal token
+  const { mintInternalToken } = await import("@/lib/internal-token");
+  const { flaskAuthGet } = await import("@/lib/flask-client");
+
+  // Get the JWT from auth session (not from Next.js request, since we don't have one here)
+  // We'll need to construct a minimal JWT-like object from the session
+  const token = {
+    sub: session.user?.email || "unknown",
+    role: (session as any).role || "USER",
+  };
+
+  const internalToken = await mintInternalToken(token as any);
+  const params = new URLSearchParams({ q: query.trim(), limit: "10" });
+
+  const flaskRes = await flaskAuthGet(
+    `/api/series/search-animeflv?${params.toString()}`,
+    internalToken,
+  );
+
+  if (!flaskRes.ok) {
+    const errBody = await flaskRes.text();
+    console.error("[searchAnimeFlv] Flask error:", flaskRes.status, errBody);
+    throw new Error(`Flask search failed: ${flaskRes.status}`);
+  }
+
+  return (await flaskRes.json()) as AnimeFlvResult[];
 }
 
 interface IngestResult {
