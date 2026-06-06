@@ -1,12 +1,7 @@
 "use server";
 
-import { cookies } from "next/headers";
 import { auth } from "@/auth";
 import { flaskFetch } from "@/lib/flask-client";
-
-function getAppUrl(): string {
-  return process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
-}
 
 export interface SeriesResult {
   mal_id: number;
@@ -32,18 +27,19 @@ export async function searchSeries(query: string): Promise<SeriesResult[]> {
 export async function searchAnimeFlv(query: string): Promise<AnimeFlvResult[]> {
   if (!query || query.trim().length < 2) return [];
 
-  const cookieStore = await cookies();
-  const appUrl = getAppUrl();
+  const session = await auth();
+  if (!session) {
+    throw new Error("Unauthorized");
+  }
+
+  // Import here to avoid top-level server-side dependencies
+  const { mintInternalToken } = await import("@/lib/internal-token");
+  const { flaskAuthGet } = await import("@/lib/flask-client");
+
+  const internalToken = await mintInternalToken(session);
   const params = new URLSearchParams({ q: query.trim(), limit: "10" });
 
-  const res = await fetch(`${appUrl}/api/series/search-animeflv?${params}`, {
-    method: "GET",
-    headers: {
-      "Content-Type": "application/json",
-      Cookie: cookieStore.toString(),
-    },
-    cache: "no-store",
-  });
+  const res = await flaskAuthGet(`/api/series/search-animeflv?${params}`, internalToken);
 
   if (!res.ok) return [];
   return (await res.json()) as AnimeFlvResult[];
