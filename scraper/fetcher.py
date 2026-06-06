@@ -222,10 +222,24 @@ def search_anime_by_title(title: str) -> dict | None:
 
 
 def fetch_simulcasts() -> list[dict]:
-    """Fetch currently airing anime (current season)."""
+    """Fetch currently airing anime (current season).
+
+    Handles pagination (25 items per page). Returns all airing anime.
+    """
     print("  Fetching simulcasts...")
-    data = _get("seasons/now", {"limit": 25})
-    return data.get("data", [])
+    results = []
+    page = 1
+    while True:
+        try:
+            data = _get("seasons/now", {"page": page})
+        except Exception:
+            break
+        results.extend(data.get("data", []))
+        pagination = data.get("pagination", {})
+        if not pagination.get("has_next_page"):
+            break
+        page += 1
+    return results
 
 
 def fetch_kitsu_series_status(kitsu_id: str) -> str | None:
