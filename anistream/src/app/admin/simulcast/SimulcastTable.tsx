@@ -31,6 +31,7 @@ export default function SimulcastTable({ series }: Props) {
   const [rows, setRows] = useState<SimulcastSeries[]>(series);
   const [editingId, setEditingId] = useState<string | null>(null);
   const cancelledRef = useRef(false);
+  const slugInputRef = useRef<HTMLInputElement>(null);
   const [editValue, setEditValue] = useState<string>("");
   const [slugError, setSlugError] = useState<string | null>(null);
 
@@ -283,12 +284,15 @@ export default function SimulcastTable({ series }: Props) {
                     <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
                       <div onMouseDown={(e) => e.preventDefault()}>
                         <AnimeFlvSlugSearch
-                          onSelect={(slug) => setEditValue(slug)}
+                          onSelect={(slug) => {
+                            setEditValue(slug);
+                            setTimeout(() => slugInputRef.current?.focus(), 0);
+                          }}
                           disabled={false}
                         />
                       </div>
                       <input
-                        autoFocus
+                        ref={slugInputRef}
                         value={editValue}
                         onChange={(e) => setEditValue(e.target.value)}
                         onKeyDown={(e) => handleKeyDown(e, row)}
