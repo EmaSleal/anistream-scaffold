@@ -119,30 +119,51 @@ export default function AnimeFlvSlugSearch({ onSelect, disabled = false }: Props
 
       {open && results.length > 0 && (
         <ul
-          className={styles.dropdown}
           style={{
             marginBottom: "0.5rem",
             maxHeight: "250px",
             overflowY: "auto",
+            background: "var(--color-bg-primary)",
+            border: "1px solid var(--color-border)",
+            borderRadius: "0.8rem",
+            padding: "0.4rem",
+            listStyle: "none",
+            margin: "0 0 0.5rem 0",
           }}
         >
           {results.map((result) => (
             <li
               key={result.slug}
-              className={styles.dropdownItem}
               onMouseDown={() => handleSelect(result)}
               style={{
                 display: "flex",
                 justifyContent: "space-between",
                 alignItems: "center",
+                gap: "0.8rem",
+                padding: "0.7rem 1rem",
+                borderRadius: "0.5rem",
+                fontSize: "1.3rem",
+                color: "var(--color-text-secondary)",
+                cursor: "pointer",
+                userSelect: "none",
+                transition: "background 150ms, color 150ms",
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = "rgba(255, 255, 255, 0.06)";
+                e.currentTarget.style.color = "var(--color-text-primary)";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = "transparent";
+                e.currentTarget.style.color = "var(--color-text-secondary)";
               }}
             >
-              <span className={styles.dropdownItemTitle}>{result.title}</span>
+              <span style={{ flex: 1, fontWeight: 500 }}>{result.title}</span>
               <span
                 style={{
                   fontSize: "0.75rem",
                   color: "var(--color-text-secondary)",
                   fontFamily: "monospace",
+                  whiteSpace: "nowrap",
                 }}
               >
                 {result.slug}
