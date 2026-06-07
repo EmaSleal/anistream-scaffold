@@ -27,5 +27,9 @@ export default async function SimulcastPage() {
 
   const series = await getSimulcastSeries();
 
-  return <SimulcastTable series={series} />;
+  return (
+  <div className={styles.page}>
+    <SimulcastTable series={series} />
+  </div>
+  );
 }

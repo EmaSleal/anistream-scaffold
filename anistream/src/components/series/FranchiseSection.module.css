@@ -1,5 +1,7 @@
 .section {
-  padding: 0 2.4rem 3.2rem;
+  max-width: var(--container-max);
+  margin: 0 auto;
+  padding: var(--space-6) 2.4rem var(--space-8);
 }
 
 /* hide the section on phone screens */

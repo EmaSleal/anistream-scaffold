@@ -30,7 +30,7 @@ export function SeriesBanner({ series }: SeriesBannerProps) {
     "HD",
     ...series.genres.slice(0, 4),
   ];
-
+  console.log(series) // DEBUG
   const audioLanguages = "Japanese, Español (América Latina), English, Deutsch, Français";
 
   return (

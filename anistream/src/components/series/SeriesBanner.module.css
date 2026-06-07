@@ -1,11 +1,16 @@
 .banner {
   position: relative;
   width: 100%;
-  min-height: 460px;
+  min-height: 42rem;
   display: flex;
   align-items: flex-end;
   padding-top: var(--nav-height);
 }
+
+@media (max-width: 767px) {
+  .banner { max-height: 10rem; }
+}
+
 
 .backdrop {
   position: absolute;
@@ -21,7 +26,7 @@
 .gradientLeft {
   position: absolute;
   inset: 0;
-  background: linear-gradient(to right, #000 35%, transparent 75%);
+  background: linear-gradient(to right, #000 1%, transparent 99%);
 }
 
 .gradientBottom {
@@ -39,7 +44,7 @@
   width: 100%;
   max-width: var(--container-max);
   margin: 0 auto;
-  padding: 40px 24px 32px;
+  padding: 4rem 2.4rem 3.2rem;
   gap: var(--space-6);
 }
 
@@ -177,8 +182,43 @@
   margin: 0;
 }
 
-@media (max-width: 768px) {
+@media (max-width: 767px) {
+  .banner {
+    min-height: 20rem;
+  }
+
+  /* Landscape banner images crop better with a stronger bottom fade */
+  .gradientLeft {
+    background: linear-gradient(to right, rgba(0,0,0,0.4) 0%, transparent 70%);
+  }
+
+  .gradientBottom {
+    background: linear-gradient(to top, #000 20%, rgba(0,0,0,0.6) 50%, transparent 75%);
+  }
+
+  .content {
+    padding: 1.6rem 1.6rem 2rem;
+  }
+
   .right { display: none; }
-  .titleWrap { flex-direction: column; }
-  .title { font-size: 1.4rem; }
+
+  /* Hide poster — landscape banners crop awkwardly on portrait, hiding it
+     reduces banner height and lets the image breathe */
+  .poster { display: none; }
+
+  /* titleWrap has only one visible child now, no need for row layout */
+  .titleWrap {
+    flex-direction: column;
+    gap: var(--space-2);
+  }
+
+  .title { font-size: 1.5rem; }
+
+  /* Play button takes remaining space so it's easy to tap */
+  .actions { width: 100%; }
+
+  .playBtn {
+    flex: 1;
+    justify-content: center;
+  }
 }
