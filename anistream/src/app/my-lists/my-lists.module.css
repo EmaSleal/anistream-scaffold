@@ -1,5 +1,5 @@
 .page {
-  padding: calc(var(--nav-height) + 40px) 24px 60px;
+  padding: calc(var(--nav-height) + var(--space-10)) var(--space-6) 60px;
   max-width: var(--container-max);
   margin: 0 auto;
 }

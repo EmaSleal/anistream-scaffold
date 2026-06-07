@@ -261,7 +261,7 @@ export default function SimulcastTable({ series }: Props) {
           <thead>
             <tr
               style={{
-                borderBottom: "1px solid var(--color-border-base)",
+                borderBottom: "1px solid var(--color-border)",
                 textAlign: "left",
               }}
             >
@@ -276,7 +276,7 @@ export default function SimulcastTable({ series }: Props) {
             {paginatedRows.map((row) => (
               <tr
                 key={row.id}
-                style={{ borderBottom: "1px solid var(--color-border-base)" }}
+                style={{ borderBottom: "1px solid var(--color-border)" }}
               >
                 <td style={{ padding: "0.5rem 0.75rem" }}>{row.title}</td>
                 <td style={{ padding: "0.5rem 0.75rem" }}>
@@ -380,7 +380,7 @@ export default function SimulcastTable({ series }: Props) {
               disabled={currentPage === 1}
               style={{
                 padding: "0.4rem 0.8rem",
-                background: "var(--color-surface)",
+                background: "var(--color-bg-surface)",
                 border: "1px solid var(--color-border)",
                 borderRadius: "var(--radius-md)",
                 color: "var(--color-text-primary)",
@@ -400,7 +400,7 @@ export default function SimulcastTable({ series }: Props) {
               disabled={currentPage === totalPages}
               style={{
                 padding: "0.4rem 0.8rem",
-                background: "var(--color-surface)",
+                background: "var(--color-bg-surface)",
                 border: "1px solid var(--color-border)",
                 borderRadius: "var(--radius-md)",
                 color: "var(--color-text-primary)",
