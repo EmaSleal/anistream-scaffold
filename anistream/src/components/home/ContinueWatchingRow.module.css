@@ -22,75 +22,9 @@
 
 .row::-webkit-scrollbar { display: none; }
 
-.card {
+.cardItem {
   flex-shrink: 0;
   width: 200px;
   scroll-snap-align: start;
-  text-decoration: none;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
 }
 
-.thumb {
-  position: relative;
-  aspect-ratio: 16 / 9;
-  border-radius: var(--radius-md);
-  overflow: hidden;
-  background: var(--color-bg-card);
-}
-
-.image {
-  object-fit: cover;
-  transition: transform var(--transition-base);
-}
-
-.card:hover .image { transform: scale(1.04); }
-
-.progressBar {
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  height: 3px;
-  background: rgba(255,255,255,0.2);
-}
-
-.progressFill {
-  height: 100%;
-  background: var(--color-brand);
-  border-radius: 0 2px 2px 0;
-}
-
-.playIcon {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: rgba(0,0,0,0.4);
-  opacity: 0;
-  transition: opacity var(--transition-fast);
-}
-
-.card:hover .playIcon { opacity: 1; }
-
-.info {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.series {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--color-text-primary);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.episode {
-  font-size: 11px;
-  color: var(--color-text-secondary);
-}

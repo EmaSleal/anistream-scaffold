@@ -1,10 +1,8 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import Link from "next/link";
-import Image from "next/image";
 import type { Episode } from "@/types";
-import { formatDuration, formatEpisodeLabel } from "@/lib/utils";
+import { EpisodeCard } from "@/components/shared/EpisodeCard";
 import styles from "./EpisodesSection.module.css";
 
 interface Season {
@@ -15,50 +13,6 @@ interface Season {
 interface EpisodesSectionProps {
   seasons: Season[];
   initialSeasonIdx?: number;
-}
-
-function EpisodeCard({ ep }: { ep: Episode }) {
-  const pct = ep.duration > 0 && ep.progressSeconds
-    ? (ep.progressSeconds / ep.duration) * 100
-    : 0;
-
-  return (
-    <Link href={`/watch/${ep.animeflvSlug ?? ep.id}`} className={styles.epCard}>
-      <div className={styles.epThumb}>
-        {ep.thumbnailUrl ? (
-          <Image
-            src={ep.thumbnailUrl}
-            alt={ep.title}
-            fill
-            sizes="(max-width: 768px) 50vw, 280px"
-            className={styles.epThumbImg}
-          />
-        ) : (
-          <div className={styles.epThumbBg} />
-        )}
-        <div className={styles.playOverlay} aria-hidden="true">
-          <svg width="28" height="28" viewBox="0 0 24 24" fill="white">
-            <circle cx="12" cy="12" r="12" fill="rgba(0,0,0,0.55)" />
-            <polygon points="10 8 16 12 10 16 10 8" fill="white" />
-          </svg>
-        </div>
-        {ep.isSeen && <span className={styles.seenBadge}>Visto</span>}
-        {pct > 0 && (
-          <div className={styles.progressBar}>
-            <div className={styles.progressFill} style={{ width: `${pct}%` }} />
-          </div>
-        )}
-      </div>
-      <div className={styles.epInfo}>
-        <p className={styles.epLabel}>
-          {formatEpisodeLabel(ep.episode, ep.season)} — {ep.title}
-        </p>
-        <p className={styles.epMeta}>
-          {formatDuration(ep.duration)} · Sub | Dub
-        </p>
-      </div>
-    </Link>
-  );
 }
 
 export function EpisodesSection({ seasons, initialSeasonIdx = 0 }: EpisodesSectionProps) {
@@ -72,7 +26,7 @@ export function EpisodesSection({ seasons, initialSeasonIdx = 0 }: EpisodesSecti
 
   const current = seasons[seasonIdx];
   const episodes = oldest ? current.episodes : [...current.episodes].reverse();
-  console.log(episodes)
+
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
@@ -151,7 +105,7 @@ export function EpisodesSection({ seasons, initialSeasonIdx = 0 }: EpisodesSecti
 
       <div className={styles.grid}>
         {episodes.map((ep) => (
-          <EpisodeCard key={ep.id} ep={ep} />
+          <EpisodeCard key={ep.id} ep={ep} showSeenBadge />
         ))}
       </div>
 
