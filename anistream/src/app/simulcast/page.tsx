@@ -25,7 +25,7 @@ function RecentEpisodeCard({ episode }: { episode: RecentEpisode }) {
     ? `Ep. ${episode.episodeNumber} — ${episode.title}`
     : `Ep. ${episode.episodeNumber}`;
   const dateLabel = formatAiredAt(episode.airedAt);
-
+  console.log("Rendering RecentEpisodeCard", { episode, thumbnail, epLabel, dateLabel });
   return (
     <div
       style={{

@@ -1,5 +1,7 @@
 import "server-only";
-import { flaskFetch } from "@/lib/flask-client";
+import { auth } from "@/auth";
+import { mintInternalToken } from "@/lib/internal-token";
+import { flaskFetch, flaskAuthGet } from "@/lib/flask-client";
 
 export interface RecentEpisode {
   id: string;
@@ -23,19 +25,28 @@ export async function getRecentSimulcastEpisodes(limit = 20, userId?: string): P
     // If user is authenticated, fetch watch progress
     if (userId) {
       try {
-        const progressRes = await fetch(`/api/progress/${userId}/watched-episodes`, {
-          cache: "no-store",
-        });
-        if (progressRes.ok) {
-          const watchedIds = (await progressRes.json()) as string[];
-          const watchedSet = new Set(watchedIds);
-          return episodes.map((ep) => ({
-            ...ep,
-            isWatched: watchedSet.has(ep.id),
-          }));
+        const session = await auth();
+        if (session?.user?.id) {
+          const token = await mintInternalToken({
+            sub: session.user.id,
+            role: (session.user as any)?.role || "USER",
+          });
+          const progressRes = await flaskAuthGet(`/api/progress/watched-episodes`, token);
+          if (progressRes.ok) {
+            const rows = (await progressRes.json()) as { episode_id: string; progress_sec: number; duration_sec: number }[];
+            const watchedSet = new Set(
+              rows
+                .filter((r) => r.duration_sec > 0 && r.duration_sec - r.progress_sec <= 120)
+                .map((r) => r.episode_id),
+            );
+            return episodes.map((ep) => ({
+              ...ep,
+              isWatched: watchedSet.has(ep.id),
+            }));
+          }
         }
-      } catch {
-        // Fail-open: if progress fetch fails, just return episodes without isWatched
+      } catch (e) {
+        console.error("[simulcast-episodes] watched-episodes fetch failed:", e);
       }
     }
 

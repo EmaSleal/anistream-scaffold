@@ -43,7 +43,7 @@ function EpisodeCard({ ep }: { ep: Episode }) {
           </svg>
         </div>
         {ep.isSeen && <span className={styles.seenBadge}>Visto</span>}
-        {pct > 0 && !ep.isSeen && (
+        {pct > 0 && (
           <div className={styles.progressBar}>
             <div className={styles.progressFill} style={{ width: `${pct}%` }} />
           </div>
@@ -72,6 +72,7 @@ export function EpisodesSection({ seasons, initialSeasonIdx = 0 }: EpisodesSecti
 
   const current = seasons[seasonIdx];
   const episodes = oldest ? current.episodes : [...current.episodes].reverse();
+  console.log(episodes)
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
