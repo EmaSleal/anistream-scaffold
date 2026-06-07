@@ -28,7 +28,7 @@ export default async function SeriesPage({ params }: SeriesPageProps) {
   if (!series) {
     if (isAdmin) redirect(`/admin?slug=${id}`);
     return (
-      <div style={{ paddingTop: "120px", textAlign: "center", color: "rgba(255,255,255,0.5)" }}>
+      <div style={{ paddingTop: "calc(var(--nav-height) + 2rem)", textAlign: "center", color: "rgba(255,255,255,0.5)" }}>
         Series not found.
       </div>
     );

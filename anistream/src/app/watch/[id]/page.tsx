@@ -22,7 +22,7 @@ export default async function WatchPage({ params }: WatchPageProps) {
   const dbResult = await getEpisodeByWatchId(id);
   if (!dbResult) {
     return (
-      <div style={{ paddingTop: "120px", textAlign: "center", color: "rgba(255,255,255,0.5)" }}>
+      <div style={{ paddingTop: "calc(var(--nav-height) + 2rem)", textAlign: "center", color: "rgba(255,255,255,0.5)" }}>
         Episode not found.
       </div>
     );
