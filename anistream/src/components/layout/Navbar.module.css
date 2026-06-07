@@ -5,11 +5,8 @@
   right: 0;
   z-index: var(--z-nav);
   height: var(--nav-height);
-    background: linear-gradient(to bottom, #000000 0%, transparent 100%);
+  background: linear-gradient(to bottom, #000000 0%, transparent 100%);
   transition: background 2s ease;
-    position: fixed;
-
-
 }
 
 .header.scrolled {

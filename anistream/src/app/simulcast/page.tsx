@@ -7,6 +7,7 @@ import { getRecentSimulcastEpisodes } from "@/lib/simulcast-episodes";
 import type { RecentEpisode } from "@/lib/simulcast-episodes";
 import type { Metadata } from "next";
 import styles from "../browse/browse.module.css";
+import sc from "./simulcast.module.css";
 
 export const metadata: Metadata = { title: "Simulcasts" };
 
@@ -25,87 +26,28 @@ function RecentEpisodeCard({ episode }: { episode: RecentEpisode }) {
     ? `Ep. ${episode.episodeNumber} — ${episode.title}`
     : `Ep. ${episode.episodeNumber}`;
   const dateLabel = formatAiredAt(episode.airedAt);
-  console.log("Rendering RecentEpisodeCard", { episode, thumbnail, epLabel, dateLabel });
   return (
-    <div
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        gap: "0.6rem",
-        width: "14rem",
-        flexShrink: 0,
-      }}
-    >
+    <div className={sc.recentCard}>
       {thumbnail && (
-        <div
-          style={{
-            position: "relative",
-            width: "100%",
-            aspectRatio: "16/9",
-          }}
-        >
+        <div className={sc.recentThumb}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src={thumbnail}
             alt={episode.seriesTitle}
-            style={{
-              width: "100%",
-              height: "100%",
-              objectFit: "cover",
-              borderRadius: "0.4rem",
-            }}
+            className={sc.recentImg}
           />
           {episode.isWatched && (
-            <div
-              style={{
-                position: "absolute",
-                inset: 0,
-                background: "rgba(0, 0, 0, 0.6)",
-                borderRadius: "0.4rem",
-                display: "flex",
-                alignItems: "flex-start",
-                justifyContent: "flex-end",
-                padding: "0.5rem",
-              }}
-            >
-              <span
-                style={{
-                  background: "rgba(0, 0, 0, 0.8)",
-                  color: "#fff",
-                  padding: "0.3rem 0.6rem",
-                  borderRadius: "0.3rem",
-                  fontSize: "0.75rem",
-                  fontWeight: 700,
-                  letterSpacing: "0.05em",
-                }}
-              >
-                VISTO
-              </span>
+            <div className={sc.vistoOverlay}>
+              <span className={sc.vistoLabel}>VISTO</span>
             </div>
           )}
         </div>
       )}
-      <p
-        style={{
-          fontSize: "1.3rem",
-          fontWeight: 600,
-          margin: 0,
-          overflow: "hidden",
-          textOverflow: "ellipsis",
-          whiteSpace: "nowrap",
-        }}
-        title={episode.seriesTitle}
-      >
+      <p className={sc.recentTitle} title={episode.seriesTitle}>
         {episode.seriesTitle}
       </p>
-      <p style={{ fontSize: "1.2rem", color: "var(--color-text-secondary)", margin: 0 }}>
-        {epLabel}
-      </p>
-      {dateLabel && (
-        <p style={{ fontSize: "1.1rem", color: "var(--color-text-secondary)", margin: 0 }}>
-          {dateLabel}
-        </p>
-      )}
+      <p className={sc.recentMeta}>{epLabel}</p>
+      {dateLabel && <p className={sc.recentDate}>{dateLabel}</p>}
     </div>
   );
 }
@@ -127,24 +69,9 @@ export default async function SimulcastPage() {
       </div>
 
       {recent.length > 0 && (
-        <section style={{ marginBottom: "3.2rem" }}>
-          <h2
-            style={{
-              fontSize: "1.8rem",
-              fontWeight: 700,
-              marginBottom: "1.6rem",
-            }}
-          >
-            Recently Aired
-          </h2>
-          <div
-            style={{
-              display: "flex",
-              gap: "1.2rem",
-              overflowX: "auto",
-              paddingBottom: "0.8rem",
-            }}
-          >
+        <section className={sc.recentSection}>
+          <h2 className={sc.recentHeading}>Recently Aired</h2>
+          <div className={sc.recentRow}>
             {recent.map((ep) => (
               <RecentEpisodeCard key={ep.id} episode={ep} />
             ))}
@@ -153,7 +80,7 @@ export default async function SimulcastPage() {
       )}
 
       {consolidated.length === 0 ? (
-        <p style={{ color: "var(--color-text-secondary)", fontSize: "1.6rem" }}>
+        <p className={sc.emptyState}>
           No simulcast series available right now. Check back soon.
         </p>
       ) : (
