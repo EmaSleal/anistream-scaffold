@@ -73,7 +73,7 @@ interface IngestResult {
 }
 
 export async function ingestSeries(
-  slug: string,
+  slug: string | undefined,
   malId: number,
   animeav1Slug?: string
 ): Promise<IngestResult> {
@@ -86,7 +86,7 @@ export async function ingestSeries(
   const res = await fetch(`${flaskUrl}/api/ingest`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ animeflv_slug: slug, mal_id: malId, animeav1_slug: animeav1Slug || undefined }),
+    body: JSON.stringify({ animeflv_slug: slug || undefined, mal_id: malId, animeav1_slug: animeav1Slug || undefined }),
     cache: "no-store",
   });
 

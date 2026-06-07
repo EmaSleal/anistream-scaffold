@@ -75,7 +75,7 @@ export default function IngestForm({ initialSlug }: Props) {
     }
   }
 
-  const canSubmit = !!malId && !!slug && !loading;
+  const canSubmit = !!malId && (!!slug || !!animeav1Slug) && !loading;
 
   return (
     <form onSubmit={handleSubmit} className={styles.form}>
@@ -136,7 +136,6 @@ export default function IngestForm({ initialSlug }: Props) {
           placeholder="shingeki-no-kyojin"
           value={slug}
           onChange={(e) => setSlug(e.target.value)}
-          required
           disabled={loading}
         />
       </div>

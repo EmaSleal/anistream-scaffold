@@ -33,12 +33,45 @@ def upsert_episode(episode: dict) -> None:
     client.table("episodes").upsert(episode, on_conflict="id").execute()
 
 
+def get_episode_count(series_id: str) -> int:
+    """Return the number of episodes stored for series_id."""
+    client = get_client()
+    result = (
+        client.table("episodes")
+        .select("id", count="exact")
+        .eq("series_id", series_id)
+        .execute()
+    )
+    return result.count or 0
+
+
 def upsert_episodes(episodes: list[dict]) -> int:
-    """Deduplicate by ``id``, upsert the batch, and return the count upserted."""
+    """Deduplicate by ``id``, upsert the batch, and return the count upserted.
+
+    Before upserting, resolves animeflv_slug conflicts: if a slug already exists
+    with a different id, the stored id is reused so that progress/watchlist
+    foreign-key references are preserved.
+    """
     client = get_client()
     if not episodes:
         return 0
     unique = list({ep["id"]: ep for ep in episodes}.values())
+
+    slugs = [ep["animeflv_slug"] for ep in unique if ep.get("animeflv_slug")]
+    if slugs:
+        resp = (
+            client.table("episodes")
+            .select("id, animeflv_slug")
+            .in_("animeflv_slug", slugs)
+            .execute()
+        )
+        slug_to_id = {row["animeflv_slug"]: row["id"] for row in (resp.data or [])}
+        for ep in unique:
+            stored_id = slug_to_id.get(ep.get("animeflv_slug"))
+            if stored_id and stored_id != ep["id"]:
+                ep["id"] = stored_id
+        unique = list({ep["id"]: ep for ep in unique}.values())
+
     client.table("episodes").upsert(unique, on_conflict="id").execute()
     return len(unique)
 

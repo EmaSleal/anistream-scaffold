@@ -3,7 +3,6 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ingestSeries } from "@/app/actions/ingest";
-import { saveAnimeav1Source } from "@/app/actions/stream";
 import AnimeFlvSlugSearch from "@/app/admin/AnimeFlvSlugSearch";
 import styles from "./ingest-trigger.module.css";
 
@@ -24,10 +23,10 @@ export default function IngestTrigger({ seriesId, malId, animeflvSlug }: Props) 
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [animeflvStatus, setAnimeflvStatus] = useState<"unknown" | "ok" | "failed">("unknown");
 
-  async function tryIngest(slug: string) {
+  async function tryIngest(flvSlug: string | undefined, av1Slug?: string) {
     try {
-      await ingestSeries(slug, malId);
-      setAnimeflvStatus("ok");
+      await ingestSeries(flvSlug, malId, av1Slug);
+      setAnimeflvStatus(flvSlug ? "ok" : "unknown");
       setPhase("success");
       router.refresh();
     } catch (err) {
@@ -46,23 +45,7 @@ export default function IngestTrigger({ seriesId, malId, animeflvSlug }: Props) 
     e.preventDefault();
     setRetrying(true);
     setErrorMsg(null);
-
-    const flvSlug = animeflvCustom.trim();
-    const av1Slug = animeav1Custom.trim();
-
-    // Save animeav1 slug if provided (independent of animeflv result)
-    if (av1Slug) {
-      try {
-        await saveAnimeav1Source(seriesId, av1Slug);
-      } catch {
-        // Non-blocking — animeflv ingest might still work
-      }
-    }
-
-    if (flvSlug) {
-      await tryIngest(flvSlug);
-    }
-
+    await tryIngest(animeflvCustom.trim() || undefined, animeav1Custom.trim() || undefined);
     setRetrying(false);
   }
 
@@ -104,7 +87,7 @@ export default function IngestTrigger({ seriesId, malId, animeflvSlug }: Props) 
           <form onSubmit={handleRetry} className={styles.modalForm}>
             <div className={styles.modalFieldGroup}>
               <label className={styles.modalLabel}>
-                AnimeFlv slug <span className={styles.required}>*</span>
+                AnimeFlv slug <span className={styles.optional}>(opcional — fuente de episodios)</span>
               </label>
               <AnimeFlvSlugSearch
                 onSelect={(slug) => setAnimeflvCustom(slug)}
@@ -116,7 +99,6 @@ export default function IngestTrigger({ seriesId, malId, animeflvSlug }: Props) 
                 placeholder="ej: jujutsu-kaisen-tv"
                 value={animeflvCustom}
                 onChange={(e) => setAnimeflvCustom(e.target.value)}
-                required
                 disabled={retrying}
                 autoFocus
               />
@@ -139,7 +121,7 @@ export default function IngestTrigger({ seriesId, malId, animeflvSlug }: Props) 
             <button
               className={styles.modalBtn}
               type="submit"
-              disabled={retrying || !animeflvCustom.trim()}
+              disabled={retrying || (!animeflvCustom.trim() && !animeav1Custom.trim())}
             >
               {retrying ? "Reintentando…" : "Reintentar ingest"}
             </button>
