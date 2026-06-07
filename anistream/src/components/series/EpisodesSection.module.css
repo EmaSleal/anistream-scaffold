@@ -229,7 +229,7 @@
   justify-content: space-between;
   margin-top: var(--space-6);
   padding-top: var(--space-4);
-  border-top: 1px solid var(--color-border-base);
+  border-top: 1px solid var(--color-border);
 }
 
 .pageBtn {
