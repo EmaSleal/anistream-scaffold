@@ -65,8 +65,9 @@
   --z-player:   300;
 
   /* Layout */
-  --container-max:  1440px;
-  --nav-height:     60px;
+  --container-max:      1440px;
+  --nav-height:         4rem;
+  --bottom-nav-height:  56px;
 }
 
 /* ── Reset ───────────────────────────────────────────────── */
@@ -104,6 +105,13 @@ p { margin: 0; }
   border-radius: 3px;
 }
 ::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.30); }
+
+/* ── Mobile layout clearance ─────────────────────────────── */
+@media (max-width: 767px) {
+  main {
+    padding-bottom: calc(var(--bottom-nav-height) + env(safe-area-inset-bottom, 0px));
+  }
+}
 
 /* ── Utility Classes ─────────────────────────────────────── */
 .sr-only {
