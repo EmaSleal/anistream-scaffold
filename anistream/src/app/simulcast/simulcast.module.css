@@ -17,6 +17,10 @@
   margin-bottom: 1.6rem;
 }
 
+.rowWrapper {
+  position: relative;
+}
+
 .recentRow {
   display: flex;
   gap: 1.2rem;
@@ -26,6 +30,41 @@
 }
 
 .recentRow::-webkit-scrollbar { display: none; }
+
+.arrow {
+  display: none;
+  position: absolute;
+  top: 50%;
+  transform: translateY(-60%);
+  z-index: 2;
+  width: 4rem;
+  height: 4rem;
+  border: none;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(8px);
+  color: #fff;
+  cursor: pointer;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.2s ease, background 0.15s ease;
+  pointer-events: none;
+}
+
+.arrowLeft  { left: 0.6rem; }
+.arrowRight { right: 0.6rem; }
+
+.arrowVisible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.arrow:hover { background: rgba(0, 0, 0, 0.8); }
+
+@media (min-width: 1024px) {
+  .arrow { display: flex; }
+}
 
 .recentCard {
   display: flex;
