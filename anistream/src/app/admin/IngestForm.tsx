@@ -80,13 +80,13 @@ export default function IngestForm({ initialSlug }: Props) {
   return (
     <form onSubmit={handleSubmit} className={styles.form}>
       <div className={styles.field}>
-        <label className={styles.label} htmlFor="series-search">
+        <label className="label-caps" htmlFor="series-search">
           Series
         </label>
         <div className={styles.combobox}>
           <input
             id="series-search"
-            className={styles.input}
+            className="input-field"
             type="text"
             placeholder="Search by title…"
             value={query}
@@ -122,7 +122,7 @@ export default function IngestForm({ initialSlug }: Props) {
       </div>
 
       <div className={styles.field}>
-        <label className={styles.label}>AnimeFlv slug</label>
+        <label className="label-caps">AnimeFlv slug</label>
         <AnimeFlvSlugSearch
           onSelect={(selectedSlug, selectedTitle) => {
             setSlug(selectedSlug);
@@ -131,7 +131,7 @@ export default function IngestForm({ initialSlug }: Props) {
         />
         <input
           id="slug"
-          className={styles.input}
+          className="input-field"
           type="text"
           placeholder="shingeki-no-kyojin"
           value={slug}
@@ -141,12 +141,12 @@ export default function IngestForm({ initialSlug }: Props) {
       </div>
 
       <div className={styles.field}>
-        <label className={styles.label} htmlFor="animeav1-slug">
+        <label className="label-caps" htmlFor="animeav1-slug">
           AnimeAV1 slug <span style={{ fontWeight: 400, textTransform: "none" }}>(opcional — fuente secundaria)</span>
         </label>
         <input
           id="animeav1-slug"
-          className={styles.input}
+          className="input-field"
           type="text"
           placeholder="jujutsu-kaisen"
           value={animeav1Slug}
@@ -155,7 +155,7 @@ export default function IngestForm({ initialSlug }: Props) {
         />
       </div>
 
-      <button type="submit" className={styles.btn} disabled={!canSubmit}>
+      <button type="submit" className="btn-primary" disabled={!canSubmit}>
         {loading ? "Ingesting…" : "Ingest"}
       </button>
 
@@ -171,11 +171,11 @@ export default function IngestForm({ initialSlug }: Props) {
           <div className={styles.resultStats}>
             <div className={styles.stat}>
               <span className={styles.statValue}>{result.episodes_ingested}</span>
-              <span className={styles.statLabel}>Episodes ingested</span>
+              <span className="label-caps">Episodes ingested</span>
             </div>
             <div className={styles.stat}>
               <span className={styles.statValue}>{result.kitsu_episodes_matched}</span>
-              <span className={styles.statLabel}>Kitsu matched</span>
+              <span className="label-caps">Kitsu matched</span>
             </div>
           </div>
         </div>

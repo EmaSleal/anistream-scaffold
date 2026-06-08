@@ -70,7 +70,7 @@ export function FilterBar({ title = "Discover", genres, activeGenre, activeYear,
         <div className={styles.accordionContent}>
           {genres.length > 0 && (
             <div className={styles.filterRow}>
-              <span className={styles.filterLabel}>Genre</span>
+              <span className={`label-caps ${styles.filterLabelWidth}`}>Genre</span>
               <div className={styles.chips}>
                 {genres.map((genre) => {
                   const isActive = genre === activeGenre;
@@ -90,7 +90,7 @@ export function FilterBar({ title = "Discover", genres, activeGenre, activeYear,
           )}
 
           <div className={styles.filterRow}>
-            <span className={styles.filterLabel}>Year</span>
+            <span className={`label-caps ${styles.filterLabelWidth}`}>Year</span>
             <Select
               options={YEAR_OPTIONS}
               placeholder="Any year"
@@ -101,7 +101,7 @@ export function FilterBar({ title = "Discover", genres, activeGenre, activeYear,
           </div>
 
           <div className={styles.filterRow}>
-            <span className={styles.filterLabel}>Season</span>
+            <span className={`label-caps ${styles.filterLabelWidth}`}>Season</span>
             <div className={styles.chips}>
               {SEASONS.map((season) => {
                 const value = season.toLowerCase();

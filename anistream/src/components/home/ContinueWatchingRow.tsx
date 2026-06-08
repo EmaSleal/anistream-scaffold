@@ -12,7 +12,7 @@ export function ContinueWatchingRow({ episodes }: ContinueWatchingRowProps) {
   return (
     <section className={styles.section}>
       <h2 className={styles.title}>Continue Watching</h2>
-      <div className={styles.row} role="list">
+      <div className="row-scroll" role="list">
         {episodes.map((ep) => (
           <EpisodeCard
             key={ep.id}

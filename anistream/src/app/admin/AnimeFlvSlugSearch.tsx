@@ -76,7 +76,7 @@ export default function AnimeFlvSlugSearch({ onSelect, disabled = false }: Props
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={handleKeyDown}
           disabled={loading || disabled}
-          className={styles.input}
+          className="input-field"
           style={{ flex: 1 }}
         />
         <button

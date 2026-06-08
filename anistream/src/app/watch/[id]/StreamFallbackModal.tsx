@@ -32,7 +32,7 @@ export default function StreamFallbackModal({ seriesId, seriesTitle, episodeTitl
 
   return (
     <div className={styles.wrap}>
-      <div className={styles.card}>
+      <div className={`card ${styles.cardModal}`}>
         <div className={styles.icon} aria-hidden="true">⚠</div>
         <h2 className={styles.title}>Video no disponible</h2>
         <p className={styles.desc}>
@@ -48,7 +48,7 @@ export default function StreamFallbackModal({ seriesId, seriesTitle, episodeTitl
 
         <form onSubmit={handleSubmit} className={styles.form}>
           <input
-            className={styles.input}
+            className="input-field"
             type="text"
             placeholder="ej: jujutsu-kaisen"
             value={slug}
@@ -57,7 +57,7 @@ export default function StreamFallbackModal({ seriesId, seriesTitle, episodeTitl
             autoFocus
             required
           />
-          <button className={styles.btn} type="submit" disabled={loading || !slug.trim()}>
+          <button className="btn-primary" type="submit" disabled={loading || !slug.trim()}>
             {loading ? "Guardando…" : "Guardar y reproducir"}
           </button>
         </form>

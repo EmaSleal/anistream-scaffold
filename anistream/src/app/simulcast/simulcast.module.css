@@ -1,3 +1,12 @@
+.page {
+  min-height: 100vh;
+
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-4);
+  padding-top: calc(var(--nav-height) + var(--space-4));
+}
+
 .recentSection {
   margin-bottom: 3.2rem;
 }

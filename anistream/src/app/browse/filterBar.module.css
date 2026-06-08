@@ -106,13 +106,8 @@
   flex-wrap: wrap;
 }
 
-.filterLabel {
-  font-size: 1.2rem;
-  font-weight: 600;
-  color: var(--color-text-secondary);
+.filterLabelWidth {
   min-width: 5rem;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
 }
 
 /* ── Chips ── */

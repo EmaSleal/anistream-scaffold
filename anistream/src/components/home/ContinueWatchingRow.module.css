@@ -1,5 +1,9 @@
 .section {
-  padding: 0 24px var(--space-6);
+  padding: 0 2.4rem var(--space-6);
+}
+
+@media (max-width: 600px) {
+  .section { padding: 0 0 var(--space-6); }
 }
 
 .title {
@@ -11,16 +15,6 @@
   letter-spacing: 0.04em;
 }
 
-.row {
-  display: flex;
-  gap: var(--space-3);
-  overflow-x: auto;
-  scrollbar-width: none;
-  scroll-snap-type: x mandatory;
-  padding-bottom: 4px;
-}
-
-.row::-webkit-scrollbar { display: none; }
 
 .cardItem {
   flex-shrink: 0;

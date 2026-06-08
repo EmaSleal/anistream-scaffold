@@ -16,8 +16,8 @@ export default async function SimulcastPage() {
 
   if (session.user.role !== "ADMIN") {
     return (
-      <div className={styles.page}>
-        <div className={styles.card}>
+      <div className="page-content">
+        <div className={`card ${styles.cardAdmin}`}>
           <h1 className={styles.title}>Access denied</h1>
           <p className={styles.subtitle}>This page is restricted to admins.</p>
         </div>
@@ -28,7 +28,7 @@ export default async function SimulcastPage() {
   const series = await getSimulcastSeries();
 
   return (
-  <div className={styles.page}>
+  <div className="page-content">
     <SimulcastTable series={series} />
   </div>
   );

@@ -7,7 +7,7 @@ export const metadata: Metadata = { title: "Sign In" };
 export default function LoginPage() {
   return (
     <div className={styles.page}>
-      <div className={styles.card}>
+      <div className={`card ${styles.cardCentered}`}>
         <div className={styles.logo}>
           <svg width="40" height="40" viewBox="0 0 28 28" aria-hidden="true">
             <circle cx="14" cy="14" r="14" fill="#F47521" />

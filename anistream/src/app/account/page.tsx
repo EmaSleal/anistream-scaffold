@@ -18,7 +18,7 @@ export default async function AccountPage() {
 
   return (
     <div className={styles.page}>
-      <div className={styles.card}>
+      <div className={`card ${styles.cardCentered}`}>
         <div className={styles.avatarWrap}>
           {user?.image ? (
             <Image
@@ -43,7 +43,7 @@ export default async function AccountPage() {
         <div className={styles.stats}>
           <div className={styles.stat}>
             <span className={styles.statValue}>{watchlistIds.length}</span>
-            <span className={styles.statLabel}>In Watchlist</span>
+            <span className="label-caps">In Watchlist</span>
           </div>
         </div>
 

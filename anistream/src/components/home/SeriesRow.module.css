@@ -23,6 +23,11 @@
   padding-bottom: 0.8rem;
 }
 
+@media (max-width: 600px) {
+  .row { padding-left: 0; scroll-padding-left: 1.2rem; }
+  .title { padding: 0; }
+}
+
 .row::-webkit-scrollbar { display: none; }
 .row > * { scroll-snap-align: start; }
 

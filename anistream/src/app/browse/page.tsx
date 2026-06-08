@@ -33,7 +33,7 @@ export default async function BrowsePage({
     : "all";
 
   return (
-    <div className={styles.page}>
+    <div className="page-content">
       <nav className={styles.tabs} aria-label="Browse filters">
         {TABS.map((t) => (
           <Link

@@ -16,8 +16,8 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
   if (!session) redirect("/login");
   if (session.user.role !== "ADMIN") {
     return (
-      <div className={styles.page}>
-        <div className={styles.card}>
+      <div className="page-content">
+        <div className={`card ${styles.cardAdmin}`}>
           <h1 className={styles.title}>Access denied</h1>
           <p className={styles.subtitle}>This page is restricted to admins.</p>
         </div>
@@ -28,8 +28,8 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
   const { slug } = await searchParams;
 
   return (
-    <div className={styles.page}>
-      <div className={styles.card}>
+    <div className="page-content">
+      <div className={`card ${styles.cardAdmin}`}>
         <div className={styles.header}>
           <h1 className={styles.title}>Admin — Ingest Series</h1>
           <p className={styles.subtitle}>

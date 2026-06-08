@@ -63,7 +63,7 @@ export default async function SimulcastPage() {
   const consolidated = consolidateFranchises(series);
 
   return (
-    <div className={styles.page}>
+    <div className="page-content">
       <div className={styles.header}>
         <h1 className={styles.heading}>Simulcasts</h1>
       </div>

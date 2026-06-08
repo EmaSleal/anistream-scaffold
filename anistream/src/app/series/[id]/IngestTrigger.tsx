@@ -72,7 +72,7 @@ export default function IngestTrigger({ seriesId, malId, animeflvSlug }: Props) 
         No hay episodios disponibles.
       </div>
       <div className={styles.backdrop}>
-        <div className={styles.modal}>
+        <div className={`card ${styles.modalCard}`}>
           <h2 className={styles.modalTitle}>No se encontraron episodios</h2>
 
           <div className={styles.statusRow}>
@@ -86,7 +86,7 @@ export default function IngestTrigger({ seriesId, malId, animeflvSlug }: Props) 
 
           <form onSubmit={handleRetry} className={styles.modalForm}>
             <div className={styles.modalFieldGroup}>
-              <label className={styles.modalLabel}>
+              <label className="label-caps">
                 AnimeFlv slug <span className={styles.optional}>(opcional — fuente de episodios)</span>
               </label>
               <AnimeFlvSlugSearch
@@ -94,7 +94,7 @@ export default function IngestTrigger({ seriesId, malId, animeflvSlug }: Props) 
                 disabled={retrying}
               />
               <input
-                className={styles.modalInput}
+                className="input-field"
                 type="text"
                 placeholder="ej: jujutsu-kaisen-tv"
                 value={animeflvCustom}
@@ -105,11 +105,11 @@ export default function IngestTrigger({ seriesId, malId, animeflvSlug }: Props) 
             </div>
 
             <div className={styles.modalFieldGroup}>
-              <label className={styles.modalLabel}>
+              <label className="label-caps">
                 AnimeAV1 slug <span className={styles.optional}>(opcional — fuente de video alternativa)</span>
               </label>
               <input
-                className={styles.modalInput}
+                className="input-field"
                 type="text"
                 placeholder="ej: jujutsu-kaisen"
                 value={animeav1Custom}
@@ -119,7 +119,7 @@ export default function IngestTrigger({ seriesId, malId, animeflvSlug }: Props) 
             </div>
 
             <button
-              className={styles.modalBtn}
+              className="btn-primary"
               type="submit"
               disabled={retrying || (!animeflvCustom.trim() && !animeav1Custom.trim())}
             >

@@ -7,16 +7,8 @@
   background: var(--color-bg-primary);
 }
 
-.card {
-  background: var(--color-bg-card);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  padding: var(--space-8);
-  width: 100%;
+.cardModal {
   max-width: 480px;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-4);
 }
 
 .icon {
@@ -56,33 +48,3 @@
   gap: var(--space-3);
 }
 
-.input {
-  padding: var(--space-3);
-  background: var(--color-bg-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  color: var(--color-text-primary);
-  font-size: 0.95rem;
-  font-family: inherit;
-  outline: none;
-  transition: border-color var(--transition-fast);
-}
-
-.input:focus { border-color: var(--color-brand); }
-.input:disabled { opacity: 0.5; }
-
-.btn {
-  padding: var(--space-3);
-  background: var(--color-brand);
-  border: none;
-  border-radius: var(--radius-md);
-  color: #fff;
-  font-size: 0.95rem;
-  font-weight: 700;
-  font-family: inherit;
-  cursor: pointer;
-  transition: opacity var(--transition-fast);
-}
-
-.btn:hover:not(:disabled) { opacity: 0.85; }
-.btn:disabled { opacity: 0.4; cursor: not-allowed; }
