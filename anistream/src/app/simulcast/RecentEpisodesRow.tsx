@@ -7,7 +7,12 @@ import sc from "./simulcast.module.css";
 function formatAiredAt(airedAt: string | undefined): string {
   if (!airedAt) return "";
   try {
-    return new Date(airedAt).toLocaleDateString();
+    return new Intl.DateTimeFormat("en-US", {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+      timeZone: "UTC",
+    }).format(new Date(airedAt));
   } catch {
     return airedAt;
   }
