@@ -124,7 +124,7 @@ export default function IngestForm({ initialSlug }: Props) {
       <div className={styles.field}>
         <label className="label-caps">AnimeFlv slug</label>
         <AnimeFlvSlugSearch
-          onSelect={(selectedSlug, selectedTitle) => {
+          onSelect={(selectedSlug) => {
             setSlug(selectedSlug);
           }}
           disabled={loading}

@@ -21,16 +21,13 @@ export default function IngestTrigger({ seriesId, malId, animeflvSlug }: Props) 
   const [animeav1Custom, setAnimeav1Custom] = useState("");
   const [retrying, setRetrying] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [animeflvStatus, setAnimeflvStatus] = useState<"unknown" | "ok" | "failed">("unknown");
 
   async function tryIngest(flvSlug: string | undefined, av1Slug?: string) {
     try {
       await ingestSeries(flvSlug, malId, av1Slug);
-      setAnimeflvStatus(flvSlug ? "ok" : "unknown");
       setPhase("success");
       router.refresh();
     } catch (err) {
-      setAnimeflvStatus("failed");
       setErrorMsg(err instanceof Error ? err.message : "Ingest failed");
       setPhase("failed");
     }

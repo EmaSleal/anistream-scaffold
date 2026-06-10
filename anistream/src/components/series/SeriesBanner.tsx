@@ -1,7 +1,6 @@
 import Image from "next/image";
 import Link from "next/link";
 import type { Series } from "@/types";
-import { Badge } from "@/components/ui/Badge";
 import { SeriesDetailsToggle } from "./SeriesDetailsToggle";
 import styles from "./SeriesBanner.module.css";
 
@@ -30,7 +29,6 @@ export function SeriesBanner({ series }: SeriesBannerProps) {
     "HD",
     ...series.genres.slice(0, 4),
   ];
-  console.log(series) // DEBUG
   const audioLanguages = "Japanese, Español (América Latina), English, Deutsch, Français";
 
   return (

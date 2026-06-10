@@ -48,9 +48,11 @@ export function useWatchlist() {
 
   const toggleWatchlist = useCallback(
     (seriesId: string) => {
-      isInWatchlist(seriesId)
-        ? removeFromWatchlist(seriesId)
-        : addToWatchlist(seriesId);
+      if (isInWatchlist(seriesId)) {
+        removeFromWatchlist(seriesId);
+      } else {
+        addToWatchlist(seriesId);
+      }
     },
     [isInWatchlist, addToWatchlist, removeFromWatchlist]
   );

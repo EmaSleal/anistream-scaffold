@@ -21,7 +21,7 @@ const BOTTOM_NAV_ITEMS = [
   { label: "My Lists",   href: "/my-lists" },
   { label: "Browse",     href: "/browse" },
   { label: "Simulcasts", href: "/simulcast" },
-];
+] as const;
 
 function NavIcon({ href }: { href: string }) {
   switch (href) {

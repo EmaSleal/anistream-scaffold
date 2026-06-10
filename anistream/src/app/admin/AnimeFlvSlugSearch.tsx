@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import { searchAnimeFlv, type AnimeFlvResult } from "@/app/actions/ingest";
-import styles from "./admin.module.css";
 
 interface Props {
   onSelect: (slug: string, title: string) => void;

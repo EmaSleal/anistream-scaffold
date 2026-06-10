@@ -3,7 +3,7 @@
  *
  * Run with: pnpm vitest (requires vitest to be installed as devDependency)
  */
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, vi, afterEach } from "vitest";
 import { isBroadcastDay, isCooldownElapsed } from "./simulcast";
 
 // ---------------------------------------------------------------------------

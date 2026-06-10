@@ -9,7 +9,7 @@ import { usePlayerControls } from "@/hooks/usePlayerControls";
 import { saveWatchProgress, advanceToNextEpisode } from "@/app/actions/watchProgress";
 import { PlayerControls } from "./PlayerControls";
 import { Badge } from "@/components/ui/Badge";
-import { formatDuration, formatEpisodeLabel } from "@/lib/utils";
+import { formatEpisodeLabel } from "@/lib/utils";
 import styles from "./VideoPlayer.module.css";
 
 interface VideoPlayerProps {

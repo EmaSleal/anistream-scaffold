@@ -1,5 +1,6 @@
 "use server";
 
+import type { JWT } from "next-auth/jwt";
 import { auth } from "@/auth";
 import { flaskFetch } from "@/lib/flask-client";
 
@@ -40,14 +41,12 @@ export async function searchAnimeFlv(query: string): Promise<AnimeFlvResult[]> {
 
   // Construct JWT-like object from Auth.js session
   // Note: session.user.role is set by the callbacks in auth.ts
-  const token = {
+  const token: JWT = {
     sub: session.user?.email || "unknown",
-    role: (session.user as any)?.role || "USER",
+    role: (session.user as { role?: string })?.role || "USER",
   };
 
-  console.log("[searchAnimeFlv] Token payload:", token);
-
-  const internalToken = await mintInternalToken(token as any);
+  const internalToken = await mintInternalToken(token);
   const params = new URLSearchParams({ q: query.trim(), limit: "10" });
 
   const flaskRes = await flaskAuthGet(

@@ -29,7 +29,7 @@ export async function getRecentSimulcastEpisodes(limit = 20, userId?: string): P
         if (session?.user?.id) {
           const token = await mintInternalToken({
             sub: session.user.id,
-            role: (session.user as any)?.role || "USER",
+            role: (session.user as { role?: string })?.role || "USER",
           });
           const progressRes = await flaskAuthGet(`/api/progress/watched-episodes`, token);
           if (progressRes.ok) {

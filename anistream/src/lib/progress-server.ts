@@ -15,7 +15,7 @@ export async function getEpisodeProgressMap(seriesId?: string): Promise<Map<stri
 
     const token = await mintInternalToken({
       sub: session.user.id,
-      role: (session.user as any)?.role || "USER",
+      role: (session.user as { role?: string })?.role || "USER",
     });
 
     const path = seriesId
@@ -40,7 +40,7 @@ export async function getLastWatchedInFranchise(memberIds: string[]): Promise<st
 
     const token = await mintInternalToken({
       sub: session.user.id,
-      role: (session.user as any)?.role || "USER",
+      role: (session.user as { role?: string })?.role || "USER",
     });
 
     const params = new URLSearchParams({ series_ids: memberIds.join(",") });

@@ -84,7 +84,6 @@ export default function SimulcastTable({ series }: Props) {
 
   function handleKeyDown(
     e: React.KeyboardEvent<HTMLInputElement>,
-    row: SimulcastSeries,
   ) {
     if (e.key === "Enter") {
       e.preventDefault();
@@ -293,7 +292,7 @@ export default function SimulcastTable({ series }: Props) {
                         ref={slugInputRef}
                         value={editValue}
                         onChange={(e) => setEditValue(e.target.value)}
-                        onKeyDown={(e) => handleKeyDown(e, row)}
+                        onKeyDown={(e) => handleKeyDown(e)}
                         onBlur={() => void handleSave(row)}
                         style={{
                           padding: "0.25rem 0.5rem",

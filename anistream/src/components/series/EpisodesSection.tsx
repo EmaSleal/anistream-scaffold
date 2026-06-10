@@ -16,17 +16,11 @@ interface EpisodesSectionProps {
 }
 
 export function EpisodesSection({ seasons, initialSeasonIdx = 0 }: EpisodesSectionProps) {
-  if (seasons.length === 0) return null;
-
   const [seasonIdx, setSeasonIdx] = useState(initialSeasonIdx);
   const [oldest, setOldest] = useState(true);
   const [optionsOpen, setOptionsOpen] = useState(false);
   const [selectOpen, setSelectOpen] = useState(false);
   const optionsRef = useRef<HTMLDivElement>(null);
-
-  const current = seasons[seasonIdx];
-  const episodes = oldest ? current.episodes : [...current.episodes].reverse();
-
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
@@ -37,6 +31,11 @@ export function EpisodesSection({ seasons, initialSeasonIdx = 0 }: EpisodesSecti
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
   }, []);
+
+  if (seasons.length === 0) return null;
+
+  const current = seasons[seasonIdx];
+  const episodes = oldest ? current.episodes : [...current.episodes].reverse();
 
   return (
     <section className={styles.section}>

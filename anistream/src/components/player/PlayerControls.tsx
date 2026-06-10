@@ -1,6 +1,5 @@
 "use client";
 
-import { useRef } from "react";
 import type { PlayerState } from "@/types";
 import { ProgressBar } from "./ProgressBar";
 import { formatDuration, cn } from "@/lib/utils";
