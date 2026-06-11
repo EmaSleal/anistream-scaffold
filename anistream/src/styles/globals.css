@@ -26,6 +26,12 @@
   --color-border-hover:   rgba(255, 255, 255, 0.20);
   --color-border-strong:  rgba(255, 255, 255, 0.30);
 
+  /* Semantic status */
+  --color-success:        #86efac;
+  --color-error:          #fca5a5;
+  --color-error-dim:      rgba(239, 68, 68, 0.15);
+  --color-error-border:   rgba(239, 68, 68, 0.40);
+
   /* Player specific */
   --color-progress-track: rgba(255, 255, 255, 0.20);
   --color-progress-fill:  #F47521;

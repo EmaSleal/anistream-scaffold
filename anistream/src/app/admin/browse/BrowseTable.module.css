@@ -1,0 +1,190 @@
+.filterGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: var(--space-3);
+  margin-bottom: var(--space-6);
+}
+
+.filterGrid input,
+.filterGrid select {
+  padding: var(--space-2) var(--space-3);
+  background: var(--color-bg-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  color: var(--color-text-primary);
+  font-family: inherit;
+  font-size: 0.875rem;
+  width: 100%;
+  outline: none;
+  transition: border-color var(--transition-fast);
+}
+
+.filterGrid input:focus,
+.filterGrid select:focus {
+  border-color: var(--color-brand);
+}
+
+.filterGrid select option {
+  background: var(--color-bg-card);
+}
+
+.filterActions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  grid-column: 1 / -1;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.table th {
+  padding: var(--space-2) var(--space-3);
+  font-weight: 600;
+  text-align: left;
+  border-bottom: 1px solid var(--color-border);
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+}
+
+.table td {
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--color-border);
+  vertical-align: middle;
+}
+
+.thumbnail {
+  width: 40px;
+  height: 56px;
+  object-fit: cover;
+  border-radius: var(--radius-sm);
+  display: block;
+}
+
+.thumbnailPlaceholder {
+  width: 40px;
+  height: 56px;
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-surface);
+  border: 1px solid var(--color-border);
+}
+
+.ingestBtn {
+  padding: var(--space-1) var(--space-3);
+  background: var(--color-brand);
+  border: none;
+  border-radius: var(--radius-md);
+  color: #fff;
+  font-weight: 700;
+  font-family: inherit;
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: opacity var(--transition-fast);
+  white-space: nowrap;
+}
+
+.ingestBtn:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.ingestBtn:not(:disabled):hover {
+  opacity: 0.85;
+}
+
+.statusIdle {
+  color: var(--color-text-secondary);
+  font-size: 0.8rem;
+}
+
+.statusLoading {
+  color: var(--color-brand);
+  font-size: 0.8rem;
+}
+
+.statusDone {
+  color: var(--color-success);
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.statusError {
+  color: var(--color-error);
+  font-size: 0.8rem;
+}
+
+.emptyState {
+  padding: var(--space-8);
+  text-align: center;
+  color: var(--color-text-secondary);
+}
+
+.errorBanner {
+  padding: var(--space-3);
+  background: var(--color-error-dim);
+  border: 1px solid var(--color-error-border);
+  border-radius: var(--radius-md);
+  font-size: 0.875rem;
+  color: var(--color-error);
+  margin-bottom: var(--space-4);
+}
+
+.pagination {
+  margin-top: var(--space-6);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 0.875rem;
+  color: var(--color-text-secondary);
+}
+
+.paginationControls {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.paginationBtn {
+  padding: var(--space-1) var(--space-4);
+  background: var(--color-bg-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  color: var(--color-text-primary);
+  font-family: inherit;
+  font-size: 0.875rem;
+  cursor: pointer;
+  transition: opacity var(--transition-fast);
+}
+
+.paginationBtn:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
+.paginationBtn:not(:disabled):hover {
+  border-color: var(--color-border-hover);
+}
+
+.searchBtn {
+  padding: var(--space-2) var(--space-5);
+  background: var(--color-brand);
+  border: none;
+  border-radius: var(--radius-md);
+  color: #fff;
+  font-weight: 700;
+  font-family: inherit;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: opacity var(--transition-fast);
+}
+
+.searchBtn:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.searchBtn:not(:disabled):hover {
+  opacity: 0.85;
+}
