@@ -31,7 +31,7 @@ export default async function HomePage() {
   return (
     <>
       <HeroBanner featured={featured.length ? featured : allSeries.slice(0, 5)} watchlistIds={watchlistIds} />
-      <div className="page-content" style={{ paddingTop: "var(--space-8)" }}>
+      <div className="home-content" style={{ paddingTop: "var(--space-8)" }}>
         <ContinueWatchingRow episodes={continueWatching} />
         {recs.length > 0 && <SeriesRow title="Recommended for You" series={recs} />}
         <SeriesRow title="Top Picks for You" series={topPicks} />

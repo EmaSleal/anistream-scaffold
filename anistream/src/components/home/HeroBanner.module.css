@@ -44,7 +44,7 @@
 .content {
   position: relative;
   z-index: 1;
-  padding: 0 32px;
+  padding: 0 2.4rem;
   max-width: 560px;
 }
 
@@ -61,6 +61,8 @@
   .meta {
     background: linear-gradient(135deg, #000000 48%, transparent 100%);
   }
+
+  .content{ padding: 0 1.2rem; }
 }
 
 .formats { font-size: 12px; color: var(--color-text-secondary); }
@@ -107,8 +109,8 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 44px;
-  height: 44px;
+  width: 3rem;
+  height: 3rem;
   background: rgba(255,255,255,0.10);
   border: 1.5px solid rgba(255,255,255,0.30);
   border-radius: var(--radius-md);
@@ -120,8 +122,8 @@
 
 .dots {
   position: absolute;
-  bottom: 28px;
-  left: 32px;
+  bottom: 2rem;
+  left: 2.4rem;
   z-index: 1;
   display: flex;
   align-items: center;
@@ -136,6 +138,11 @@
   transition: width var(--transition-base), background var(--transition-base);
 }
 .dotActive {
-  width: 24px;
+  width: 2.4rem;
   background: var(--color-brand);
+}
+
+
+@media (max-width: 768px) {
+  .dots { left: 1.2rem; }
 }

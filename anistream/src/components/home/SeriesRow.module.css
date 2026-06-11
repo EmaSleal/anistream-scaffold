@@ -5,7 +5,7 @@
   font-weight: 700;
   color: var(--color-text-primary);
   margin-bottom: 1.4rem;
-  padding: 0 2.4rem;
+  /* padding: 0 2.4rem; */
 }
 
 .wrapper {
@@ -19,7 +19,7 @@
   scroll-snap-type: x mandatory;
   scroll-padding-left: 2.4rem;
   scrollbar-width: none;
-  padding-left: 2.4rem;
+  /* padding-left: 2.4rem; */
   padding-bottom: 0.8rem;
 }
 

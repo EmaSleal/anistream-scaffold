@@ -66,6 +66,7 @@
 
   /* Layout */
   --container-max:      1440px;
+  --homepage-max:       1800px;
   --nav-height:         4rem;
   --bottom-nav-height:  56px;
 }
@@ -196,8 +197,18 @@ p { margin: 0; }
   padding-right: 2.4rem;
 }
 
+.home-content {
+    padding-top: calc(var(--nav-height) + 2rem);
+    padding-bottom: 6rem;
+    max-width: fit-content;
+    margin: 0 auto;
+    padding-left: 2.4rem;
+    padding-right: 2.4rem;
+}
+
 @media (max-width: 600px) {
   .page-content { padding-left: 1.2rem; padding-right: 1.2rem; }
+  .home-content { padding-left: 1.2rem; padding-right: 1.2rem; }
 }
 
 .label-caps {

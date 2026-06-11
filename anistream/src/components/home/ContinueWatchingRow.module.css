@@ -23,7 +23,7 @@
 .row {
   scroll-snap-type: x mandatory;
   scroll-padding-left: 2.4rem;
-  padding-left: 2.4rem;
+  /* padding-left: 2.4rem; */
   padding-bottom: 0.8rem;
 }
 
