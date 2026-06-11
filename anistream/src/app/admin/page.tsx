@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import type { Metadata } from "next";
 import { auth } from "@/auth";
 import IngestForm from "@/components/admin/IngestForm";
+import { AdminNav } from "@/components/admin/AdminNav";
 import styles from "./admin.module.css";
 
 export const metadata: Metadata = { title: "Admin" };
@@ -29,6 +30,7 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
 
   return (
     <div className="page-content">
+      <AdminNav />
       <div className={`card ${styles.cardAdmin}`}>
         <div className={styles.header}>
           <h1 className={styles.title}>Admin — Ingest Series</h1>

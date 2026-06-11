@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import type { Metadata } from "next";
 import { auth } from "@/auth";
 import BrowseTable from "@/components/admin/BrowseTable";
+import { AdminNav } from "@/components/admin/AdminNav";
 import styles from "../admin.module.css";
 
 export const dynamic = "force-dynamic";
@@ -26,6 +27,7 @@ export default async function BrowsePage() {
 
   return (
     <div className="page-content">
+      <AdminNav />
       <BrowseTable />
     </div>
   );

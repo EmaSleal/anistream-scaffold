@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import { auth } from "@/auth";
 import { getSimulcastSeries } from "@/app/actions/simulcast-admin";
 import SimulcastTable from "@/components/admin/SimulcastTable";
+import { AdminNav } from "@/components/admin/AdminNav";
 import styles from "../admin.module.css";
 
 export const dynamic = "force-dynamic";
@@ -28,8 +29,9 @@ export default async function SimulcastPage() {
   const series = await getSimulcastSeries();
 
   return (
-  <div className="page-content">
-    <SimulcastTable series={series} />
-  </div>
+    <div className="page-content">
+      <AdminNav />
+      <SimulcastTable series={series} />
+    </div>
   );
 }
