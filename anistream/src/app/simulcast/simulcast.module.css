@@ -72,12 +72,16 @@
   gap: 0.6rem;
   width: 14rem;
   flex-shrink: 0;
+  text-decoration: none;
+  color: inherit;
 }
 
 .recentThumb {
   position: relative;
   width: 100%;
   aspect-ratio: 16 / 9;
+  overflow: hidden;
+  border-radius: 0.4rem;
 }
 
 .recentImg {
@@ -85,6 +89,11 @@
   height: 100%;
   object-fit: cover;
   border-radius: 0.4rem;
+  transition: transform var(--transition-base);
+}
+
+.recentCard:hover .recentImg {
+  transform: scale(1.04);
 }
 
 .vistoOverlay {
