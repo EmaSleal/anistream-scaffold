@@ -188,16 +188,16 @@ export async function getSeriesSeasons(
   }
 }
 
-/**
- * @deprecated Server-side `?consolidated=true` (`getSeriesList({ consolidated: true })`) is canonical.
- * Retained only for non-home callers; do not use on new code paths.
- */
 const MEDIA_TYPE_RANK: Record<string, number> = { tv: 4, movie: 3, ova: 2, special: 1, ona: 1, music: 0 };
 
 function mediaRank(s: Series): number {
   return MEDIA_TYPE_RANK[s.mediaType ?? "tv"] ?? 0;
 }
 
+/**
+ * @deprecated Server-side `?consolidated=true` (`getSeriesList({ consolidated: true })`) is canonical.
+ * Retained only for non-home callers; do not use on new code paths.
+ */
 export function consolidateFranchises(series: Series[]): Series[] {
   const seen = new Set<string>();
   const result: Series[] = [];
