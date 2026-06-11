@@ -197,8 +197,6 @@ def ingest():
 
     if not mal_id:
         return jsonify({"error": "mal_id is required"}), 422
-    if not animeflv_slug and not animeav1_slug:
-        return jsonify({"error": "animeflv_slug or animeav1_slug is required"}), 422
 
     try:
         mal_id_int = int(mal_id)
@@ -218,7 +216,7 @@ def ingest():
         return jsonify({"error": "Could not normalize series data"}), 502
 
     existing = get_series_by_mal_id(mal_id_int)
-    canonical_id = existing["id"] if existing else (animeflv_slug or animeav1_slug)
+    canonical_id = existing["id"] if existing else (animeflv_slug or animeav1_slug or f"mal-{mal_id_int}")
 
     series["id"] = canonical_id
     series["slug"] = canonical_id

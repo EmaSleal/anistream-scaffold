@@ -110,6 +110,29 @@ def search_series():
     return jsonify(result)
 
 
+@series_bp.post("/check-mal-ids")
+@require_admin
+def check_mal_ids():
+    """POST /api/series/check-mal-ids — return which MAL IDs already exist in the DB.
+
+    Body: { "mal_ids": [1, 2, 3] }
+    Response: { "existing": [1, 3] }
+    """
+    body = request.get_json(force=True) or {}
+    mal_ids = body.get("mal_ids", [])
+    if not isinstance(mal_ids, list):
+        return jsonify({"error": "mal_ids must be an array"}), 422
+
+    try:
+        mal_ids_int = [int(m) for m in mal_ids]
+    except (TypeError, ValueError):
+        return jsonify({"error": "mal_ids must be integers"}), 422
+
+    rows = db_series.get_series_by_mal_ids(mal_ids_int)
+    existing = [r["malId"] for r in rows if r.get("malId")]
+    return jsonify({"existing": existing})
+
+
 @series_bp.get("/search-animeflv")
 @require_admin
 def search_animeflv_results():
