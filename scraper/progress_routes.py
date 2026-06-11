@@ -126,11 +126,11 @@ def continue_watching():
         meta = series_meta[sid]
 
         if not meta.get("animeflv_slug"):
-            logging.warning("simulcast skip [%s]: no animeflv_slug", sid)
+            logging.debug("simulcast skip [%s]: no animeflv_slug", sid)
             continue
 
         if not cooldown_elapsed(meta.get("last_simulcast_check")):
-            logging.warning("simulcast skip [%s]: cooldown active (last=%s)", sid, meta.get("last_simulcast_check"))
+            logging.debug("simulcast skip [%s]: cooldown active (last=%s)", sid, meta.get("last_simulcast_check"))
             continue
 
         ep_id = row.get("episode_id")
@@ -140,12 +140,12 @@ def continue_watching():
         ep_num = ep_data.get("episode_number") if ep_data else None
         series_max_ep = meta.get("max_episode_number")
         if ep_num is None or series_max_ep is None or ep_num < series_max_ep:
-            logging.warning("simulcast skip [%s]: ep_num=%s series_max=%s (not last ep)", sid, ep_num, series_max_ep)
+            logging.debug("simulcast skip [%s]: ep_num=%s series_max=%s (not last ep)", sid, ep_num, series_max_ep)
             continue
 
         progress_sec = float(row.get("progress_sec") or 0)
         duration_sec = float(row.get("duration_sec") or 0)
-        logging.warning(
+        logging.debug(
             "simulcast candidate check [%s]: ep=%s is_simulcast=%s progress=%.0f duration=%.0f aired_at=%s",
             sid, ep_num, meta.get("is_simulcast"), progress_sec, duration_sec, last_aired_at,
         )
@@ -160,7 +160,7 @@ def continue_watching():
             broadcast_timezone=meta.get("broadcast_timezone"),
             now_utc=now_utc,
         ):
-            logging.warning("simulcast skip [%s]: is_simulcast_candidate=False", sid)
+            logging.debug("simulcast skip [%s]: is_simulcast_candidate=False", sid)
             continue
 
         current_max_ep = series_max_ep
