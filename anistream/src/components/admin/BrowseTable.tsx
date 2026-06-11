@@ -20,6 +20,7 @@ export default function BrowseTable() {
 
   const [ingestState, setIngestState] = useState<Map<number, IngestRowState>>(new Map());
   const [ingestErrors, setIngestErrors] = useState<Map<number, string>>(new Map());
+  const [slugInputs, setSlugInputs] = useState<Map<number, string>>(new Map());
 
   const [isPending, startTransition] = useTransition();
 
@@ -78,10 +79,16 @@ export default function BrowseTable() {
     });
   }
 
+  function setSlug(malId: number, value: string) {
+    setSlugInputs((prev) => new Map(prev).set(malId, value));
+  }
+
   async function handleIngest(malId: number) {
+    const slug = slugInputs.get(malId)?.trim();
+    if (!slug) return;
     setIngestRowState(malId, "loading");
     try {
-      await ingestSeries(undefined, malId);
+      await ingestSeries(slug, malId);
       setIngestRowState(malId, "done");
     } catch (err) {
       setIngestRowState(malId, "error");
@@ -322,9 +329,17 @@ export default function BrowseTable() {
                   </td>
                   <td>
                     <div style={{ display: "flex", flexDirection: "column", gap: "4px", alignItems: "flex-start" }}>
+                      <input
+                        type="text"
+                        placeholder="animeflv-slug (required)"
+                        value={slugInputs.get(anime.mal_id) ?? ""}
+                        onChange={(e) => setSlug(anime.mal_id, e.target.value)}
+                        disabled={rowState === "loading" || rowState === "done"}
+                        className={styles.slugInput}
+                      />
                       <button
                         className={styles.ingestBtn}
-                        disabled={rowState === "loading" || rowState === "done"}
+                        disabled={rowState === "loading" || rowState === "done" || !slugInputs.get(anime.mal_id)?.trim()}
                         onClick={() => void handleIngest(anime.mal_id)}
                       >
                         {rowState === "loading"
