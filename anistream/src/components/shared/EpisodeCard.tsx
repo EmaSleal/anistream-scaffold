@@ -10,6 +10,7 @@ interface EpisodeCardProps {
   showSeriesTitle?: boolean;
   showSeenBadge?: boolean;
   durationDisplay?: "total" | "remaining";
+  size?: "sm" | "md";
 }
 
 export function EpisodeCard({
@@ -18,6 +19,7 @@ export function EpisodeCard({
   showSeriesTitle = false,
   showSeenBadge = false,
   durationDisplay = "total",
+  size = "md",
 }: EpisodeCardProps) {
   const pct =
     ep.duration > 0 && ep.progressSeconds
@@ -32,7 +34,7 @@ export function EpisodeCard({
   return (
     <Link
       href={`/watch/${ep.animeflvSlug ?? ep.id}`}
-      className={cn(styles.card, className)}
+      className={cn(styles.card, size === "sm" && styles.sm, className)}
     >
       <div className={styles.thumb}>
         {ep.thumbnailUrl ? (
@@ -72,7 +74,7 @@ export function EpisodeCard({
         ) : (
           <>
             <p className={styles.label}>
-              {formatEpisodeLabel(ep.episode, ep.season)} — {ep.title}
+              {formatEpisodeLabel(ep.episode, ep.season)}: {ep.title}
             </p>
             <p className={styles.meta}>
               {durationText} · Sub | Dub

@@ -87,6 +87,8 @@
   margin: 0;
 }
 
+
+
 .label {
   font-size: 1.3rem;
   font-weight: 600;
@@ -103,4 +105,19 @@
   font-size: 1.1rem;
   color: var(--color-text-secondary);
   margin: 0;
+}
+
+.sm .thumb { max-height: 90px; }
+.sm .label { font-size: 1.05rem; }
+.sm .seriesTitle { font-size: 0.95rem; }
+.sm .meta { font-size: 0.9rem; }
+
+
+@media (max-width: 480px) {
+  .seriesTitle {
+    font-size: 0.95rem;
+  }
+  .label {
+    font-size: 0.95rem;
+  }
 }
