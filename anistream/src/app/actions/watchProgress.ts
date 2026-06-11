@@ -102,5 +102,6 @@ export async function getContinueWatching() {
   if (!res.ok) return [];
 
   const data = (await res.json()) as { episode: Record<string, unknown>; progressSeconds: number }[];
-  return data.map((item) => ({ ...item.episode, progressSeconds: item.progressSeconds })) as (Episode & { progressSeconds: number })[];
+  return (data.map((item) => ({ ...item.episode, progressSeconds: item.progressSeconds })) as (Episode & { progressSeconds: number })[])
+    .filter((ep) => !(ep.duration > 0 && ep.duration - ep.progressSeconds <= 120));
 }
