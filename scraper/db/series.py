@@ -234,6 +234,7 @@ def warm_recommendations(mal_ids: list[int]) -> None:
                 if e.get("entry", {}).get("mal_id")
             ]
             save_recommended_mal_ids(mid, rec_ids)
-            time.sleep(0.5)  # Jikan rate-limit courtesy
         except Exception:
             logging.exception("warm_recommendations failed for mal_id=%s", mid)
+        finally:
+            time.sleep(0.5)  # Jikan rate-limit courtesy — runs on every iteration
