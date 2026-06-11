@@ -5,6 +5,7 @@ import { SeriesRow } from "@/components/home/SeriesRow";
 import { ContinueWatchingRow } from "@/components/home/ContinueWatchingRow";
 import { getSeriesList, getFeaturedSeries, getSimulcastSeries } from "@/lib/series";
 import { topGenres } from "@/lib/genres";
+import { shuffle } from "@/lib/utils";
 import { getWatchlistIds } from "@/app/actions/watchlist";
 import { getContinueWatching } from "@/app/actions/watchProgress";
 import { getRecommendations } from "@/app/actions/recommendations";
@@ -23,7 +24,7 @@ export default async function HomePage() {
     getSimulcastSeries(),
   ]);
 
-  const topPicks = series.slice(0, 10);
+  const topPicks = shuffle(series).slice(0, 10);
   const genres = topGenres(series, 5);
 
   return (
@@ -34,7 +35,7 @@ export default async function HomePage() {
         {recs.length > 0 && <SeriesRow title="Recommended for You" series={recs} />}
         <SeriesRow title="Top Picks for You" series={topPicks} />
         {simulcasts.length > 0 && (
-          <SeriesRow title="Simulcasts" series={simulcasts} />
+          <SeriesRow title="Simulcasts" series={shuffle(simulcasts)} />
         )}
         <SeriesRow title="Popular" series={series} />
         {genres.map((genre) => {
