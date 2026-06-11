@@ -173,3 +173,67 @@ def get_series_by_franchise(franchise_id: str) -> list[dict]:
         .execute()
     )
     return result.data or []
+
+
+def get_recommended_mal_ids(mal_id: int) -> list[int] | None:
+    """Return persisted recommendation IDs for the series with this mal_id.
+
+    Tri-state return:
+      None  — column IS NULL (never fetched from Jikan).
+      []    — fetched; genuinely empty (no recommendations).
+      [ids] — fetched; list of recommended MAL IDs.
+    Returns None if no series row exists for this mal_id.
+    """
+    client = storage.get_client()
+    result = (
+        client.table("series")
+        .select("recommended_mal_ids")
+        .eq("mal_id", mal_id)
+        .maybe_single()
+        .execute()
+    )
+    if not result or not result.data:
+        return None
+    return result.data.get("recommended_mal_ids")  # None | list[int]
+
+
+def save_recommended_mal_ids(mal_id: int, mal_ids: list[int]) -> None:
+    """Persist recommendation IDs for the series with this mal_id.
+
+    Pass [] to record 'fetched, empty'. Never call with [] on a Jikan failure
+    (caller is responsible for distinguishing empty from error).
+    Uses UPDATE (not upsert) — the row must already exist.
+    """
+    client = storage.get_client()
+    client.table("series").update(
+        {"recommended_mal_ids": mal_ids}
+    ).eq("mal_id", mal_id).execute()
+
+
+def warm_recommendations(mal_ids: list[int]) -> None:
+    """For each mal_id whose recommended_mal_ids is NULL, fetch Jikan and persist.
+
+    Designed to run inside a daemon thread. Throttled, fail-open, never raises.
+    Skips mal_ids that already have a non-NULL value (including []).
+    Uses a local import of fetch_recommendations to avoid circular imports
+    (same pattern as upsert_series_stub).
+    """
+    import logging
+    import time
+    from fetcher import fetch_recommendations
+    for mid in mal_ids:
+        try:
+            if get_recommended_mal_ids(mid) is not None:
+                continue  # already warm or confirmed empty — skip
+            entries = fetch_recommendations(mid)
+            if not entries:
+                continue  # fail-open: leave NULL so next request retries
+            rec_ids = [
+                e.get("entry", {}).get("mal_id")
+                for e in entries
+                if e.get("entry", {}).get("mal_id")
+            ]
+            save_recommended_mal_ids(mid, rec_ids)
+            time.sleep(0.5)  # Jikan rate-limit courtesy
+        except Exception:
+            logging.exception("warm_recommendations failed for mal_id=%s", mid)
