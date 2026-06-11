@@ -12,8 +12,11 @@ from domain.series import (
 )
 from auth import require_admin, require_auth
 from fetcher import fetch_recommendations, fetch_jikan_by_genre, search_animeflv
+from cache import TTLCache
 
 series_bp = Blueprint("series", __name__, url_prefix="/api/series")
+
+_recommendations_cache = TTLCache(ttl_seconds=600)
 
 _SEASON_MONTHS: dict[str, tuple[int, int]] = {
     "winter": (1, 3),
@@ -170,6 +173,11 @@ def series_recommendations():
     """
     user_id = g.user_id
 
+    cache_key = f"recs:{user_id}"
+    cached = _recommendations_cache.get(cache_key)
+    if cached is not None:
+        return jsonify(cached)
+
     # Step 1 — seed series from watch history
     progress_rows = db_progress.get_recent_progress(user_id, limit=5)
     series_ids = list({row["series_id"] for row in progress_rows})
@@ -180,7 +188,9 @@ def series_recommendations():
     if not mal_id_map:
         # Fallback: no history or no seeds with mal_id
         rows = db_series.get_series_list(limit=10, sort="score")
-        return jsonify([map_series_row(r) for r in rows])
+        result = [map_series_row(r) for r in rows]
+        _recommendations_cache.set(cache_key, result)
+        return jsonify(result)
 
     # Build the watched mal_id set for filtering
     all_progress = db_progress.get_recent_progress(user_id, limit=500)
@@ -205,7 +215,9 @@ def series_recommendations():
 
     if not filtered_mal_ids:
         rows = db_series.get_series_list(limit=10, sort="score")
-        return jsonify([map_series_row(r) for r in rows])
+        result = [map_series_row(r) for r in rows]
+        _recommendations_cache.set(cache_key, result)
+        return jsonify(result)
 
     # Step 5 — cross-reference against series table
     matched = db_series.get_series_by_mal_ids(filtered_mal_ids)
@@ -226,6 +238,7 @@ def series_recommendations():
                 "Failed to spawn stub ingest thread for mal_id=%s", unmatched_mal_id
             )
 
+    _recommendations_cache.set(cache_key, matched)
     return jsonify(matched)
 
 
