@@ -1,7 +1,9 @@
 import type { Metadata } from "next";
+import type { Episode } from "@/types";
 import { VideoPlayer } from "@/components/player/VideoPlayer";
 import { getEpisodeProgress } from "@/app/actions/watchProgress";
 import { getEpisodeByWatchId, getAdjacentEpisodes, getEpisodeStreamUrl } from "@/lib/episodes";
+import { getEpisodeProgressMap } from "@/lib/progress-server";
 import StreamFallbackModal from "./StreamFallbackModal";
 
 interface WatchPageProps {
@@ -30,11 +32,23 @@ export default async function WatchPage({ params }: WatchPageProps) {
 
   const { episode } = dbResult;
 
-  const [streamResult, initialProgress, adjacent] = await Promise.all([
+  const [streamResult, initialProgress, adjacent, progressMap] = await Promise.all([
     getEpisodeStreamUrl(id),
     getEpisodeProgress(episode.id),
     getAdjacentEpisodes(episode.seriesId, episode.episode),
+    getEpisodeProgressMap(episode.seriesId),
   ]);
+
+  function enrichEpisode(ep: Episode | null): Episode | null {
+    if (!ep) return null;
+    const prog = progressMap.get(ep.id);
+    if (!prog) return ep;
+    return {
+      ...ep,
+      progressSeconds: prog.progressSec,
+      isSeen: prog.durationSec > 0 && prog.durationSec - prog.progressSec <= 120,
+    };
+  }
 
   if (!streamResult) {
     return (
@@ -51,8 +65,8 @@ export default async function WatchPage({ params }: WatchPageProps) {
   return (
     <VideoPlayer
       episode={episode}
-      previousEpisode={adjacent.prev ?? undefined}
-      nextEpisode={adjacent.next ?? undefined}
+      previousEpisode={enrichEpisode(adjacent.prev) ?? undefined}
+      nextEpisode={enrichEpisode(adjacent.next) ?? undefined}
       initialProgress={initialProgress}
       streamUrl={streamResult.url}
       streamType={streamType}
