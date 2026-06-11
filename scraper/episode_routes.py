@@ -84,6 +84,21 @@ def recent_simulcast_episodes():
     return jsonify([_map_recent_episode(r) for r in rows]), 200
 
 
+@episode_bp.get("/debug/servers/<path:episode_slug>")
+def debug_episode_servers(episode_slug: str):
+    """GET /api/episodes/debug/servers/<slug> — raw server list from AnimeFlv.
+
+    Debug-only endpoint. Returns the raw ``var videos`` dict scraped from
+    AnimeFlv for the given episode slug so you can inspect server codes.
+    """
+    from scraper_animeflv import scrape_episode_servers
+    try:
+        servers = scrape_episode_servers(episode_slug)
+    except RuntimeError as exc:
+        return {"error": str(exc)}, 502
+    return {"slug": episode_slug, "servers": servers}, 200
+
+
 @episode_bp.get("/<series_id>/adjacent")
 def adjacent_episodes(series_id: str):
     """GET /api/episodes/<series_id>/adjacent?episode_number=N — prev/next."""

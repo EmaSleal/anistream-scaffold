@@ -45,13 +45,14 @@ def resolve_animeflv_stream(episode_slug: str) -> dict:
     except RuntimeError:
         return {"url": None, "error_type": "network_error"}
 
-    # Search for a streamtape server across all language groups
+    # Search for a streamtape server across all language groups.
+    # Match any streamtape TLD (streamtape.com, .net, .to, .cc, etc.)
     video_id = None
     for lang_servers in servers.values():
         for s in lang_servers:
             code = s.get("code", "") or ""
             if "streamtape" in code.lower():
-                m = re.search(r"streamtape\.com/e/([^/?&]+)", code)
+                m = re.search(r"streamtape\.[^/]+/e/([^/?&\"']+)", code)
                 if m:
                     video_id = m.group(1)
                     break
