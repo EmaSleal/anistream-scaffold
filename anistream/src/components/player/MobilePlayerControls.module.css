@@ -1,0 +1,203 @@
+/* Mobile-only overlay — hidden on desktop via default display:none */
+.overlay {
+  position: absolute;
+  inset: 0;
+  z-index: var(--z-overlay);
+  transition: opacity var(--transition-base);
+  display: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.overlay *,
+.overlay *::before,
+.overlay *::after {
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+@media (max-width: 1024px) {
+  .overlay {
+    display: block;
+  }
+}
+
+.overlay.hidden {
+  opacity: 0;
+}
+
+/* Top-right: next episode + fullscreen */
+.topRight {
+  position: absolute;
+  top: 0.1rem;
+  right: 0.4rem;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  z-index: 1;
+}
+
+/* Center cluster: skip-back, play/pause, skip-forward */
+.center {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+}
+
+/* Skip buttons — 52×52 touch target */
+.iconBtn {
+  min-width: 3.2rem; 
+  min-height: 3.2rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  appearance: none;
+  -webkit-appearance: none;
+  color: rgba(255, 255, 255, 0.9);
+  border-radius: var(--radius-sm);
+  filter: drop-shadow(0 1px 4px rgba(0, 0, 0, 0.7));
+  -webkit-tap-highlight-color: rgba(0, 0, 0, 0);
+  touch-action: manipulation;
+  transition: color var(--transition-fast), transform var(--transition-fast);
+}
+.iconBtn:active { transform: scale(0.93); }
+
+/* Play/pause — 64×64 touch target */
+.playBtn {
+  min-width: 64px;
+  min-height: 64px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.45);
+  border-radius: 50%;
+  border: none;
+  appearance: none;
+  -webkit-appearance: none;
+  color: #fff;
+  filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.7));
+  -webkit-tap-highlight-color: rgba(0, 0, 0, 0);
+  touch-action: manipulation;
+  transition: transform var(--transition-fast);
+}
+.playBtn:active { transform: scale(0.93); }
+
+/* Top-right icon buttons — 44×44 touch target */
+.topBtn {
+  min-width: 3.2rem;
+  min-height: 3.2rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  appearance: none;
+  -webkit-appearance: none;
+  color: rgba(255, 255, 255, 0.85);
+  border-radius: var(--radius-sm);
+  filter: drop-shadow(0 1px 4px rgba(0, 0, 0, 0.7));
+  -webkit-tap-highlight-color: rgba(0, 0, 0, 0);
+  touch-action: manipulation;
+  transition: color var(--transition-fast);
+}
+.topBtn:active { color: #fff; }
+
+/* Bottom gradient + progress bar */
+.bottomGradient {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  padding: 40px 14px 10px;
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.75) 0%, transparent 100%);
+}
+
+.bottomBar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.timeLabel {
+  font-size: 11px;
+  font-family: var(--font-mono);
+  color: rgba(255, 255, 255, 0.75);
+  white-space: nowrap;
+  flex-shrink: 0;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
+}
+
+.progressRange {
+  flex: 1;
+  height: 3px;
+  appearance: none;
+  -webkit-appearance: none;
+  border-radius: 2px;
+  cursor: pointer;
+  outline: none;
+}
+
+.progressRange::-webkit-slider-runnable-track {
+  height: 3px;
+  border-radius: 2px;
+  background: transparent;
+}
+
+.progressRange::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #fff;
+  margin-top: -5.5px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.5);
+}
+
+.progressRange::-moz-range-track {
+  height: 3px;
+  border-radius: 2px;
+  background: transparent;
+}
+
+.progressRange::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #fff;
+  border: none;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.5);
+}
+
+/* Double-tap seek feedback labels */
+.seekFeedback {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 18px;
+  font-weight: 700;
+  color: #fff;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 200ms ease;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.6);
+}
+
+.seekFeedbackLeft {
+  left: 18%;
+}
+
+.seekFeedbackRight {
+  right: 18%;
+}
+
+.seekFeedbackVisible {
+  opacity: 1;
+}

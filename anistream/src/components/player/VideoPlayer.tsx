@@ -2,12 +2,13 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import Image from "next/image";
 import { useRouter } from "next/navigation";
 import type { Episode } from "@/types";
 import { usePlayerControls } from "@/hooks/usePlayerControls";
 import { saveWatchProgress, advanceToNextEpisode } from "@/app/actions/watchProgress";
 import { PlayerControls } from "./PlayerControls";
+import { MobilePlayerControls } from "./MobilePlayerControls";
+import { EpisodeCard } from "@/components/shared/EpisodeCard";
 import { Badge } from "@/components/ui/Badge";
 import { formatEpisodeLabel } from "@/lib/utils";
 import styles from "./VideoPlayer.module.css";
@@ -39,11 +40,61 @@ export function VideoPlayer({
     togglePlay,
     seek,
     skipSeconds,
+    setVolume,
     toggleMute,
     setPlaybackRate,
     toggleFullscreen,
     handleMouseMove,
+    revealControls,
   } = usePlayerControls(episode.duration, initialProgress);
+
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      const tag = (e.target as HTMLElement).tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+
+      switch (e.key) {
+        case " ":
+        case "k":
+        case "K":
+          e.preventDefault();
+          togglePlay();
+          break;
+        case "ArrowLeft":
+        case "j":
+        case "J":
+          e.preventDefault();
+          skipSeconds(-10);
+          break;
+        case "ArrowRight":
+        case "l":
+        case "L":
+          e.preventDefault();
+          skipSeconds(10);
+          break;
+        case "m":
+        case "M":
+          e.preventDefault();
+          toggleMute();
+          break;
+        case "f":
+        case "F":
+          e.preventDefault();
+          toggleFullscreen(containerRef);
+          break;
+        case "ArrowUp":
+          e.preventDefault();
+          if (videoRef.current) setVolume(Math.min(1, videoRef.current.volume + 0.1));
+          break;
+        case "ArrowDown":
+          e.preventDefault();
+          if (videoRef.current) setVolume(Math.max(0, videoRef.current.volume - 0.1));
+          break;
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [togglePlay, skipSeconds, toggleMute, toggleFullscreen, setVolume, containerRef, videoRef]);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -153,6 +204,8 @@ export function VideoPlayer({
     setCountdown(null);
   };
 
+  const nextEpisodeHref = nextEpisode ? `/watch/${nextEpisode.id}` : undefined;
+
   return (
     <div className={styles.page}>
       {/* ── Video zone ──────────────────────────────────── */}
@@ -198,8 +251,20 @@ export function VideoPlayer({
           onSeek={seek}
           onSkip={skipSeconds}
           onToggleMute={toggleMute}
+          onSetVolume={setVolume}
           onSetPlaybackRate={setPlaybackRate}
           onToggleFullscreen={() => toggleFullscreen(containerRef)}
+          show={playerState.showControls}
+        />
+
+        <MobilePlayerControls
+          state={playerState}
+          onTogglePlay={togglePlay}
+          onSkip={skipSeconds}
+          onSeek={seek}
+          onToggleFullscreen={() => toggleFullscreen(containerRef)}
+          onRevealControls={revealControls}
+          nextEpisodeHref={nextEpisodeHref}
           show={playerState.showControls}
         />
 
@@ -285,13 +350,13 @@ export function VideoPlayer({
           {nextEpisode && (
             <div className={styles.sideSection}>
               <h2 className={styles.sideHeading}>Siguiente episodio</h2>
-              <EpisodeCard episode={nextEpisode} />
+              <EpisodeCard ep={nextEpisode} showSeenBadge  />
             </div>
           )}
           {previousEpisode && (
             <div className={styles.sideSection}>
               <h2 className={styles.sideHeading}>Episodio anterior</h2>
-              <EpisodeCard episode={previousEpisode} />
+              <EpisodeCard ep={previousEpisode} showSeenBadge  />
             </div>
           )}
           <Link href={`/series/${episode.seriesId}`} className={styles.moreEpsBtn}>
@@ -323,29 +388,3 @@ export function VideoPlayer({
   );
 }
 
-function EpisodeCard({ episode }: { episode: Episode }) {
-  return (
-    <Link href={`/watch/${episode.id}`} className={styles.epCard}>
-      <div className={styles.epThumb}>
-        {episode.thumbnailUrl ? (
-          <Image
-            src={episode.thumbnailUrl}
-            alt={episode.title}
-            fill
-            sizes="120px"
-            className={styles.epThumbImg}
-          />
-        ) : (
-          <div className={styles.epThumbPlaceholder} aria-hidden="true" />
-        )}
-        {episode.isSeen && <Badge variant="seen" className={styles.seenBadge}>Visto</Badge>}
-      </div>
-      <div className={styles.epInfo}>
-        <p className={styles.epTitle}>
-          {formatEpisodeLabel(episode.episode, episode.season)} – {episode.title}
-        </p>
-        <p className={styles.epFormat}>Dob | Sub</p>
-      </div>
-    </Link>
-  );
-}
