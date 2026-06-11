@@ -179,7 +179,7 @@ def series_recommendations():
         return jsonify(cached)
 
     # Step 1 — seed series from watch history
-    progress_rows = db_progress.get_recent_progress(user_id, limit=5)
+    progress_rows = db_progress.get_recent_progress(user_id, limit=10)
     series_ids = list({row["series_id"] for row in progress_rows})
 
     # Step 2 — resolve mal_ids; empty result triggers fallback
@@ -197,19 +197,28 @@ def series_recommendations():
     watched_series_ids = {row["series_id"] for row in all_progress}
     watched_mal_ids = set(db_progress.get_mal_ids_for_series(list(watched_series_ids)).values())
 
-    # Step 3 — fetch recommendations for each seed (fail-open, top 3)
-    candidates: dict[int, dict] = {}
-    for mal_id in mal_id_map.values():
-        entries = fetch_recommendations(mal_id)
-        for entry in entries:
-            anime_entry = entry.get("entry", {})
-            candidate_mal_id = anime_entry.get("mal_id")
-            if candidate_mal_id and candidate_mal_id not in candidates:
-                candidates[candidate_mal_id] = anime_entry
+    # Step 3 — resolve recommendation IDs per seed (DB-first, lazy Jikan on NULL)
+    candidate_ids: set[int] = set()
+    for seed_mal_id in mal_id_map.values():
+        rec_ids = db_series.get_recommended_mal_ids(seed_mal_id)
+        if rec_ids is None:
+            # Cold seed — fetch from Jikan and persist for future requests
+            entries = fetch_recommendations(seed_mal_id)
+            if entries:
+                rec_ids = [
+                    e.get("entry", {}).get("mal_id")
+                    for e in entries
+                    if e.get("entry", {}).get("mal_id")
+                ]
+                db_series.save_recommended_mal_ids(seed_mal_id, rec_ids)
+            else:
+                # fail-open: leave NULL so next request retries Jikan
+                rec_ids = []
+        candidate_ids.update(rec_ids)
 
     # Step 4 — filter out already-watched candidates
     filtered_mal_ids = [
-        mid for mid in candidates
+        mid for mid in candidate_ids
         if mid not in watched_mal_ids
     ]
 
