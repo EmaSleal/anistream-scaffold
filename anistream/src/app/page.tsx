@@ -3,7 +3,7 @@ export const dynamic = "force-dynamic";
 import { HeroBanner } from "@/components/home/HeroBanner";
 import { SeriesRow } from "@/components/home/SeriesRow";
 import { ContinueWatchingRow } from "@/components/home/ContinueWatchingRow";
-import { getSeriesList, getFeaturedSeries, consolidateFranchises } from "@/lib/series";
+import { getSeriesList, getFeaturedSeries } from "@/lib/series";
 import { topGenres } from "@/lib/genres";
 import { getWatchlistIds } from "@/app/actions/watchlist";
 import { getContinueWatching } from "@/app/actions/watchProgress";
@@ -14,23 +14,21 @@ import type { Genre } from "@/types";
 export const metadata: Metadata = { title: "Home" };
 
 export default async function HomePage() {
-  const [allSeries, featured, watchlistIds, continueWatching, recs] = await Promise.all([
-    getSeriesList(500),
+  const [series, featured, watchlistIds, continueWatching, recs] = await Promise.all([
+    getSeriesList({ limit: 50, consolidated: true }),
     getFeaturedSeries(),
     getWatchlistIds(),
     getContinueWatching(),
     getRecommendations(),
   ]);
 
-  const consolidated = consolidateFranchises(allSeries);
-
-  const topPicks = consolidated.slice(0, 10);
-  const simulcasts = consolidated.filter((s) => s.isSimulcast);
-  const genres = topGenres(consolidated, 5);
+  const topPicks = series.slice(0, 10);
+  const simulcasts = series.filter((s) => s.isSimulcast);
+  const genres = topGenres(series, 5);
 
   return (
     <>
-      <HeroBanner featured={featured.length ? featured : allSeries.slice(0, 5)} watchlistIds={watchlistIds} />
+      <HeroBanner featured={featured.length ? featured : series.slice(0, 5)} watchlistIds={watchlistIds} />
       <div className="home-content" style={{ paddingTop: "var(--space-8)" }}>
         <ContinueWatchingRow episodes={continueWatching} />
         {recs.length > 0 && <SeriesRow title="Recommended for You" series={recs} />}
@@ -38,9 +36,9 @@ export default async function HomePage() {
         {simulcasts.length > 0 && (
           <SeriesRow title="Simulcasts" series={simulcasts} />
         )}
-        <SeriesRow title="Popular" series={consolidated} />
+        <SeriesRow title="Popular" series={series} />
         {genres.map((genre) => {
-          const rows = consolidated
+          const rows = series
             .filter((s) => s.genres?.includes(genre as Genre))
             .sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
             .slice(0, 10);

@@ -60,16 +60,18 @@ export interface SeriesListParams {
   genre?: string;
   year?: number;
   season?: string;
+  consolidated?: boolean;
 }
 
 export async function getSeriesList(arg: number | SeriesListParams = 50): Promise<Series[]> {
   const params: SeriesListParams = typeof arg === "number" ? { limit: arg } : arg;
-  const { limit = 50, sort = "score", genre, year, season } = params;
+  const { limit = 50, sort = "score", genre, year, season, consolidated } = params;
 
   const qs = new URLSearchParams({ limit: String(limit), sort });
   if (genre) qs.set("genre", genre);
   if (year) qs.set("year", String(year));
   if (season) qs.set("season", season);
+  if (consolidated) qs.set("consolidated", "true");
 
   const rows = await apiFetch<Record<string, unknown>[]>(
     `/api/series?${qs.toString()}`,
@@ -187,9 +189,8 @@ export async function getSeriesSeasons(
 }
 
 /**
- * consolidateFranchises is kept for backward compatibility with home page.
- * The server-side consolidation via ?consolidated=true is preferred,
- * but the home page currently calls this client-side helper after fetching all series.
+ * @deprecated Server-side `?consolidated=true` (`getSeriesList({ consolidated: true })`) is canonical.
+ * Retained only for non-home callers; do not use on new code paths.
  */
 const MEDIA_TYPE_RANK: Record<string, number> = { tv: 4, movie: 3, ova: 2, special: 1, ona: 1, music: 0 };
 
