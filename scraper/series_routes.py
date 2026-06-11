@@ -423,6 +423,9 @@ def discover_series():
                             new_entries.append(entry)
                 if new_entries:
                     upsert_many(new_entries)
+                    _new_mal_ids = [e["mal_id"] for e in new_entries if e.get("mal_id")]
+                    if _new_mal_ids:
+                        threading.Thread(target=db_series.warm_recommendations, args=(_new_mal_ids,), daemon=True).start()
             except Exception as exc:
                 logging.warning("[discover] genre=%s enrich error: %s", genre, exc)
             _time.sleep(0.5)

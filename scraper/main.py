@@ -1,7 +1,9 @@
 import time
+import threading
 from fetcher import fetch_top_anime, fetch_simulcasts, search_kitsu_anime, fetch_kitsu_series_status
 from normalizer import normalize
 from storage import upsert_many
+from db import series as db_series
 
 
 def _normalize_with_kitsu(raw: dict, is_featured: bool = False) -> dict | None:
@@ -50,6 +52,10 @@ def run():
     saved = upsert_many(normalized_top)
     print(f"  Saved {saved} series from top anime.\n")
 
+    _top_mal_ids = [e["mal_id"] for e in normalized_top if e.get("mal_id")]
+    if _top_mal_ids:
+        threading.Thread(target=db_series.warm_recommendations, args=(_top_mal_ids,), daemon=True).start()
+
     # --- Simulcasts ---
     print("[2/2] Fetching simulcasts...")
     raw_sim = fetch_simulcasts()
@@ -67,6 +73,10 @@ def run():
 
     saved = upsert_many(normalized_sim)
     print(f"  Saved {saved} simulcast series.\n")
+
+    _sim_mal_ids = [e["mal_id"] for e in normalized_sim if e.get("mal_id")]
+    if _sim_mal_ids:
+        threading.Thread(target=db_series.warm_recommendations, args=(_sim_mal_ids,), daemon=True).start()
 
     print("Done.")
 
