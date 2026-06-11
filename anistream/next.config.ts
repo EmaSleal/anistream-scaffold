@@ -11,9 +11,7 @@ const nextConfig: NextConfig = {
     ],
     formats: ["image/avif", "image/webp"],
   },
-  experimental: {
-    typedRoutes: true,
-  },
+  typedRoutes: true,
   headers: async () => [
     {
       source: "/(.*)",
