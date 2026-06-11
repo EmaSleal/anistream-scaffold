@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import type { Metadata } from "next";
 import { auth } from "@/auth";
-import IngestForm from "./IngestForm";
+import IngestForm from "@/components/admin/IngestForm";
 import styles from "./admin.module.css";
 
 export const metadata: Metadata = { title: "Admin" };

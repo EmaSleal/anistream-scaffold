@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ingestSeries } from "@/app/actions/ingest";
-import AnimeFlvSlugSearch from "@/app/admin/AnimeFlvSlugSearch";
+import AnimeFlvSlugSearch from "@/components/admin/AnimeFlvSlugSearch";
 import styles from "./ingest-trigger.module.css";
 
 type Phase = "loading" | "success" | "failed";

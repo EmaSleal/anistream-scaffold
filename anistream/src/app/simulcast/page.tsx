@@ -4,7 +4,7 @@ import { auth } from "@/auth";
 import { AnimeCard } from "@/components/home/AnimeCard";
 import { getSimulcastSeries, consolidateFranchises } from "@/lib/series";
 import { getRecentSimulcastEpisodes } from "@/lib/simulcast-episodes";
-import { RecentEpisodesRow } from "./RecentEpisodesRow";
+import { RecentEpisodesRow } from "@/components/simulcast/RecentEpisodesRow";
 import type { Metadata } from "next";
 import styles from "../browse/browse.module.css";
 import sc from "./simulcast.module.css";

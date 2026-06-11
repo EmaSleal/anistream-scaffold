@@ -4,7 +4,7 @@ import { VideoPlayer } from "@/components/player/VideoPlayer";
 import { getEpisodeProgress } from "@/app/actions/watchProgress";
 import { getEpisodeByWatchId, getAdjacentEpisodes, getEpisodeStreamUrl } from "@/lib/episodes";
 import { getEpisodeProgressMap } from "@/lib/progress-server";
-import StreamFallbackModal from "./StreamFallbackModal";
+import StreamFallbackModal from "@/components/player/StreamFallbackModal";
 
 interface WatchPageProps {
   params: Promise<{ id: string }>;

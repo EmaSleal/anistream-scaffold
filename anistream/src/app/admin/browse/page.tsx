@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import type { Metadata } from "next";
 import { auth } from "@/auth";
-import BrowseTable from "./BrowseTable";
+import BrowseTable from "@/components/admin/BrowseTable";
 import styles from "../admin.module.css";
 
 export const dynamic = "force-dynamic";

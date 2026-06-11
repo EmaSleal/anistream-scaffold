@@ -8,7 +8,7 @@ import {
   updateSimulcastSlug,
   syncFromJikan,
 } from "@/app/actions/simulcast-admin";
-import AnimeFlvSlugSearch from "@/app/admin/AnimeFlvSlugSearch";
+import AnimeFlvSlugSearch from "@/components/admin/AnimeFlvSlugSearch";
 
 interface Props {
   series: SimulcastSeries[];

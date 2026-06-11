@@ -1,8 +1,9 @@
 "use client";
 
 import { useRef, useState, useEffect } from "react";
+import Link from "next/link";
 import type { RecentEpisode } from "@/lib/simulcast-episodes";
-import sc from "./simulcast.module.css";
+import sc from "@/app/simulcast/simulcast.module.css";
 
 function formatAiredAt(airedAt: string | undefined): string {
   if (!airedAt) return "";
@@ -25,7 +26,7 @@ function RecentEpisodeCard({ episode }: { episode: RecentEpisode }) {
     : `Ep. ${episode.episodeNumber}`;
   const dateLabel = formatAiredAt(episode.airedAt);
   return (
-    <div className={sc.recentCard}>
+    <Link href={`/watch/${episode.animeflvSlug ?? episode.id}`} className={sc.recentCard}>
       {thumbnail && (
         <div className={sc.recentThumb}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -42,7 +43,7 @@ function RecentEpisodeCard({ episode }: { episode: RecentEpisode }) {
       </p>
       <p className={sc.recentMeta}>{epLabel}</p>
       {dateLabel && <p className={sc.recentDate}>{dateLabel}</p>}
-    </div>
+    </Link>
   );
 }
 

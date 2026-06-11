@@ -11,6 +11,7 @@ export interface FilterBarProps {
   activeGenre?: string;
   activeYear?: string;
   activeSeason?: string;
+  basePath?: string;
 }
 
 const SEASONS = ["Winter", "Spring", "Summer", "Fall"] as const;
@@ -21,7 +22,7 @@ const YEAR_OPTIONS = Array.from({ length: CURRENT_YEAR - 2019 }, (_, i) => {
   return { label: String(y), value: String(y) };
 });
 
-export function FilterBar({ title = "Discover", genres, activeGenre, activeYear, activeSeason }: FilterBarProps) {
+export function FilterBar({ title = "Discover", genres, activeGenre, activeYear, activeSeason, basePath = "/browse" }: FilterBarProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const hasActiveFilter = Boolean(activeGenre || activeYear || activeSeason);
@@ -35,7 +36,9 @@ export function FilterBar({ title = "Discover", genres, activeGenre, activeYear,
     } else {
       params.set(key, value);
     }
-    router.push(`/browse?${params.toString()}`);
+    // basePath is a runtime prop — cast to satisfy Next.js typed-routes
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    router.push(`${basePath}?${params.toString()}` as any);
   }
 
   const activeCount = [activeGenre, activeYear, activeSeason].filter(Boolean).length;
@@ -127,7 +130,9 @@ export function FilterBar({ title = "Discover", genres, activeGenre, activeYear,
                 onClick={() => {
                   const params = new URLSearchParams();
                   params.set("tab", "genres");
-                  router.push(`/browse?${params.toString()}`);
+                  // basePath is a runtime prop — cast to satisfy Next.js typed-routes
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    router.push(`${basePath}?${params.toString()}` as any);
                 }}
               >
                 Clear filters

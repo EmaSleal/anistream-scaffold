@@ -7,8 +7,8 @@ import { SeriesBanner } from "@/components/series/SeriesBanner";
 import { EpisodesSection } from "@/components/series/EpisodesSection";
 import { FranchiseSection } from "@/components/series/FranchiseSection";
 import { getEpisodeProgressMap, getLastWatchedInFranchise } from "@/lib/progress-server";
-import IngestTrigger from "./IngestTrigger";
-import SimulcastRefreshTrigger from "./SimulcastRefreshTrigger";
+import IngestTrigger from "@/components/series/IngestTrigger";
+import SimulcastRefreshTrigger from "@/components/series/SimulcastRefreshTrigger";
 
 interface SeriesPageProps {
   params: Promise<{ id: string }>;

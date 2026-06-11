@@ -2,8 +2,8 @@
 
 import { useState, useEffect, useRef } from "react";
 import { ingestSeries, searchSeries, type SeriesResult } from "@/app/actions/ingest";
-import AnimeFlvSlugSearch from "./AnimeFlvSlugSearch";
-import styles from "./admin.module.css";
+import AnimeFlvSlugSearch from "@/components/admin/AnimeFlvSlugSearch";
+import styles from "@/app/admin/admin.module.css";
 
 interface IngestResult {
   series_id: string;

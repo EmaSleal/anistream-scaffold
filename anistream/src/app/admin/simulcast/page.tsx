@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import type { Metadata } from "next";
 import { auth } from "@/auth";
 import { getSimulcastSeries } from "@/app/actions/simulcast-admin";
-import SimulcastTable from "./SimulcastTable";
+import SimulcastTable from "@/components/admin/SimulcastTable";
 import styles from "../admin.module.css";
 
 export const dynamic = "force-dynamic";
