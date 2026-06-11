@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { PlayerState } from "@/types";
 import { clamp, debounce } from "@/lib/utils";
 
-const CONTROLS_HIDE_DELAY = 3000;
+const CONTROLS_HIDE_DELAY = 2000;
 
 interface UsePlayerControlsReturn {
   playerState: PlayerState;
@@ -17,11 +17,13 @@ interface UsePlayerControlsReturn {
   toggleFullscreen: (containerRef: React.RefObject<HTMLDivElement | null>) => void;
   handleMouseMove: () => void;
   skipSeconds: (delta: number) => void;
+  revealControls: () => void;
 }
 
 export function usePlayerControls(initialDuration = 0, initialTime = 0): UsePlayerControlsReturn {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const autoplayAttempted = useRef(false);
 
   const [playerState, setPlayerState] = useState<PlayerState>({
     isPlaying: false,
@@ -123,13 +125,31 @@ export function usePlayerControls(initialDuration = 0, initialTime = 0): UsePlay
     const video = videoRef.current;
     if (!video) return;
 
-    const onPlay = () => setPlayerState((p) => ({ ...p, isPlaying: true }));
+    const onPlay = () => {
+      setPlayerState((p) => ({ ...p, isPlaying: true }));
+      if (hideTimer.current) clearTimeout(hideTimer.current);
+      hideTimer.current = setTimeout(() => {
+        setPlayerState((prev) =>
+          prev.isPlaying ? { ...prev, showControls: false } : prev
+        );
+      }, CONTROLS_HIDE_DELAY);
+    };
     const onPause = () =>
       setPlayerState((p) => ({ ...p, isPlaying: false, showControls: true }));
     const onTimeUpdate = () =>
       setPlayerState((p) => ({ ...p, currentTime: video.currentTime }));
     const onDurationChange = () =>
       setPlayerState((p) => ({ ...p, duration: video.duration }));
+    const onCanPlay = () => {
+      if (autoplayAttempted.current) return;
+      autoplayAttempted.current = true;
+      video.play().catch((err: unknown) => {
+        if (err instanceof Error && err.name !== "AbortError" && err.name !== "NotAllowedError") {
+          console.error("[player] autoplay failed:", err.message);
+        }
+      });
+    };
+
     const onLoadedMetadata = () => {
       if (initialTime > 0) {
         video.currentTime = Math.min(initialTime, video.duration);
@@ -148,6 +168,7 @@ export function usePlayerControls(initialDuration = 0, initialTime = 0): UsePlay
         isFullscreen: !!document.fullscreenElement,
       }));
 
+    video.addEventListener("canplay", onCanPlay);
     video.addEventListener("play", onPlay);
     video.addEventListener("pause", onPause);
     video.addEventListener("timeupdate", onTimeUpdate);
@@ -157,6 +178,7 @@ export function usePlayerControls(initialDuration = 0, initialTime = 0): UsePlay
     document.addEventListener("fullscreenchange", onFullscreenChange);
 
     return () => {
+      video.removeEventListener("canplay", onCanPlay);
       video.removeEventListener("play", onPlay);
       video.removeEventListener("pause", onPause);
       video.removeEventListener("timeupdate", onTimeUpdate);
@@ -167,6 +189,11 @@ export function usePlayerControls(initialDuration = 0, initialTime = 0): UsePlay
       if (hideTimer.current) clearTimeout(hideTimer.current);
     };
   }, []);
+
+  const revealControls = useCallback(() => {
+    setPlayerState((prev) => ({ ...prev, showControls: true }));
+    scheduleHideControls();
+  }, [scheduleHideControls]);
 
   return {
     playerState,
@@ -179,5 +206,6 @@ export function usePlayerControls(initialDuration = 0, initialTime = 0): UsePlay
     toggleFullscreen,
     handleMouseMove,
     skipSeconds,
+    revealControls,
   };
 }

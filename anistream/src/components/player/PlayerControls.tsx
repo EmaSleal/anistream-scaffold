@@ -11,6 +11,7 @@ interface PlayerControlsProps {
   onSeek: (s: number) => void;
   onSkip: (delta: number) => void;
   onToggleMute: () => void;
+  onSetVolume: (v: number) => void;
   onSetPlaybackRate: (rate: number) => void;
   onToggleFullscreen: () => void;
   show: boolean;
@@ -24,12 +25,14 @@ export function PlayerControls({
   onSeek,
   onSkip,
   onToggleMute,
+  onSetVolume,
   onSetPlaybackRate,
   onToggleFullscreen,
   show,
 }: PlayerControlsProps) {
   const rateIndex = PLAYBACK_RATES.indexOf(state.playbackRate);
   const nextRate = PLAYBACK_RATES[(rateIndex + 1) % PLAYBACK_RATES.length] ?? 1;
+  const fillPct = Math.round((state.isMuted ? 0 : state.volume) * 100);
 
   return (
     <div className={cn(styles.controls, !show && styles.hidden)} aria-hidden={!show} onClick={(e) => e.stopPropagation()}>
@@ -81,21 +84,41 @@ export function PlayerControls({
             </svg>
           </button>
 
-          <button
-            className={styles.iconBtn}
-            onClick={onToggleMute}
-            aria-label={state.isMuted ? "Unmute" : "Mute"}
-          >
-            {state.isMuted ? (
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-                <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/>
-              </svg>
-            ) : (
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-                <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/>
-              </svg>
-            )}
-          </button>
+          <div className={styles.volumeGroup}>
+            <button
+              className={styles.iconBtn}
+              onClick={onToggleMute}
+              aria-label={state.isMuted ? "Unmute" : "Mute"}
+            >
+              {state.isMuted || state.volume === 0 ? (
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                  <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/>
+                </svg>
+              ) : (
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                  <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/>
+                </svg>
+              )}
+            </button>
+            <div className={styles.volumePopup} role="group" aria-label="Volume">
+              <span className={styles.volumePct}>
+                {Math.round(state.isMuted ? 0 : state.volume * 100)}%
+              </span>
+              <input
+                type="range"
+                className={styles.volumeSlider}
+                min={0}
+                max={1}
+                step={0.05}
+                value={state.isMuted ? 0 : state.volume}
+                onChange={(e) => onSetVolume(Number(e.target.value))}
+                aria-label="Volume"
+                style={{
+                  background: `linear-gradient(to top, #f47521 ${fillPct}%, transparent ${fillPct}%)`,
+                }}
+              />
+            </div>
+          </div>
 
           <time className={styles.time} dateTime={`PT${Math.floor(state.currentTime)}S`}>
             {formatDuration(state.currentTime)}
