@@ -3,7 +3,7 @@ export const dynamic = "force-dynamic";
 import { HeroBanner } from "@/components/home/HeroBanner";
 import { SeriesRow } from "@/components/home/SeriesRow";
 import { ContinueWatchingRow } from "@/components/home/ContinueWatchingRow";
-import { getSeriesList, getFeaturedSeries } from "@/lib/series";
+import { getSeriesList, getFeaturedSeries, getSimulcastSeries } from "@/lib/series";
 import { topGenres } from "@/lib/genres";
 import { getWatchlistIds } from "@/app/actions/watchlist";
 import { getContinueWatching } from "@/app/actions/watchProgress";
@@ -14,16 +14,16 @@ import type { Genre } from "@/types";
 export const metadata: Metadata = { title: "Home" };
 
 export default async function HomePage() {
-  const [series, featured, watchlistIds, continueWatching, recs] = await Promise.all([
+  const [series, featured, watchlistIds, continueWatching, recs, simulcasts] = await Promise.all([
     getSeriesList({ limit: 50, consolidated: true }),
     getFeaturedSeries(),
     getWatchlistIds(),
     getContinueWatching(),
     getRecommendations(),
+    getSimulcastSeries(),
   ]);
 
   const topPicks = series.slice(0, 10);
-  const simulcasts = series.filter((s) => s.isSimulcast);
   const genres = topGenres(series, 5);
 
   return (
