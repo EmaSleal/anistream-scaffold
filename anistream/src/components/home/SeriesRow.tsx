@@ -8,9 +8,11 @@ import styles from "./SeriesRow.module.css";
 interface SeriesRowProps {
   title: string;
   series: Series[];
+  limit?: number;
 }
 
-export function SeriesRow({ title, series }: SeriesRowProps) {
+export function SeriesRow({ title, series, limit }: SeriesRowProps) {
+  const items = limit ? series.slice(0, limit) : series;
   const rowRef = useRef<HTMLDivElement>(null);
   const [canLeft, setCanLeft] = useState(false);
   const [canRight, setCanRight] = useState(false);
@@ -55,7 +57,7 @@ export function SeriesRow({ title, series }: SeriesRowProps) {
         </button>
 
         <div className={styles.row} ref={rowRef} role="list">
-          {series.map((s) => (
+          {items.map((s) => (
             <div key={s.id} role="listitem">
               <AnimeCard series={s} />
             </div>

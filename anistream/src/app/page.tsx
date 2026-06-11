@@ -16,16 +16,17 @@ export const metadata: Metadata = { title: "Home" };
 
 export default async function HomePage() {
   const [series, featured, watchlistIds, continueWatching, recs, simulcasts] = await Promise.all([
-    getSeriesList({ limit: 50, consolidated: true }),
+    getSeriesList({ limit: 100, consolidated: true }),
     getFeaturedSeries(),
     getWatchlistIds(),
     getContinueWatching(),
     getRecommendations(),
-    getSimulcastSeries(),
+    getSimulcastSeries(15),
   ]);
 
   const topPicks = shuffle(series).slice(0, 10);
-  const genres = topGenres(series, 5);
+  const genres = shuffle(topGenres(series, 10));
+  
 
   return (
     <>
@@ -37,11 +38,12 @@ export default async function HomePage() {
         {simulcasts.length > 0 && (
           <SeriesRow title="Simulcasts" series={shuffle(simulcasts)} />
         )}
-        <SeriesRow title="Popular" series={series} />
+        <SeriesRow title="Popular" series={series} limit={20} />
         {genres.map((genre) => {
-          const rows = series
+          const rows = shuffle(series)
             .filter((s) => s.genres?.includes(genre as Genre))
-            .sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
+            //.sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
+
             .slice(0, 10);
           return rows.length > 0 ? (
             <SeriesRow key={genre} title={`Top ${genre}`} series={rows} />
