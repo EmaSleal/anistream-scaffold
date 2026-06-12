@@ -9,9 +9,11 @@ interface SeriesRowProps {
   title: string;
   series: Series[];
   limit?: number;
+  /** Set of series IDs in the user's watchlist. Used to seed each card's initial state. */
+  watchlistIds?: Set<string>;
 }
 
-export function SeriesRow({ title, series, limit }: SeriesRowProps) {
+export function SeriesRow({ title, series, limit, watchlistIds }: SeriesRowProps) {
   const items = limit ? series.slice(0, limit) : series;
   const rowRef = useRef<HTMLDivElement>(null);
   const [canLeft, setCanLeft] = useState(false);
@@ -59,7 +61,7 @@ export function SeriesRow({ title, series, limit }: SeriesRowProps) {
         <div className={styles.row} ref={rowRef} role="list">
           {items.map((s) => (
             <div key={s.id} role="listitem">
-              <AnimeCard series={s} />
+              <AnimeCard series={s} isInWatchlist={watchlistIds?.has(s.id) ?? false} />
             </div>
           ))}
         </div>

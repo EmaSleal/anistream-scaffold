@@ -2,6 +2,10 @@
 
 No database access — all functions accept raw dicts and return transformed
 structures. Testable in isolation (mirrors the Wave 1/2 domain layer pattern).
+
+Routes summary:
+  build_continue_watching — franchise-deduped, completion-filtered, capped at 10
+  build_watch_history     — unfiltered, no dedup, capped at `limit`
 """
 from domain.series import map_episode_row
 
@@ -73,6 +77,64 @@ def build_continue_watching(
         # (which may have the column empty). Overwrite only when progress has it.
         if duration_sec > 0:
             episode["duration"] = duration_sec
+        result.append(
+            {
+                "episode": episode,
+                "progressSeconds": progress_sec,
+                "seriesId": row.get("series_id"),
+            }
+        )
+
+    return result
+
+
+def build_watch_history(
+    progress_rows: list[dict],
+    episode_rows: list[dict],
+    limit: int,
+) -> list[dict]:
+    """Build the watch-history list from raw DB data.
+
+    Unlike build_continue_watching, this function:
+    - Applies NO completion (>=95%) filter — all watched episodes are included.
+    - Applies NO franchise deduplication — each episode appears independently.
+    - Produces NO simulcast side-effects.
+    - Caps the result at `limit` items (not a fixed 10).
+
+    Args:
+        progress_rows:  Raw watch_progress rows (episode_id, series_id,
+                        progress_sec, duration_sec, updated_at), already
+                        pre-sorted by updated_at DESC and capped by the caller.
+        episode_rows:   Raw episode rows (with series join) for the episode_ids
+                        in progress_rows. From db.progress.get_episodes_by_ids().
+        limit:          Maximum number of items to return.
+
+    Returns:
+        List of dicts: {episode: <camelCase Episode>, progressSeconds: int,
+                        seriesId: str}
+    """
+    episode_by_id: dict[str, dict] = {ep["id"]: ep for ep in episode_rows}
+
+    result: list[dict] = []
+    for row in progress_rows:
+        if len(result) >= limit:
+            break
+
+        episode_id = row.get("episode_id")
+        ep_raw = episode_by_id.get(episode_id)
+        if not ep_raw:
+            # Episode not found — skip (data integrity gap, same as build_continue_watching)
+            continue
+
+        progress_sec = row.get("progress_sec", 0) or 0
+        duration_sec = row.get("duration_sec", 0) or 0
+
+        episode = map_episode_row(ep_raw)
+        # Duration from the progress row is more reliable than the episodes table.
+        # Overwrite only when progress has it (same logic as build_continue_watching).
+        if duration_sec > 0:
+            episode["duration"] = duration_sec
+
         result.append(
             {
                 "episode": episode,

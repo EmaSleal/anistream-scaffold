@@ -6,6 +6,8 @@ import type { Metadata } from "next";
 import { cookies } from "next/headers";
 import type { Series } from "@/types";
 import styles from "./my-lists.module.css";
+import { ContinueWatchingRow } from "@/components/home/ContinueWatchingRow";
+import { getWatchHistory } from "@/app/actions/watchProgress";
 
 export const metadata: Metadata = { title: "My Lists" };
 
@@ -27,11 +29,15 @@ async function getWatchlist(): Promise<Series[]> {
 }
 
 export default async function MyListsPage() {
-  const series = await getWatchlist();
+  // Fetch watchlist and watch history concurrently to avoid a serial waterfall
+  const [series, history] = await Promise.all([getWatchlist(), getWatchHistory(25)]);
 
   return (
     <div className={styles.page}>
       <h1 className={styles.heading}>My Lists</h1>
+
+      {/* Watch history row — ContinueWatchingRow returns null when empty */}
+      <ContinueWatchingRow episodes={history} />
 
       {series.length === 0 ? (
         <p className={styles.empty}>

@@ -5,6 +5,7 @@ import { AnimeCard } from "@/components/home/AnimeCard";
 import { getSimulcastSeries, consolidateFranchises } from "@/lib/series";
 import { getRecentSimulcastEpisodes } from "@/lib/simulcast-episodes";
 import { RecentEpisodesRow } from "@/components/simulcast/RecentEpisodesRow";
+import { getWatchlistIds } from "@/app/actions/watchlist";
 import type { Metadata } from "next";
 import styles from "../browse/browse.module.css";
 import sc from "./simulcast.module.css";
@@ -15,11 +16,13 @@ export default async function SimulcastPage() {
   const session = await auth();
   const userId = session?.user?.id;
 
-  const [recent, series] = await Promise.all([
+  const [recent, series, watchlistIds] = await Promise.all([
     getRecentSimulcastEpisodes(12, userId),
     getSimulcastSeries(50),
+    getWatchlistIds(),
   ]);
   const consolidated = consolidateFranchises(series);
+  const watchlistSet = new Set(watchlistIds);
 
   return (
     <div className="page-content">
@@ -37,7 +40,7 @@ export default async function SimulcastPage() {
         <div className={styles.grid} role="list">
           {consolidated.map((s) => (
             <div key={s.id} role="listitem">
-              <AnimeCard series={s} />
+              <AnimeCard series={s} isInWatchlist={watchlistSet.has(s.id)} />
             </div>
           ))}
         </div>

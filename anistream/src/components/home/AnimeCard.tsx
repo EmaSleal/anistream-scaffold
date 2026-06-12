@@ -4,12 +4,14 @@ import Link from "next/link";
 import Image from "next/image";
 import type { Series } from "@/types";
 import styles from "./AnimeCard.module.css";
+import { AnimeCardMenu } from "./AnimeCardMenu";
 
 interface AnimeCardProps {
   series: Series;
+  isInWatchlist?: boolean;
 }
 
-export function AnimeCard({ series }: AnimeCardProps) {
+export function AnimeCard({ series, isInWatchlist = false }: AnimeCardProps) {
   const formatLabel = series.audioFormats
     .map((f) => f.charAt(0).toUpperCase() + f.slice(1))
     .join(" | ");
@@ -32,13 +34,7 @@ export function AnimeCard({ series }: AnimeCardProps) {
         <p className={styles.title}>{series.title}</p>
         <div className={styles.meta}>
           <span className={styles.format}>{formatLabel}</span>
-          <button
-            className={styles.menuBtn}
-            aria-label={`More options for ${series.title}`}
-            onClick={(e) => e.preventDefault()}
-          >
-            ···
-          </button>
+          <AnimeCardMenu seriesId={series.id} isInWatchlist={isInWatchlist} />
         </div>
       </div>
     </Link>

@@ -291,7 +291,180 @@ class TestAdvanceEpisode:
 # Unit tests: build_continue_watching (domain/progress.py)
 # ---------------------------------------------------------------------------
 
-from domain.progress import build_continue_watching
+from domain.progress import build_continue_watching, build_watch_history
+
+
+# ---------------------------------------------------------------------------
+# Unit tests: build_watch_history (domain/progress.py)
+# ---------------------------------------------------------------------------
+
+class TestBuildWatchHistory:
+    def test_empty_input_returns_empty_list(self):
+        result = build_watch_history([], [], 25)
+        assert result == []
+
+    def test_completed_episodes_are_included(self):
+        """AC-B.2 / AC-B.4: NO >=95% completion filter — completed eps MUST appear."""
+        rows = [_progress_row("ep1", "s1", progress_sec=1400, duration_sec=1440)]
+        # 1400/1440 = 0.972 >= 0.95 → would be filtered by build_continue_watching, NOT here
+        eps = [_episode_row("ep1", "s1")]
+
+        result = build_watch_history(rows, eps, 25)
+        assert len(result) == 1
+        assert result[0]["episode"]["id"] == "ep1"
+
+    def test_no_franchise_dedup_all_included(self):
+        """AC-B.4: NO franchise dedup — all rows appear even from the same series."""
+        rows = [
+            _progress_row("ep1", "s1", 100, 1440, "2026-01-02T00:00:00Z"),
+            _progress_row("ep2", "s1", 200, 1440, "2026-01-01T00:00:00Z"),
+        ]
+        eps = [_episode_row("ep1", "s1"), _episode_row("ep2", "s1")]
+
+        result = build_watch_history(rows, eps, 25)
+        assert len(result) == 2
+        ids = [item["episode"]["id"] for item in result]
+        assert "ep1" in ids
+        assert "ep2" in ids
+
+    def test_caps_at_limit(self):
+        """AC-B.3: output is capped at `limit` rows."""
+        rows = [_progress_row(f"ep{i}", f"s{i}", 100, 1440) for i in range(10)]
+        eps = [_episode_row(f"ep{i}", f"s{i}") for i in range(10)]
+
+        result = build_watch_history(rows, eps, 5)
+        assert len(result) == 5
+
+    def test_respects_ordering(self):
+        """Output order mirrors the input order (caller passes rows sorted by updated_at DESC)."""
+        rows = [
+            _progress_row("ep3", "s3", 100, 1440, "2026-01-03T00:00:00Z"),
+            _progress_row("ep1", "s1", 100, 1440, "2026-01-01T00:00:00Z"),
+        ]
+        eps = [_episode_row("ep3", "s3"), _episode_row("ep1", "s1")]
+
+        result = build_watch_history(rows, eps, 25)
+        assert result[0]["episode"]["id"] == "ep3"
+        assert result[1]["episode"]["id"] == "ep1"
+
+    def test_episode_not_found_is_skipped(self):
+        """Data integrity skip — same behaviour as build_continue_watching."""
+        rows = [_progress_row("ep-missing", "s1", 100, 1440)]
+        result = build_watch_history(rows, [], 25)
+        assert result == []
+
+    def test_result_structure(self):
+        """Each item has episode (camelCase), progressSeconds, seriesId."""
+        rows = [_progress_row("ep1", "s1", 250, 1440)]
+        eps = [_episode_row("ep1", "s1")]
+
+        result = build_watch_history(rows, eps, 25)
+        assert len(result) == 1
+        item = result[0]
+        assert "episode" in item
+        assert "progressSeconds" in item
+        assert "seriesId" in item
+        assert item["progressSeconds"] == 250
+        assert item["seriesId"] == "s1"
+        assert "seriesId" in item["episode"]
+
+    def test_duration_override_from_progress_row(self):
+        """Duration from progress row overwrites the episode row value."""
+        rows = [_progress_row("ep1", "s1", 200, 1500)]  # progress says 1500s
+        ep = {**_episode_row("ep1", "s1")}  # episode row has no duration field
+        result = build_watch_history(rows, [ep], 25)
+        assert result[0]["episode"]["duration"] == 1500
+
+    def test_zero_duration_no_override(self):
+        """When duration_sec == 0, the episode's own duration is NOT overwritten."""
+        rows = [_progress_row("ep1", "s1", 100, 0)]
+        ep = {**_episode_row("ep1", "s1"), "duration_sec": 500}
+        result = build_watch_history(rows, [ep], 25)
+        # progress duration_sec=0 must not overwrite the episode's 500s duration
+        assert result[0]["episode"]["duration"] == 500
+
+
+# ---------------------------------------------------------------------------
+# Route: GET /api/progress/history
+# ---------------------------------------------------------------------------
+
+class TestWatchHistoryRoute:
+    def test_history_route_not_matched_as_episode_id(self, client):
+        """ADR-004: 'history' MUST NOT resolve to get_episode_progress."""
+        with patch("db.progress.get_recent_progress", return_value=[]):
+            res = client.get("/api/progress/history", headers=_auth_header())
+        # Should hit watch_history route (200 + list), not episode progress route
+        assert res.status_code == 200
+        assert isinstance(json.loads(res.data), list)
+
+    def test_empty_progress_returns_empty_array(self, client):
+        with patch("db.progress.get_recent_progress", return_value=[]):
+            res = client.get("/api/progress/history", headers=_auth_header())
+        assert res.status_code == 200
+        assert json.loads(res.data) == []
+
+    def test_returns_enriched_episodes(self, client):
+        rows = [_progress_row("ep1", "s1", 100, 1440)]
+        eps = [_episode_row("ep1", "s1")]
+        with (
+            patch("db.progress.get_recent_progress", return_value=rows),
+            patch("db.progress.get_episodes_by_ids", return_value=eps),
+        ):
+            res = client.get("/api/progress/history", headers=_auth_header())
+        data = json.loads(res.data)
+        assert res.status_code == 200
+        assert len(data) == 1
+        assert "episode" in data[0]
+        assert data[0]["progressSeconds"] == 100
+
+    def test_default_limit_is_25(self, client):
+        """AC-B.3: default limit is 25 when param is omitted."""
+        with (
+            patch("db.progress.get_recent_progress") as mock_rp,
+            patch("db.progress.get_episodes_by_ids", return_value=[]),
+        ):
+            mock_rp.return_value = []
+            client.get("/api/progress/history", headers=_auth_header())
+        mock_rp.assert_called_once_with("u-1", limit=25)
+
+    def test_custom_limit_respected(self, client):
+        """Limit query param is forwarded to get_recent_progress."""
+        with (
+            patch("db.progress.get_recent_progress") as mock_rp,
+            patch("db.progress.get_episodes_by_ids", return_value=[]),
+        ):
+            mock_rp.return_value = []
+            client.get("/api/progress/history?limit=10", headers=_auth_header())
+        mock_rp.assert_called_once_with("u-1", limit=10)
+
+    def test_limit_capped_at_50(self, client):
+        """AC-B.3: requests with limit > 50 are silently capped at 50."""
+        with (
+            patch("db.progress.get_recent_progress") as mock_rp,
+            patch("db.progress.get_episodes_by_ids", return_value=[]),
+        ):
+            mock_rp.return_value = []
+            client.get("/api/progress/history?limit=999", headers=_auth_header())
+        mock_rp.assert_called_once_with("u-1", limit=50)
+
+    def test_unauthenticated_returns_401(self, client):
+        res = client.get("/api/progress/history")
+        assert res.status_code == 401
+
+    def test_completed_episodes_included_in_history(self, client):
+        """AC-B.2: completed episodes (>=95%) must appear in history response."""
+        rows = [_progress_row("ep1", "s1", progress_sec=1400, duration_sec=1440)]
+        eps = [_episode_row("ep1", "s1")]
+        with (
+            patch("db.progress.get_recent_progress", return_value=rows),
+            patch("db.progress.get_episodes_by_ids", return_value=eps),
+        ):
+            res = client.get("/api/progress/history", headers=_auth_header())
+        data = json.loads(res.data)
+        assert res.status_code == 200
+        # Episode with 97.2% progress MUST appear (unlike continue-watching which filters it)
+        assert len(data) == 1
+        assert data[0]["episode"]["id"] == "ep1"
 
 
 class TestBuildContinueWatching:

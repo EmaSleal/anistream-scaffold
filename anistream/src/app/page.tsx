@@ -26,19 +26,19 @@ export default async function HomePage() {
 
   const topPicks = shuffle(series).slice(0, 10);
   const genres = shuffle(topGenres(series, 10));
-  
+  const watchlistSet = new Set(watchlistIds);
 
   return (
     <>
       <HeroBanner featured={featured.length ? featured : series.slice(0, 5)} watchlistIds={watchlistIds} />
       <div className="home-content" style={{ paddingTop: "var(--space-8)" }}>
         <ContinueWatchingRow episodes={continueWatching} />
-        {recs.length > 0 && <SeriesRow title="Recommended for You" series={recs} />}
-        <SeriesRow title="Top Picks for You" series={topPicks} />
+        {recs.length > 0 && <SeriesRow title="Recommended for You" series={recs} watchlistIds={watchlistSet} />}
+        <SeriesRow title="Top Picks for You" series={topPicks} watchlistIds={watchlistSet} />
         {simulcasts.length > 0 && (
-          <SeriesRow title="Simulcasts" series={shuffle(simulcasts)} />
+          <SeriesRow title="Simulcasts" series={shuffle(simulcasts)} watchlistIds={watchlistSet} />
         )}
-        <SeriesRow title="Popular" series={series} limit={20} />
+        <SeriesRow title="Popular" series={series} limit={20} watchlistIds={watchlistSet} />
         {genres.map((genre) => {
           const rows = shuffle(series)
             .filter((s) => s.genres?.includes(genre as Genre))
@@ -46,7 +46,7 @@ export default async function HomePage() {
 
             .slice(0, 10);
           return rows.length > 0 ? (
-            <SeriesRow key={genre} title={`Top ${genre}`} series={rows} />
+            <SeriesRow key={genre} title={`Top ${genre}`} series={rows} watchlistIds={watchlistSet} />
           ) : null;
         })}
       </div>

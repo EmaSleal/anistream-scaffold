@@ -3,10 +3,11 @@
 Routes (all require @require_auth):
   POST /api/progress                      — upsert progress for an episode
   GET  /api/progress/continue-watching    — continue-watching list (BEFORE <episode_id>)
+  GET  /api/progress/history              — watch-history list (BEFORE <episode_id>)
   GET  /api/progress/<episode_id>         — get progress for a single episode
 
-CRITICAL: The continue-watching route MUST be registered before <episode_id>
-or Flask will match the literal string "continue-watching" as an episode_id.
+CRITICAL: Literal-string routes MUST be registered before <episode_id>
+or Flask will match them as an episode_id parameter.
 """
 import logging
 import threading
@@ -15,7 +16,7 @@ from datetime import datetime, timezone
 from flask import Blueprint, g, jsonify, request
 from auth import require_auth
 from db import progress as db_progress
-from domain.progress import build_continue_watching
+from domain.progress import build_continue_watching, build_watch_history
 from domain.simulcast import cooldown_elapsed, is_simulcast_candidate
 from simulcast_check import run_simulcast_check
 
@@ -243,6 +244,31 @@ def last_watched_in_franchise():
     except Exception as e:
         logging.error("last_watched_in_franchise failed: %s", e)
         return jsonify({"error": "Failed to fetch last watched series"}), 500
+
+
+# IMPORTANT: This route is defined BEFORE /progress/<episode_id> to prevent
+# Flask from matching "history" as an episode_id parameter.
+@progress_bp.get("/progress/history")
+@require_auth
+def watch_history():
+    """GET /api/progress/history?limit=N — enriched watch-history list.
+
+    Returns up to `limit` (default 25, max 50) most-recently-watched episodes
+    in reverse-chronological order. No completion filter, no franchise dedup.
+    """
+    raw_limit = request.args.get("limit", 25, type=int)
+    # Cap silently — never reject with an error
+    limit = min(max(raw_limit, 1), 50)
+
+    progress_rows = db_progress.get_recent_progress(g.user_id, limit=limit)
+    if not progress_rows:
+        return jsonify([]), 200
+
+    episode_ids = [r["episode_id"] for r in progress_rows if r.get("episode_id")]
+    episode_rows = db_progress.get_episodes_by_ids(episode_ids)
+
+    result = build_watch_history(progress_rows, episode_rows, limit)
+    return jsonify(result), 200
 
 
 @progress_bp.get("/progress/<episode_id>")

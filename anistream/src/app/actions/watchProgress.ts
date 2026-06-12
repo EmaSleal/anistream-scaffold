@@ -105,3 +105,23 @@ export async function getContinueWatching() {
   return (data.map((item) => ({ ...item.episode, progressSeconds: item.progressSeconds })) as (Episode & { progressSeconds: number })[])
     .filter((ep) => !(ep.duration > 0 && ep.duration - ep.progressSeconds <= 120));
 }
+
+/**
+ * Fetch the most-recently-watched episodes for the authenticated user.
+ *
+ * Differences from getContinueWatching:
+ *  - NO 120s near-completion filter — history is intentionally unfiltered.
+ *  - Maps directly from the backend response without further filtering.
+ */
+export async function getWatchHistory(limit = 25): Promise<(Episode & { progressSeconds: number })[]> {
+  const cookieHeader = await getCookieHeader();
+  const res = await fetch(`${getBaseUrl()}/api/progress/history?limit=${limit}`, {
+    headers: { Cookie: cookieHeader },
+    cache: "no-store",
+  });
+
+  if (!res.ok) return [];
+
+  const data = (await res.json()) as { episode: Record<string, unknown>; progressSeconds: number }[];
+  return data.map((item) => ({ ...item.episode, progressSeconds: item.progressSeconds })) as (Episode & { progressSeconds: number })[];
+}

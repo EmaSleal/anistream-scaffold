@@ -3,6 +3,7 @@ import { getSeriesList, getDiscoverSeries, consolidateFranchises } from "@/lib/s
 import type { SeriesListParams } from "@/lib/series";
 import { topGenres } from "@/lib/genres";
 import { FilterBar } from "@/components/browse/FilterBar";
+import { getWatchlistIds } from "@/app/actions/watchlist";
 import type { Series } from "@/types";
 import styles from "@/app/browse/browse.module.css";
 
@@ -31,6 +32,8 @@ export default async function GenresTab({ genre, year, season }: GenresTabProps)
     consolidated = [...raw].sort(() => Math.random() - 0.5);
   }
 
+  const [watchlistIds] = await Promise.all([getWatchlistIds()]);
+  const watchlistSet = new Set(watchlistIds);
   const genres = topGenres(consolidated, 12);
 
   return (
@@ -50,7 +53,7 @@ export default async function GenresTab({ genre, year, season }: GenresTabProps)
         <div className={styles.grid} role="list">
           {consolidated.map((s) => (
             <div key={s.id} role="listitem">
-              <AnimeCard series={s} />
+              <AnimeCard series={s} isInWatchlist={watchlistSet.has(s.id)} />
             </div>
           ))}
         </div>
