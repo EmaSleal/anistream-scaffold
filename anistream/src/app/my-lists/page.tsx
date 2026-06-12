@@ -41,13 +41,6 @@ export default async function MyListsPage() {
     <div className={styles.page}>
       <h1 className={styles.heading}>My Lists</h1>
 
-      {recentSeries.length > 0 && (
-        <SeriesRow title="Recently Watched" series={recentSeries} />
-      )}
-
-      {/* Watch history row — ContinueWatchingRow returns null when empty */}
-      <ContinueWatchingRow episodes={history} />
-
       {series.length === 0 ? (
         <p className={styles.empty}>
           Your watchlist is empty. Browse anime and add titles to your list.
@@ -70,6 +63,15 @@ export default async function MyListsPage() {
           ))}
         </div>
       )}
+      
+      {recentSeries.length > 0 && (
+        <SeriesRow title="Recently Watched" series={recentSeries} />
+      )}
+
+      {/* Watch history row — ContinueWatchingRow returns null when empty */}
+      <ContinueWatchingRow episodes={history} />
+
+      
     </div>
   );
 }
