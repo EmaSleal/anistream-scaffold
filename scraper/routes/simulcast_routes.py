@@ -23,7 +23,7 @@ from db.series import get_series_list, get_series_by_id, upsert_series_stub
 from db.simulcast import get_series_simulcast_data, update_simulcast_fields
 from domain.simulcast import resolve_simulcast_status
 from fetcher import fetch_anime_by_id, fetch_kitsu_series_status, fetch_kitsu_episodes, fetch_jikan_episodes, fetch_simulcasts
-from routes import _build_episodes
+from routes.ingest_routes import _build_episodes
 from storage import get_series_by_mal_id, get_client, upsert_episodes
 
 simulcast_bp = Blueprint("simulcast", __name__, url_prefix="/api/simulcast")

@@ -94,7 +94,7 @@ class TestAuthGuard:
 
 class TestNotFound:
     def test_unknown_series_returns_404(self, client):
-        with patch("simulcast_routes.get_series_simulcast_data", return_value=None):
+        with patch("routes.simulcast_routes.get_series_simulcast_data", return_value=None):
             res = client.post(
                 "/api/simulcast/refresh/nonexistent",
                 headers=_SERVICE_HEADER,
@@ -113,7 +113,7 @@ class TestCooldownSkip:
         recent = (datetime.now(timezone.utc) - timedelta(minutes=30)).isoformat()
         row = _series_simulcast_row(last_simulcast_check=recent)
 
-        with patch("simulcast_routes.get_series_simulcast_data", return_value=row):
+        with patch("routes.simulcast_routes.get_series_simulcast_data", return_value=row):
             res = client.post(
                 "/api/simulcast/refresh/my-series",
                 headers=_SERVICE_HEADER,
@@ -142,11 +142,11 @@ class TestCooldownSkip:
         mock_client = MagicMock()
         mock_client.table.return_value = mock_table
 
-        with patch("simulcast_routes.get_series_simulcast_data", return_value=row), \
-             patch("simulcast_routes.update_simulcast_fields"), \
+        with patch("routes.simulcast_routes.get_series_simulcast_data", return_value=row), \
+             patch("routes.simulcast_routes.update_simulcast_fields"), \
              patch("storage.get_client", return_value=mock_client), \
-             patch("simulcast_routes.fetch_anime_by_id", return_value=jikan_data), \
-             patch("simulcast_routes.fetch_kitsu_series_status", return_value="current"):
+             patch("routes.simulcast_routes.fetch_anime_by_id", return_value=jikan_data), \
+             patch("routes.simulcast_routes.fetch_kitsu_series_status", return_value="current"):
             res = client.post(
                 "/api/simulcast/refresh/my-series",
                 headers=_SERVICE_HEADER,
@@ -177,11 +177,11 @@ class TestSimulcastTrue:
         mock_client = MagicMock()
         mock_client.table.return_value = mock_table
 
-        with patch("simulcast_routes.get_series_simulcast_data", return_value=row), \
-             patch("simulcast_routes.update_simulcast_fields"), \
+        with patch("routes.simulcast_routes.get_series_simulcast_data", return_value=row), \
+             patch("routes.simulcast_routes.update_simulcast_fields"), \
              patch("storage.get_client", return_value=mock_client), \
-             patch("simulcast_routes.fetch_anime_by_id", return_value=jikan_data), \
-             patch("simulcast_routes.fetch_kitsu_series_status", return_value="current"):
+             patch("routes.simulcast_routes.fetch_anime_by_id", return_value=jikan_data), \
+             patch("routes.simulcast_routes.fetch_kitsu_series_status", return_value="current"):
             res = client.post(
                 "/api/simulcast/refresh/my-series",
                 headers=_SERVICE_HEADER,
@@ -213,11 +213,11 @@ class TestSimulcastFalseKitsuFinished:
         mock_client = MagicMock()
         mock_client.table.return_value = mock_table
 
-        with patch("simulcast_routes.get_series_simulcast_data", return_value=row), \
-             patch("simulcast_routes.update_simulcast_fields"), \
+        with patch("routes.simulcast_routes.get_series_simulcast_data", return_value=row), \
+             patch("routes.simulcast_routes.update_simulcast_fields"), \
              patch("storage.get_client", return_value=mock_client), \
-             patch("simulcast_routes.fetch_anime_by_id", return_value=jikan_data), \
-             patch("simulcast_routes.fetch_kitsu_series_status", return_value="finished"):
+             patch("routes.simulcast_routes.fetch_anime_by_id", return_value=jikan_data), \
+             patch("routes.simulcast_routes.fetch_kitsu_series_status", return_value="finished"):
             res = client.post(
                 "/api/simulcast/refresh/my-series",
                 headers=_SERVICE_HEADER,
@@ -251,15 +251,15 @@ class TestAutoIngest:
         # Build fake new episodes list (2 new)
         fake_episodes = [{"id": f"ep{i}"} for i in range(10)]
 
-        with patch("simulcast_routes.get_series_simulcast_data", return_value=row), \
-             patch("simulcast_routes.update_simulcast_fields"), \
+        with patch("routes.simulcast_routes.get_series_simulcast_data", return_value=row), \
+             patch("routes.simulcast_routes.update_simulcast_fields"), \
              patch("storage.get_client", return_value=mock_client), \
-             patch("simulcast_routes.fetch_anime_by_id", return_value=jikan_data), \
-             patch("simulcast_routes.fetch_kitsu_series_status", return_value="current"), \
-             patch("simulcast_routes.fetch_kitsu_episodes", return_value={}), \
-             patch("simulcast_routes.fetch_jikan_episodes", return_value={}), \
-             patch("simulcast_routes._build_episodes", return_value=fake_episodes), \
-             patch("simulcast_routes.upsert_episodes", return_value=2):
+             patch("routes.simulcast_routes.fetch_anime_by_id", return_value=jikan_data), \
+             patch("routes.simulcast_routes.fetch_kitsu_series_status", return_value="current"), \
+             patch("routes.simulcast_routes.fetch_kitsu_episodes", return_value={}), \
+             patch("routes.simulcast_routes.fetch_jikan_episodes", return_value={}), \
+             patch("routes.simulcast_routes._build_episodes", return_value=fake_episodes), \
+             patch("routes.simulcast_routes.upsert_episodes", return_value=2):
             res = client.post(
                 "/api/simulcast/refresh/my-series",
                 headers=_SERVICE_HEADER,
@@ -290,11 +290,11 @@ class TestNoKitsuId:
         mock_client = MagicMock()
         mock_client.table.return_value = mock_table
 
-        with patch("simulcast_routes.get_series_simulcast_data", return_value=row), \
-             patch("simulcast_routes.update_simulcast_fields"), \
+        with patch("routes.simulcast_routes.get_series_simulcast_data", return_value=row), \
+             patch("routes.simulcast_routes.update_simulcast_fields"), \
              patch("storage.get_client", return_value=mock_client), \
-             patch("simulcast_routes.fetch_anime_by_id", return_value=jikan_data), \
-             patch("simulcast_routes.fetch_kitsu_series_status") as mock_kitsu_fetch:
+             patch("routes.simulcast_routes.fetch_anime_by_id", return_value=jikan_data), \
+             patch("routes.simulcast_routes.fetch_kitsu_series_status") as mock_kitsu_fetch:
             res = client.post(
                 "/api/simulcast/refresh/my-series",
                 headers=_SERVICE_HEADER,

@@ -146,7 +146,7 @@ class TestSeriesList:
 
     def test_simulcast_filter_returns_only_simulcast_rows(self, client):
         simulcast_row = {**_series_row(id="sim1"), "is_simulcast": True}
-        with patch("series_routes.db_series.get_series_list", return_value=[simulcast_row]) as mock_fn:
+        with patch("routes.series_routes.db_series.get_series_list", return_value=[simulcast_row]) as mock_fn:
             res = client.get("/api/series?simulcast=true")
         assert res.status_code == 200
         data = json.loads(res.data)
@@ -157,7 +157,7 @@ class TestSeriesList:
 
     def test_no_simulcast_param_does_not_apply_filter(self, client):
         rows = [_series_row(id=f"s{i}") for i in range(3)]
-        with patch("series_routes.db_series.get_series_list", return_value=rows) as mock_fn:
+        with patch("routes.series_routes.db_series.get_series_list", return_value=rows) as mock_fn:
             res = client.get("/api/series")
         assert res.status_code == 200
         data = json.loads(res.data)
@@ -367,8 +367,8 @@ class TestRecommendationsEndpoint:
     def test_returns_fallback_for_user_with_empty_history(self, client):
         top_rows = [self._series_row_with_mal(id=f"s{i}", mal_id=i, score=float(10-i)) for i in range(1, 4)]
         with (
-            patch("series_routes.db_progress.get_recent_progress", return_value=[]),
-            patch("series_routes.db_series.get_series_list", return_value=top_rows),
+            patch("routes.series_routes.db_progress.get_recent_progress", return_value=[]),
+            patch("routes.series_routes.db_series.get_series_list", return_value=top_rows),
         ):
             res = client.get("/api/series/recommendations", headers=_auth_header())
         assert res.status_code == 200
@@ -387,17 +387,17 @@ class TestRecommendationsEndpoint:
         matched_rows = [self._series_row_with_mal(id="s20", mal_id=20, title="Anime 20")]
 
         with (
-            patch("series_routes.db_progress.get_recent_progress", side_effect=[
+            patch("routes.series_routes.db_progress.get_recent_progress", side_effect=[
                 progress_rows,   # first call: limit=5 seeds
                 progress_rows,   # second call: limit=500 watched set
             ]),
-            patch("series_routes.db_progress.get_mal_ids_for_series", side_effect=[
+            patch("routes.series_routes.db_progress.get_mal_ids_for_series", side_effect=[
                 {"s1": 10},       # seed mal_ids
                 {"s1": 10},       # watched mal_ids
             ]),
-            patch("series_routes.fetch_recommendations", return_value=rec_entries),
-            patch("series_routes.db_series.get_series_by_mal_ids", return_value=matched_rows),
-            patch("series_routes.db_series.upsert_series_stub"),
+            patch("routes.series_routes.fetch_recommendations", return_value=rec_entries),
+            patch("routes.series_routes.db_series.get_series_by_mal_ids", return_value=matched_rows),
+            patch("routes.series_routes.db_series.upsert_series_stub"),
             patch("threading.Thread") as mock_thread,
         ):
             res = client.get("/api/series/recommendations", headers=_auth_header())
@@ -416,9 +416,9 @@ class TestRecommendationsEndpoint:
         ]
         top_rows = [self._series_row_with_mal(id="top1", mal_id=99)]
         with (
-            patch("series_routes.db_progress.get_recent_progress", return_value=progress_rows),
-            patch("series_routes.db_progress.get_mal_ids_for_series", return_value={}),
-            patch("series_routes.db_series.get_series_list", return_value=top_rows),
+            patch("routes.series_routes.db_progress.get_recent_progress", return_value=progress_rows),
+            patch("routes.series_routes.db_progress.get_mal_ids_for_series", return_value={}),
+            patch("routes.series_routes.db_series.get_series_list", return_value=top_rows),
         ):
             res = client.get("/api/series/recommendations", headers=_auth_header())
         assert res.status_code == 200
@@ -431,16 +431,16 @@ class TestRecommendationsEndpoint:
             {"series_id": "s1", "progress_sec": 100, "updated_at": "2026-01-01T00:00:00Z"},
         ]
         with (
-            patch("series_routes.db_progress.get_recent_progress", side_effect=[
+            patch("routes.series_routes.db_progress.get_recent_progress", side_effect=[
                 progress_rows,
                 progress_rows,
             ]),
-            patch("series_routes.db_progress.get_mal_ids_for_series", side_effect=[
+            patch("routes.series_routes.db_progress.get_mal_ids_for_series", side_effect=[
                 {"s1": 10},
                 {"s1": 10},
             ]),
-            patch("series_routes.fetch_recommendations", return_value=[]),
-            patch("series_routes.db_series.get_series_list", return_value=[self._series_row_with_mal()]) as mock_fallback,
+            patch("routes.series_routes.fetch_recommendations", return_value=[]),
+            patch("routes.series_routes.db_series.get_series_list", return_value=[self._series_row_with_mal()]) as mock_fallback,
         ):
             res = client.get("/api/series/recommendations", headers=_auth_header())
         assert res.status_code == 200
@@ -452,17 +452,17 @@ class TestRecommendationsEndpoint:
         ]
         rec_entries = [self._rec_entry(200)]  # mal_id=200, not in DB
         with (
-            patch("series_routes.db_progress.get_recent_progress", side_effect=[
+            patch("routes.series_routes.db_progress.get_recent_progress", side_effect=[
                 progress_rows,
                 progress_rows,
             ]),
-            patch("series_routes.db_progress.get_mal_ids_for_series", side_effect=[
+            patch("routes.series_routes.db_progress.get_mal_ids_for_series", side_effect=[
                 {"s1": 10},
                 {"s1": 10},
             ]),
-            patch("series_routes.fetch_recommendations", return_value=rec_entries),
-            patch("series_routes.db_series.get_series_by_mal_ids", return_value=[]),
-            patch("series_routes.threading") as mock_threading,
+            patch("routes.series_routes.fetch_recommendations", return_value=rec_entries),
+            patch("routes.series_routes.db_series.get_series_by_mal_ids", return_value=[]),
+            patch("routes.series_routes.threading") as mock_threading,
         ):
             mock_thread_instance = MagicMock()
             mock_threading.Thread.return_value = mock_thread_instance

@@ -1,11 +1,11 @@
 from flask import Flask
-from routes import bp
-from series_routes import series_bp
-from episode_routes import episode_bp
-from watchlist_routes import watchlist_bp
-from progress_routes import progress_bp
-from auth_routes import auth_bp
-from simulcast_routes import simulcast_bp
+from routes.ingest_routes import bp
+from routes.series_routes import series_bp
+from routes.episode_routes import episode_bp
+from routes.watchlist_routes import watchlist_bp
+from routes.progress_routes import progress_bp
+from routes.auth_routes import auth_bp
+from routes.simulcast_routes import simulcast_bp
 
 
 def create_app():

@@ -508,7 +508,7 @@ class TestContinueWatchingSimulcastThreads:
             patch("db.progress.get_series_franchise_map", return_value={"s1": "s1"}),
             patch("db.progress.get_episodes_by_ids", return_value=eps),
             patch("db.progress.get_series_simulcast_meta", return_value=meta),
-            patch("progress_routes.threading.Thread") as mock_thread_cls,
+            patch("routes.progress_routes.threading.Thread") as mock_thread_cls,
         ):
             mock_thread_instance = MagicMock()
             mock_thread_cls.return_value = mock_thread_instance
@@ -534,7 +534,7 @@ class TestContinueWatchingSimulcastThreads:
             patch("db.progress.get_series_franchise_map", return_value={"s1": "s1"}),
             patch("db.progress.get_episodes_by_ids", return_value=eps),
             patch("db.progress.get_series_simulcast_meta", return_value=meta),
-            patch("progress_routes.threading.Thread") as mock_thread_cls,
+            patch("routes.progress_routes.threading.Thread") as mock_thread_cls,
         ):
             res = client.get("/api/progress/continue-watching", headers=_auth_header())
 
@@ -573,7 +573,7 @@ class TestContinueWatchingSimulcastThreads:
                   return_value={"s1": "s1", "s2": "s2"}),
             patch("db.progress.get_episodes_by_ids", return_value=eps),
             patch("db.progress.get_series_simulcast_meta", return_value=meta_combined),
-            patch("progress_routes.threading.Thread") as mock_thread_cls,
+            patch("routes.progress_routes.threading.Thread") as mock_thread_cls,
         ):
             mock_thread_instance = MagicMock()
             mock_thread_cls.return_value = mock_thread_instance
@@ -602,7 +602,7 @@ class TestContinueWatchingSimulcastThreads:
             patch("db.progress.get_series_franchise_map", return_value={"s1": "s1"}),
             patch("db.progress.get_episodes_by_ids", return_value=eps),
             patch("db.progress.get_series_simulcast_meta", return_value=meta),
-            patch("progress_routes.threading.Thread", side_effect=capture_thread),
+            patch("routes.progress_routes.threading.Thread", side_effect=capture_thread),
         ):
             res = client.get("/api/progress/continue-watching", headers=_auth_header())
 
@@ -627,7 +627,7 @@ class TestContinueWatchingSimulcastThreads:
             patch("db.progress.get_series_franchise_map", return_value={"s1": "s1"}),
             patch("db.progress.get_episodes_by_ids", return_value=eps),
             patch("db.progress.get_series_simulcast_meta", return_value=meta),
-            patch("progress_routes.threading.Thread") as mock_thread_cls,
+            patch("routes.progress_routes.threading.Thread") as mock_thread_cls,
         ):
             res = client.get("/api/progress/continue-watching", headers=_auth_header())
 
@@ -647,7 +647,7 @@ class TestContinueWatchingSimulcastThreads:
             patch("db.progress.get_series_franchise_map", return_value={"s1": "s1"}),
             patch("db.progress.get_episodes_by_ids", return_value=eps),
             patch("db.progress.get_series_simulcast_meta", return_value=meta),
-            patch("progress_routes.threading.Thread") as mock_thread_cls,
+            patch("routes.progress_routes.threading.Thread") as mock_thread_cls,
         ):
             res = client.get("/api/progress/continue-watching", headers=_auth_header())
 
@@ -666,7 +666,7 @@ class TestContinueWatchingSimulcastThreads:
             patch("db.progress.get_series_franchise_map", return_value={"s1": "s1"}),
             patch("db.progress.get_episodes_by_ids", return_value=eps),
             patch("db.progress.get_series_simulcast_meta", return_value=meta),
-            patch("progress_routes.threading.Thread") as mock_thread_cls,
+            patch("routes.progress_routes.threading.Thread") as mock_thread_cls,
         ):
             mock_thread_instance = MagicMock()
             mock_thread_cls.return_value = mock_thread_instance
