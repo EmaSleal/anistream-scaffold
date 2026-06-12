@@ -7,7 +7,8 @@ import { cookies } from "next/headers";
 import type { Series } from "@/types";
 import styles from "./my-lists.module.css";
 import { ContinueWatchingRow } from "@/components/home/ContinueWatchingRow";
-import { getWatchHistory } from "@/app/actions/watchProgress";
+import { SeriesRow } from "@/components/home/SeriesRow";
+import { getWatchHistory, getRecentSeries } from "@/app/actions/watchProgress";
 
 export const metadata: Metadata = { title: "My Lists" };
 
@@ -30,11 +31,19 @@ async function getWatchlist(): Promise<Series[]> {
 
 export default async function MyListsPage() {
   // Fetch watchlist and watch history concurrently to avoid a serial waterfall
-  const [series, history] = await Promise.all([getWatchlist(), getWatchHistory(25)]);
+  const [series, history, recentSeries] = await Promise.all([
+    getWatchlist(),
+    getWatchHistory(25),
+    getRecentSeries(10),
+  ]);
 
   return (
     <div className={styles.page}>
       <h1 className={styles.heading}>My Lists</h1>
+
+      {recentSeries.length > 0 && (
+        <SeriesRow title="Recently Watched" series={recentSeries} />
+      )}
 
       {/* Watch history row — ContinueWatchingRow returns null when empty */}
       <ContinueWatchingRow episodes={history} />

@@ -142,6 +142,20 @@ def get_mal_ids_for_series(series_ids: list[str]) -> dict[str, int]:
     return {row["id"]: row["mal_id"] for row in result.data or []}
 
 
+def get_series_by_ids(series_ids: list[str]) -> list[dict]:
+    """Return full series rows for the given IDs (snake_case, for map_series_row)."""
+    if not series_ids:
+        return []
+    client = storage.get_client()
+    result = (
+        client.table("series")
+        .select("*")
+        .in_("id", series_ids)
+        .execute()
+    )
+    return result.data or []
+
+
 def get_episodes_by_ids(episode_ids: list[str]) -> list[dict]:
     """Return episode rows (with series title join) for the given IDs."""
     if not episode_ids:

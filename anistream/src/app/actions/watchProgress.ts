@@ -11,7 +11,7 @@
  */
 
 import { cookies } from "next/headers";
-import type { Episode } from "@/types";
+import type { Episode, Series } from "@/types";
 
 function getBaseUrl(): string {
   return process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
@@ -113,6 +113,17 @@ export async function getContinueWatching() {
  *  - NO 120s near-completion filter — history is intentionally unfiltered.
  *  - Maps directly from the backend response without further filtering.
  */
+export async function getRecentSeries(limit = 10): Promise<Series[]> {
+  const cookieHeader = await getCookieHeader();
+  const res = await fetch(`${getBaseUrl()}/api/progress/recent-series?limit=${limit}`, {
+    headers: { Cookie: cookieHeader },
+    cache: "no-store",
+  });
+
+  if (!res.ok) return [];
+  return res.json() as Promise<Series[]>;
+}
+
 export async function getWatchHistory(limit = 25): Promise<(Episode & { progressSeconds: number })[]> {
   const cookieHeader = await getCookieHeader();
   const res = await fetch(`${getBaseUrl()}/api/progress/history?limit=${limit}`, {
