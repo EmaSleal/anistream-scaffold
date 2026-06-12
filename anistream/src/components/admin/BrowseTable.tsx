@@ -5,6 +5,7 @@ import { searchJikan } from "@/app/actions/jikan-search";
 import { ingestSeries } from "@/app/actions/ingest";
 import { checkExistingMalIds } from "@/app/actions/check-mal-ids";
 import type { JikanAnime, JikanPagination, JikanSearchParams } from "@/types/jikan";
+import AnimeFlvSlugSearch from "@/components/admin/AnimeFlvSlugSearch";
 import styles from "./BrowseTable.module.css";
 
 type IngestRowState = "idle" | "loading" | "done" | "error";
@@ -329,14 +330,15 @@ export default function BrowseTable() {
                   </td>
                   <td>
                     <div style={{ display: "flex", flexDirection: "column", gap: "4px", alignItems: "flex-start" }}>
-                      <input
-                        type="text"
-                        placeholder="animeflv-slug (required)"
-                        value={slugInputs.get(anime.mal_id) ?? ""}
-                        onChange={(e) => setSlug(anime.mal_id, e.target.value)}
+                      <AnimeFlvSlugSearch
+                        onSelect={(slug) => setSlug(anime.mal_id, slug)}
                         disabled={rowState === "loading" || rowState === "done"}
-                        className={styles.slugInput}
                       />
+                      {slugInputs.get(anime.mal_id) && (
+                        <span className={styles.slugLabel}>
+                          {slugInputs.get(anime.mal_id)}
+                        </span>
+                      )}
                       <button
                         className={styles.ingestBtn}
                         disabled={rowState === "loading" || rowState === "done" || !slugInputs.get(anime.mal_id)?.trim()}

@@ -72,6 +72,21 @@
   border: 1px solid var(--color-border);
 }
 
+.slugLabel {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--color-text-secondary);
+  background: var(--color-bg-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-1) var(--space-2);
+  display: inline-block;
+  max-width: 14rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .slugInput {
   padding: var(--space-1) var(--space-2);
   background: var(--color-bg-surface);
