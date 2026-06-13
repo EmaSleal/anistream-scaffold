@@ -2,8 +2,15 @@ import { auth } from "@/auth";
 import { NextResponse } from "next/server";
 
 export default auth((req) => {
-  const isLoggedIn = !!req.auth;
   const { pathname } = req.nextUrl;
+
+  // Temporary request logging — remove once production is verified stable
+  if (pathname.startsWith("/api")) {
+    console.log(`[nextjs] ${req.method} ${pathname} uid=${req.auth?.user?.id ?? "anon"}`);
+    return NextResponse.next();
+  }
+
+  const isLoggedIn = !!req.auth;
 
   if (isLoggedIn && pathname === "/login") {
     return NextResponse.redirect(new URL("/", req.url));
@@ -15,5 +22,5 @@ export default auth((req) => {
 });
 
 export const config = {
-  matcher: ["/((?!api|_next/static|_next/image|favicon.ico).*)"],
+  matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
 };
