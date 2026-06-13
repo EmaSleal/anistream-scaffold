@@ -111,10 +111,23 @@ export function usePlayerControls(initialDuration = 0, initialTime = 0): UsePlay
     (containerRef: React.RefObject<HTMLDivElement | null>) => {
       const el = containerRef.current;
       if (!el) return;
-      if (!document.fullscreenElement) {
-        void el.requestFullscreen();
+      const isFs = !!(document.fullscreenElement ?? (document as Document & { webkitFullscreenElement?: Element }).webkitFullscreenElement);
+      if (!isFs) {
+        if (el.requestFullscreen) {
+          void el.requestFullscreen();
+        } else {
+          // iOS Safari: requestFullscreen on div is unsupported — fall back to video element
+          const video = el.querySelector("video");
+          if (video && (video as HTMLVideoElement & { webkitEnterFullscreen?: () => void }).webkitEnterFullscreen) {
+            (video as HTMLVideoElement & { webkitEnterFullscreen: () => void }).webkitEnterFullscreen();
+          }
+        }
       } else {
-        void document.exitFullscreen();
+        if (document.exitFullscreen) {
+          void document.exitFullscreen();
+        } else {
+          (document as Document & { webkitExitFullscreen?: () => void }).webkitExitFullscreen?.();
+        }
       }
     },
     []
@@ -165,7 +178,7 @@ export function usePlayerControls(initialDuration = 0, initialTime = 0): UsePlay
     const onFullscreenChange = () =>
       setPlayerState((p) => ({
         ...p,
-        isFullscreen: !!document.fullscreenElement,
+        isFullscreen: !!(document.fullscreenElement ?? (document as Document & { webkitFullscreenElement?: Element }).webkitFullscreenElement),
       }));
 
     video.addEventListener("canplay", onCanPlay);
@@ -176,6 +189,7 @@ export function usePlayerControls(initialDuration = 0, initialTime = 0): UsePlay
     video.addEventListener("loadedmetadata", onLoadedMetadata);
     video.addEventListener("volumechange", onVolumeChange);
     document.addEventListener("fullscreenchange", onFullscreenChange);
+    document.addEventListener("webkitfullscreenchange", onFullscreenChange);
 
     return () => {
       video.removeEventListener("canplay", onCanPlay);
@@ -186,6 +200,7 @@ export function usePlayerControls(initialDuration = 0, initialTime = 0): UsePlay
       video.removeEventListener("loadedmetadata", onLoadedMetadata);
       video.removeEventListener("volumechange", onVolumeChange);
       document.removeEventListener("fullscreenchange", onFullscreenChange);
+      document.removeEventListener("webkitfullscreenchange", onFullscreenChange);
       if (hideTimer.current) clearTimeout(hideTimer.current);
     };
   }, []);
