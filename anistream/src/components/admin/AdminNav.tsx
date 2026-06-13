@@ -8,7 +8,7 @@ const LINKS = [
   { href: "/admin", label: "Ingest" },
   { href: "/admin/simulcast", label: "Simulcast" },
   { href: "/admin/browse", label: "Browse" },
-];
+] as const;
 
 export function AdminNav() {
   const pathname = usePathname();
