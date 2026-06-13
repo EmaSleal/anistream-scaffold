@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
 import type { PlayerState } from "@/types";
 import { clamp, debounce } from "@/lib/utils";
 

@@ -96,24 +96,39 @@ export function VideoPlayer({
     return () => window.removeEventListener("keydown", onKey);
   }, [togglePlay, skipSeconds, toggleMute, toggleFullscreen, setVolume, containerRef, videoRef]);
 
+  const hlsRef = useRef<import("hls.js").default | null>(null);
+
   useEffect(() => {
     const video = videoRef.current;
-    if (!video || !streamUrl) return;
+    if (!video || !streamUrl || streamType !== "hls") return;
 
-    if (streamType === "hls") {
-      import("hls.js").then(({ default: Hls }) => {
-        if (Hls.isSupported()) {
-          const hls = new Hls();
-          hls.loadSource(streamUrl);
-          hls.attachMedia(video);
-          return () => hls.destroy();
-        }
-        // Safari supports HLS natively
-        if (video.canPlayType("application/vnd.apple.mpegurl")) {
-          video.src = streamUrl;
-        }
-      });
+    // iOS / Safari: no MSE support — set src directly so it's ready before first tap
+    if (typeof window !== "undefined" && !window.MediaSource) {
+      video.src = streamUrl;
+      video.load();
+      return () => { video.src = ""; };
     }
+
+    // Desktop: load HLS.js asynchronously
+    let cancelled = false;
+    import("hls.js").then(({ default: Hls }) => {
+      if (cancelled || !videoRef.current) return;
+      if (Hls.isSupported()) {
+        hlsRef.current?.destroy();
+        hlsRef.current = new Hls();
+        hlsRef.current.loadSource(streamUrl);
+        hlsRef.current.attachMedia(videoRef.current);
+      } else if (videoRef.current.canPlayType("application/vnd.apple.mpegurl")) {
+        videoRef.current.src = streamUrl;
+        videoRef.current.load();
+      }
+    });
+
+    return () => {
+      cancelled = true;
+      hlsRef.current?.destroy();
+      hlsRef.current = null;
+    };
   }, [streamUrl, streamType, videoRef]);
 
   useEffect(() => {
