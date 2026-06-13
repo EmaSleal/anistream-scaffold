@@ -50,3 +50,5 @@ anistream/next-env.d.ts
 
 #adding the folder .atl
 .atl/
+.atl/.skill-registry.cache.json
+.atl/skill-registry.md

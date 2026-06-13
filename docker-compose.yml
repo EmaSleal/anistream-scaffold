@@ -25,7 +25,7 @@ services:
         NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:-http://localhost:3000}
     container_name: anistream-nextjs
     ports:
-      - "3000:3000"
+      - "13000:3000"
     env_file: .env
     environment:
       FLASK_URL: http://flask:5000
