@@ -125,6 +125,13 @@ export function VideoPlayer({
         hlsRef.current.on("hlsError" as Parameters<typeof hlsRef.current.on>[0], (_evt: unknown, data: unknown) => {
           console.error("[player] HLS.js error:", data);
         });
+        hlsRef.current.on("hlsManifestParsed" as Parameters<typeof hlsRef.current.on>[0], (_evt: unknown, data: unknown) => {
+          const d = data as { levels: { videoCodec?: string; audioCodec?: string; bitrate?: number }[] };
+          console.log("[player] manifest levels:", d.levels.map((l) => ({
+            codec: [l.videoCodec, l.audioCodec].filter(Boolean).join(","),
+            bitrate: l.bitrate,
+          })));
+        });
         hlsRef.current.loadSource(streamUrl);
         hlsRef.current.attachMedia(videoRef.current);
       } else if (canPlayNative) {
