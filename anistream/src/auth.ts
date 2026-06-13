@@ -4,6 +4,7 @@ import Google from "next-auth/providers/google";
 const FLASK_URL = process.env.FLASK_URL ?? "http://localhost:5000";
 
 export const { handlers, signIn, signOut, auth } = NextAuth({
+  trustHost: true,
   providers: [Google],
   pages: { signIn: "/login" },
   callbacks: {
