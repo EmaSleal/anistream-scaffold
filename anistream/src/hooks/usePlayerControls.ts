@@ -57,10 +57,11 @@ export function usePlayerControls(initialDuration = 0, initialTime = 0): UsePlay
   const togglePlay = useCallback(() => {
     const video = videoRef.current;
     if (!video) return;
+    console.log("[player] togglePlay — paused:", video.paused, "src:", video.src, "readyState:", video.readyState);
     if (video.paused) {
       video.play().catch((err: unknown) => {
-        if (err instanceof Error && err.name !== "AbortError") {
-          console.error(err);
+        if (err instanceof Error) {
+          console.error("[player] play() rejected:", err.name, err.message);
         }
       });
     } else {
@@ -154,11 +155,12 @@ export function usePlayerControls(initialDuration = 0, initialTime = 0): UsePlay
     const onDurationChange = () =>
       setPlayerState((p) => ({ ...p, duration: video.duration }));
     const onCanPlay = () => {
+      console.log("[player] canplay — duration:", video.duration, "readyState:", video.readyState, "src:", video.src);
       if (autoplayAttempted.current) return;
       autoplayAttempted.current = true;
       video.play().catch((err: unknown) => {
-        if (err instanceof Error && err.name !== "AbortError" && err.name !== "NotAllowedError") {
-          console.error("[player] autoplay failed:", err.message);
+        if (err instanceof Error) {
+          console.error("[player] autoplay failed:", err.name, err.message);
         }
       });
     };
@@ -181,9 +183,21 @@ export function usePlayerControls(initialDuration = 0, initialTime = 0): UsePlay
         isFullscreen: !!(document.fullscreenElement ?? (document as Document & { webkitFullscreenElement?: Element }).webkitFullscreenElement),
       }));
 
+    const onError = () => {
+      const e = video.error;
+      console.error("[player] video error — code:", e?.code, "message:", e?.message);
+    };
+    const onStalled = () => console.warn("[player] stalled — network stalled");
+    const onWaiting = () => console.log("[player] waiting — buffering");
+    const onLoadStart = () => console.log("[player] loadstart — src:", video.src);
+
     video.addEventListener("canplay", onCanPlay);
     video.addEventListener("play", onPlay);
     video.addEventListener("pause", onPause);
+    video.addEventListener("error", onError);
+    video.addEventListener("stalled", onStalled);
+    video.addEventListener("waiting", onWaiting);
+    video.addEventListener("loadstart", onLoadStart);
     video.addEventListener("timeupdate", onTimeUpdate);
     video.addEventListener("durationchange", onDurationChange);
     video.addEventListener("loadedmetadata", onLoadedMetadata);
@@ -195,6 +209,10 @@ export function usePlayerControls(initialDuration = 0, initialTime = 0): UsePlay
       video.removeEventListener("canplay", onCanPlay);
       video.removeEventListener("play", onPlay);
       video.removeEventListener("pause", onPause);
+      video.removeEventListener("error", onError);
+      video.removeEventListener("stalled", onStalled);
+      video.removeEventListener("waiting", onWaiting);
+      video.removeEventListener("loadstart", onLoadStart);
       video.removeEventListener("timeupdate", onTimeUpdate);
       video.removeEventListener("durationchange", onDurationChange);
       video.removeEventListener("loadedmetadata", onLoadedMetadata);

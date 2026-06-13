@@ -100,27 +100,39 @@ export function VideoPlayer({
 
   useEffect(() => {
     const video = videoRef.current;
+    console.log("[player] HLS effect — streamUrl:", streamUrl, "streamType:", streamType, "video:", !!video);
     if (!video || !streamUrl || streamType !== "hls") return;
 
     // iOS / Safari: no MSE support — set src directly so it's ready before first tap
     if (typeof window !== "undefined" && !window.MediaSource) {
+      console.log("[player] iOS native HLS path — setting src directly");
       video.src = streamUrl;
       video.load();
       return () => { video.src = ""; };
     }
 
     // Desktop: load HLS.js asynchronously
+    console.log("[player] HLS.js async path — importing...");
     let cancelled = false;
     import("hls.js").then(({ default: Hls }) => {
       if (cancelled || !videoRef.current) return;
-      if (Hls.isSupported()) {
+      const supported = Hls.isSupported();
+      const canPlayNative = videoRef.current.canPlayType("application/vnd.apple.mpegurl");
+      console.log("[player] HLS.js loaded — isSupported:", supported, "canPlayNative:", canPlayNative);
+      if (supported) {
         hlsRef.current?.destroy();
         hlsRef.current = new Hls();
+        hlsRef.current.on("hlsError" as Parameters<typeof hlsRef.current.on>[0], (_evt: unknown, data: unknown) => {
+          console.error("[player] HLS.js error:", data);
+        });
         hlsRef.current.loadSource(streamUrl);
         hlsRef.current.attachMedia(videoRef.current);
-      } else if (videoRef.current.canPlayType("application/vnd.apple.mpegurl")) {
+      } else if (canPlayNative) {
+        console.log("[player] falling back to native HLS via src");
         videoRef.current.src = streamUrl;
         videoRef.current.load();
+      } else {
+        console.warn("[player] HLS not supported on this browser");
       }
     });
 
