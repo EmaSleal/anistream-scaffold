@@ -6,3 +6,4 @@ cloudscraper==1.2.71
 beautifulsoup4==4.14.3
 lxml==6.1.0
 PyJWT>=2.8.0
+gunicorn>=22.0.0,<24

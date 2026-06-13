@@ -1,0 +1,41 @@
+services:
+  flask:
+    build:
+      context: ./scraper
+      dockerfile: Dockerfile
+    container_name: anistream-flask
+    expose:
+      - "5000"
+    env_file: .env
+    networks:
+      - anistream-net
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000/api/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  nextjs:
+    build:
+      context: ./anistream
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:-http://localhost:3000}
+    container_name: anistream-nextjs
+    ports:
+      - "3000:3000"
+    env_file: .env
+    environment:
+      FLASK_URL: http://flask:5000
+    networks:
+      - anistream-net
+    restart: unless-stopped
+    depends_on:
+      flask:
+        condition: service_healthy
+
+networks:
+  anistream-net:
+    driver: bridge

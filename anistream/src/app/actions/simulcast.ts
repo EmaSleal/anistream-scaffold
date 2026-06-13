@@ -8,7 +8,7 @@
  */
 export async function refreshSimulcastAction(seriesId: string): Promise<void> {
   const flaskUrl = process.env.FLASK_URL ?? "http://localhost:5000";
-  const serviceKey = process.env.SERVICE_KEY ?? "";
+  const serviceKey = process.env.SERVICE_SECRET ?? "";
 
   try {
     await fetch(`${flaskUrl}/api/simulcast/refresh/${seriesId}`, {
