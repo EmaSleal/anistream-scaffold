@@ -1,5 +1,5 @@
 import { type NextRequest, NextResponse } from "next/server";
-import { getToken } from "next-auth/jwt";
+import { auth } from "@/auth";
 import { mintInternalToken } from "@/lib/internal-token";
 import { flaskAuthGet } from "@/lib/flask-client";
 
@@ -8,20 +8,20 @@ import { flaskAuthGet } from "@/lib/flask-client";
  * Returns { progress_sec: number }.
  */
 export async function GET(
-  request: NextRequest,
+  _request: NextRequest,
   { params }: { params: Promise<{ episode_id: string }> }
 ) {
-  const sessionToken = await getToken({
-    req: request,
-    secret: process.env.AUTH_SECRET,
-  });
+  const session = await auth();
 
-  if (!sessionToken) {
+  if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   const { episode_id } = await params;
-  const internalToken = await mintInternalToken(sessionToken);
+  const internalToken = await mintInternalToken({
+    sub: session.user.id,
+    role: (session.user as { role?: string }).role ?? "USER",
+  });
   const flaskRes = await flaskAuthGet(`/api/progress/${episode_id}`, internalToken);
   const body = await flaskRes.json();
   return NextResponse.json(body, { status: flaskRes.status });
