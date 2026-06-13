@@ -13,6 +13,9 @@ Raised exceptions from orchestrate_stream:
 """
 
 import re
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class NoSourceError(Exception):
@@ -42,8 +45,17 @@ def resolve_animeflv_stream(episode_slug: str) -> dict:
 
     try:
         servers = scrape_episode_servers(episode_slug)
-    except RuntimeError:
+    except RuntimeError as exc:
+        logger.warning("[stream] animeflv scrape failed for slug=%s: %s", episode_slug, exc)
         return {"url": None, "error_type": "network_error"}
+
+    # Log available server codes so we can see what's offered
+    all_codes = [
+        s.get("title", "") or s.get("code", "")
+        for lang in servers.values()
+        for s in lang
+    ]
+    logger.info("[stream] animeflv servers for slug=%s: %s", episode_slug, all_codes)
 
     # Search for a streamtape server across all language groups.
     # Match any streamtape TLD (streamtape.com, .net, .to, .cc, etc.)
@@ -60,15 +72,15 @@ def resolve_animeflv_stream(episode_slug: str) -> dict:
             break
 
     if not video_id:
-        # Original route returned 503 here; treated as "no compatible server" —
-        # not a network error, but nothing to play.  Using no_source so
-        # orchestrate_stream can attempt the fallback.
+        logger.warning("[stream] no streamtape server found for slug=%s", episode_slug)
         return {"url": None, "error_type": "no_source"}
 
     try:
         url = extract_streamtape(video_id)
+        logger.info("[stream] streamtape resolved for slug=%s", episode_slug)
         return {"url": url, "error_type": None}
-    except ExtractionError:
+    except ExtractionError as exc:
+        logger.warning("[stream] streamtape extraction failed for slug=%s: %s", episode_slug, exc)
         return {"url": None, "error_type": "network_error"}
 
 
@@ -123,6 +135,11 @@ def orchestrate_stream(episode: dict, stream_config: dict) -> dict:
     animeav1_slug = stream_config.get("animeav1_slug")
     episode_slug = episode.get("animeflv_slug")
     episode_number = episode.get("episode_number", 0)
+
+    logger.info(
+        "[stream] orchestrate episode_slug=%s animeflv_disabled=%s animeav1_slug=%s",
+        episode_slug, animeflv_disabled, animeav1_slug,
+    )
 
     upstream_error_seen = False
     primary_result = None
