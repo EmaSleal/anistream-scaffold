@@ -9,8 +9,8 @@ RUN npm ci
 
 # ---- builder: build standalone output ----
 FROM base AS builder
-ARG NEXT_PUBLIC_APP_URL=http://localhost:3000
-ENV NEXT_PUBLIC_APP_URL=$NEXT_PUBLIC_APP_URL
+ARG APP_URL=http://localhost:3000
+ENV APP_URL=$APP_URL
 ENV NEXT_TELEMETRY_DISABLED=1
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .

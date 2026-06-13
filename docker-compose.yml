@@ -22,7 +22,7 @@ services:
       context: ./anistream
       dockerfile: Dockerfile
       args:
-        NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:-http://localhost:3000}
+        APP_URL: ${APP_URL:-http://localhost:3000}
     container_name: anistream-nextjs
     ports:
       - "13000:3000"

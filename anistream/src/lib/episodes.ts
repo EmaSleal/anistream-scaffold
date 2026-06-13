@@ -25,7 +25,7 @@ function mapRow(row: Record<string, unknown>): Episode {
   };
 }
 
-const BASE_URL = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
+const BASE_URL = process.env.APP_URL ?? "http://localhost:3000";
 
 async function apiFetch<T>(path: string, fallback: T): Promise<T> {
   try {

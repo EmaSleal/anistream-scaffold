@@ -14,7 +14,7 @@ import { cookies } from "next/headers";
 import type { Episode, Series } from "@/types";
 
 function getBaseUrl(): string {
-  return process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
+  return process.env.APP_URL ?? "http://localhost:3000";
 }
 
 async function getCookieHeader(): Promise<string> {

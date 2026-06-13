@@ -7,7 +7,7 @@ export async function saveAnimeav1Source(
   animeav1Slug: string
 ): Promise<void> {
   const cookieStore = await cookies();
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
+  const appUrl = process.env.APP_URL ?? "http://localhost:3000";
 
   const res = await fetch(`${appUrl}/api/series/${seriesId}/stream-source`, {
     method: "PATCH",

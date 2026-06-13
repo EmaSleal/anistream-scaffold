@@ -13,7 +13,7 @@ import { getWatchHistory, getRecentSeries } from "@/app/actions/watchProgress";
 export const metadata: Metadata = { title: "My Lists" };
 
 async function getWatchlist(): Promise<Series[]> {
-  const baseUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
+  const baseUrl = process.env.APP_URL ?? "http://localhost:3000";
   const cookieStore = await cookies();
   const cookieHeader = cookieStore
     .getAll()

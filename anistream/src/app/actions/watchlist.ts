@@ -16,8 +16,8 @@ import type { Series } from "@/types";
 
 function getBaseUrl(): string {
   // In server-side context, we must use an absolute URL for fetch.
-  // NEXT_PUBLIC_APP_URL or fall back to localhost for dev.
-  return process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
+  // APP_URL or fall back to localhost for dev.
+  return process.env.APP_URL ?? "http://localhost:3000";
 }
 
 async function getCookieHeader(): Promise<string> {
