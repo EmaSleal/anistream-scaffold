@@ -55,7 +55,7 @@ def resolve_animeflv_stream(episode_slug: str) -> dict:
         for lang in servers.values()
         for s in lang
     ]
-    logger.info("[stream] animeflv servers for slug=%s: %s", episode_slug, all_codes)
+    logger.warning("[stream] animeflv servers for slug=%s: %s", episode_slug, all_codes)
 
     # Search for a streamtape server across all language groups.
     # Match any streamtape TLD (streamtape.com, .net, .to, .cc, etc.)
@@ -77,7 +77,7 @@ def resolve_animeflv_stream(episode_slug: str) -> dict:
 
     try:
         url = extract_streamtape(video_id)
-        logger.info("[stream] streamtape resolved for slug=%s", episode_slug)
+        logger.warning("[stream] streamtape resolved for slug=%s", episode_slug)
         return {"url": url, "error_type": None}
     except ExtractionError as exc:
         logger.warning("[stream] streamtape extraction failed for slug=%s: %s", episode_slug, exc)
@@ -136,7 +136,7 @@ def orchestrate_stream(episode: dict, stream_config: dict) -> dict:
     episode_slug = episode.get("animeflv_slug")
     episode_number = episode.get("episode_number", 0)
 
-    logger.info(
+    logger.warning(
         "[stream] orchestrate episode_slug=%s animeflv_disabled=%s animeav1_slug=%s",
         episode_slug, animeflv_disabled, animeav1_slug,
     )
