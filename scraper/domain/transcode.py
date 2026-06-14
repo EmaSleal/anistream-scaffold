@@ -123,11 +123,21 @@ def _probe_duration(source_url: str) -> float | None:
 # ---------------------------------------------------------------------------
 
 def get_cache_path(video_id: str) -> Path | None:
-    """Return Path to the cached playlist.m3u8 if the cache entry is complete."""
+    """Return Path to the cached playlist.m3u8 if the cache entry is complete.
+
+    A complete entry is one whose playlist contains #EXT-X-ENDLIST (VOD/finalized).
+    Partial EVENT playlists (still being written) are NOT treated as cache hits.
+    """
     playlist = CACHE_DIR / video_id / "playlist.m3u8"
-    if playlist.is_file() and playlist.stat().st_size > 0:
-        return playlist
-    return None
+    if not playlist.is_file():
+        return None
+    try:
+        data = playlist.read_bytes()
+        if b"#EXT-X-ENDLIST" not in data[-256:]:
+            return None
+    except OSError:
+        return None
+    return playlist
 
 
 def update_last_accessed(video_id: str) -> None:
@@ -461,6 +471,24 @@ def _run_ffmpeg_batch(
 # Progressive transcode engine
 # ---------------------------------------------------------------------------
 
+def _write_resume_state(
+    output_dir: Path,
+    source_batch_start: int,
+    global_seg_offset: int,
+    batch_idx: int,
+) -> None:
+    """Atomically write .resume_state with POST-increment values (next-to-process)."""
+    import json
+    state = {
+        "source_batch_start": source_batch_start,
+        "global_seg_offset": global_seg_offset,
+        "batch_idx": batch_idx,
+    }
+    tmp = output_dir / ".resume_state.tmp"
+    tmp.write_text(json.dumps(state), encoding="utf-8")
+    os.replace(tmp, output_dir / ".resume_state")
+
+
 def _progressive_producer(
     video_id: str,
     source_url: str,
@@ -468,6 +496,11 @@ def _progressive_producer(
     tmp_dir: Path,
     sentinel: Path,
     ready_event: threading.Event,
+    *,
+    resume_source_batch_start: int = 0,
+    resume_global_seg_offset: int = 0,
+    resume_batch_idx: int = 0,
+    resume_all_ts: "list[str] | None" = None,
 ) -> None:
     """Background producer: downloads + transcodes in batches, updates EVENT playlist.
 
@@ -483,13 +516,13 @@ def _progressive_producer(
         if init_url:
             _download_init_segment(init_url, tmp_dir)
 
-        all_ts: list[str] = []
+        all_ts: list[str] = list(resume_all_ts) if resume_all_ts else []
         total_segs = len(segment_urls)
         batch_size = TRANSCODE_BATCH_SIZE
-        global_seg_offset = 0
-        batch_idx = 0
+        global_seg_offset = resume_global_seg_offset
+        batch_idx = resume_batch_idx
 
-        for batch_start in range(0, total_segs, batch_size):
+        for batch_start in range(resume_source_batch_start, total_segs, batch_size):
             batch_urls = segment_urls[batch_start: batch_start + batch_size]
             is_last_batch = (batch_start + batch_size) >= total_segs
 
@@ -526,6 +559,9 @@ def _progressive_producer(
             # Update playlist atomically
             _write_event_playlist(output_dir, all_ts, finalize=is_last_batch)
 
+            # Persist resume checkpoint AFTER playlist is committed (ordering invariant)
+            _write_resume_state(output_dir, batch_start + batch_size, global_seg_offset, batch_idx)
+
             # Signal waiting callers once MIN_SEGMENTS are ready
             if not ready_event.is_set() and len(all_ts) >= TRANSCODE_MIN_SEGMENTS:
                 with _jobs_mutex:
@@ -561,6 +597,7 @@ def _progressive_producer(
     finally:
         sentinel.unlink(missing_ok=True)
         shutil.rmtree(tmp_dir, ignore_errors=True)
+        (output_dir / ".resume_state").unlink(missing_ok=True)
 
 
 def _progressive_fallback(
@@ -611,6 +648,7 @@ def transcode_progressive(video_id: str, source_url: str) -> Path:
         return cached
 
     sentinel = output_dir / ".streaming"
+    resume_kwargs: dict = {}
 
     # Cross-worker: sentinel exists but this worker has no producer.
     # The sentinel file contains the PID of the worker that owns the producer.
@@ -640,6 +678,45 @@ def transcode_progressive(video_id: str, source_url: str) -> Path:
         sentinel.unlink(missing_ok=True)
         stale_tmp = CACHE_DIR / f"{video_id}_prog_tmp"
         shutil.rmtree(stale_tmp, ignore_errors=True)
+
+        # Attempt to resume from previous partial run (ADR-5: unreadable playlist = full fresh run)
+        resume_state_path = output_dir / ".resume_state"
+        playlist_path = output_dir / "playlist.m3u8"
+
+        if resume_state_path.exists():
+            try:
+                import json
+                state = json.loads(resume_state_path.read_text(encoding="utf-8"))
+                src_start = int(state["source_batch_start"])
+                g_offset = int(state["global_seg_offset"])
+                b_idx = int(state["batch_idx"])
+
+                # Reconstruct all_ts from playlist (ADR-5: unreadable playlist = full fresh run)
+                raw_lines = playlist_path.read_text(encoding="utf-8").splitlines()
+                prior_ts = [l for l in raw_lines if l and not l.startswith("#")]
+
+                # Prune orphaned .ts files not referenced in the playlist
+                referenced = set(prior_ts)
+                for orphan in output_dir.glob("seg*.ts"):
+                    if orphan.name not in referenced:
+                        orphan.unlink(missing_ok=True)
+
+                resume_kwargs = {
+                    "resume_source_batch_start": src_start,
+                    "resume_global_seg_offset": g_offset,
+                    "resume_batch_idx": b_idx,
+                    "resume_all_ts": prior_ts,
+                }
+                logger.warning(
+                    "[progressive] video_id=%s resuming from batch src=%d offset=%d segs=%d",
+                    video_id, src_start, g_offset, len(prior_ts),
+                )
+            except Exception as exc:
+                logger.warning(
+                    "[progressive] video_id=%s resume state invalid (%s) — fresh run",
+                    video_id, exc,
+                )
+                resume_kwargs = {}
         # Fall through to the new-job path below.
 
     with _jobs_mutex:
@@ -663,6 +740,7 @@ def transcode_progressive(video_id: str, source_url: str) -> Path:
     thread = threading.Thread(
         target=_progressive_producer,
         args=(video_id, source_url, output_dir, tmp_dir, sentinel, ready_event),
+        kwargs=resume_kwargs,
         daemon=True,
         name=f"prog-{video_id}",
     )
