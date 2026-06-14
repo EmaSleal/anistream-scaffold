@@ -10,6 +10,8 @@ services:
     networks:
       - anistream-net
     restart: unless-stopped
+    volumes:
+      - transcode_cache:/cache/videos
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000/api/health')"]
       interval: 10s
@@ -39,3 +41,6 @@ services:
 networks:
   anistream-net:
     driver: bridge
+
+volumes:
+  transcode_cache:
