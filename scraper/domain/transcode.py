@@ -612,15 +612,30 @@ def transcode_progressive(video_id: str, source_url: str) -> Path:
 
     sentinel = output_dir / ".streaming"
 
-    # Cross-worker: sentinel exists but this worker has no producer — return path
-    # and let the route poll for readiness via disk segment count.
+    # Cross-worker: sentinel exists but this worker has no producer.
+    # Distinguish between a live producer in another worker (has output segments)
+    # and a stale sentinel left by a worker killed before its producer could clean up.
     if sentinel.exists() and video_id not in _jobs:
+        seg_count = len(list(output_dir.glob("seg*.ts"))) if output_dir.exists() else 0
+        if seg_count > 0:
+            # Another worker is actively producing — poll for readiness.
+            logger.warning(
+                "[progressive] video_id=%s sentinel from another worker (%d segs) — polling",
+                video_id, seg_count,
+            )
+            output_dir.mkdir(parents=True, exist_ok=True)
+            return output_dir / "playlist.m3u8"
+
+        # No segments yet and no in-memory job → stale sentinel from a killed worker.
+        # Clean up and restart the producer in this worker.
         logger.warning(
-            "[progressive] video_id=%s sentinel from another worker — polling path returned",
+            "[progressive] video_id=%s stale sentinel (0 segs, no job) — clearing and restarting",
             video_id,
         )
-        output_dir.mkdir(parents=True, exist_ok=True)
-        return output_dir / "playlist.m3u8"
+        sentinel.unlink(missing_ok=True)
+        stale_tmp = CACHE_DIR / f"{video_id}_prog_tmp"
+        shutil.rmtree(stale_tmp, ignore_errors=True)
+        # Fall through to the new-job path below.
 
     with _jobs_mutex:
         existing_job = _jobs.get(video_id)
