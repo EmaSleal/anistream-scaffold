@@ -464,9 +464,20 @@ def _run_ffmpeg_batch(
     for ts_file in sorted(tmp_dir.glob(f"seg*_b{batch_idx:03d}.ts")):
         dest_name = f"seg{seg_num:03d}.ts"
         dest = output_dir / dest_name
-        os.rename(ts_file, dest)
+        try:
+            os.rename(ts_file, dest)
+        except OSError as _mv_exc:
+            logger.warning(
+                "[progressive] batch %d rename failed %s → %s: %s",
+                batch_idx, ts_file.name, dest_name, _mv_exc,
+            )
+            raise
         produced.append(dest_name)
         seg_num += 1
+    logger.warning(
+        "[progressive] batch %d moved %d ts files to output_dir",
+        batch_idx, len(produced),
+    )
 
     # Parse actual segment durations from FFmpeg's output playlist before cleanup
     extinf_durations: list[float] = []
@@ -611,6 +622,17 @@ def _progressive_producer(
             ready_event.set()
 
         logger.warning("[progressive] video_id=%s done (%d segments)", video_id, len(all_ts))
+
+        # Filesystem sanity check — log what actually landed on disk
+        try:
+            ts_on_disk = sum(1 for _ in output_dir.glob("seg*.ts"))
+            pl_size = (output_dir / "playlist.m3u8").stat().st_size
+            logger.warning(
+                "[progressive] video_id=%s disk check: ts_on_disk=%d playlist_bytes=%d",
+                video_id, ts_on_disk, pl_size,
+            )
+        except Exception as _chk_exc:
+            logger.warning("[progressive] video_id=%s disk check failed: %s", video_id, _chk_exc)
 
     except Exception as exc:
         logger.warning("[progressive] video_id=%s unexpected error: %s — falling back", video_id, exc)

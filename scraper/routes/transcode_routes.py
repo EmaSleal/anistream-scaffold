@@ -27,6 +27,32 @@ logger = logging.getLogger(__name__)
 
 transcode_bp = Blueprint("transcode", __name__, url_prefix="/api/proxy/transcode")
 
+_PLAYLIST_MIME = "application/vnd.apple.mpegurl"
+
+
+def _serve_playlist(path: Path, video_id: str) -> Response:
+    """Read a playlist file into memory and return it as a Response.
+
+    Using read_bytes() instead of send_file() for playlists avoids a class of
+    Docker-volume / FileWrapper edge cases where send_file() returns 0 bytes
+    even when the file has content. Playlists are small (<1 MB) so this is safe.
+    """
+    try:
+        content = path.read_bytes()
+    except OSError as exc:
+        logger.warning("[transcode] playlist read error video_id=%s path=%s: %s", video_id, path, exc)
+        abort(500, description="Playlist file unreadable")
+
+    if not content:
+        logger.warning("[transcode] playlist is 0 bytes video_id=%s path=%s", video_id, path)
+        abort(500, description="Playlist file is empty")
+
+    logger.warning(
+        "[transcode] serving playlist video_id=%s bytes=%d path=%s",
+        video_id, len(content), path.name,
+    )
+    return Response(content, status=200, mimetype=_PLAYLIST_MIME)
+
 
 @transcode_bp.get("/<video_id>/playlist.m3u8")
 def serve_playlist(video_id: str) -> Response:
@@ -47,8 +73,15 @@ def serve_playlist(video_id: str) -> Response:
         # Cache hit — update LRU timestamp and kick off eviction check
         update_last_accessed(video_id)
         threading.Thread(target=purge_lru_if_needed, daemon=True).start()
-        logger.warning("[transcode] playlist cache hit video_id=%s", video_id)
-        return send_file(cached, mimetype="application/vnd.apple.mpegurl")
+        try:
+            ts_count = sum(1 for _ in (CACHE_DIR / video_id).glob("seg*.ts"))
+        except OSError:
+            ts_count = -1
+        logger.warning(
+            "[transcode] playlist cache hit video_id=%s ts_files=%d",
+            video_id, ts_count,
+        )
+        return _serve_playlist(cached, video_id)
 
     # Cache miss — source URL is required
     source_url = request.args.get("src", "").strip()
@@ -71,7 +104,7 @@ def serve_playlist(video_id: str) -> Response:
         if full_cache is not None:
             update_last_accessed(video_id)
             threading.Thread(target=purge_lru_if_needed, daemon=True).start()
-            return send_file(full_cache, mimetype="application/vnd.apple.mpegurl")
+            return _serve_playlist(full_cache, video_id)
 
         # Count .ts segments on disk — works across all gunicorn workers.
         output_dir = CACHE_DIR / video_id
@@ -106,7 +139,7 @@ def serve_playlist(video_id: str) -> Response:
 
         update_last_accessed(video_id)
         threading.Thread(target=purge_lru_if_needed, daemon=True).start()
-        return send_file(playlist, mimetype="application/vnd.apple.mpegurl")
+        return _serve_playlist(playlist, video_id)
 
     # Standard (non-progressive) path
     try:
@@ -118,7 +151,7 @@ def serve_playlist(video_id: str) -> Response:
     update_last_accessed(video_id)
     threading.Thread(target=purge_lru_if_needed, daemon=True).start()
 
-    return send_file(playlist, mimetype="application/vnd.apple.mpegurl")
+    return _serve_playlist(playlist, video_id)
 
 
 @transcode_bp.get("/<video_id>/<filename>")
@@ -138,8 +171,13 @@ def serve_segment(video_id: str, filename: str) -> Response:
 
     segment_path = CACHE_DIR / video_id / filename
     if not segment_path.is_file():
+        try:
+            sample = sorted(f.name for f in (CACHE_DIR / video_id).iterdir())[:8]
+        except OSError:
+            sample = ["<dir missing>"]
         logger.warning(
-            "[transcode] segment not found video_id=%s filename=%s", video_id, filename
+            "[transcode] segment not found video_id=%s filename=%s dir_sample=%s",
+            video_id, filename, sample,
         )
         abort(404)
 
