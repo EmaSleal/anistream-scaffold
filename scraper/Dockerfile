@@ -9,6 +9,7 @@ RUN addgroup --system appgroup && adduser --system --ingroup appgroup appuser
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 COPY --chown=appuser:appgroup . .
+RUN mkdir -p /cache/videos && chown appuser:appgroup /cache/videos
 USER appuser
 EXPOSE 5000
 CMD ["gunicorn", "-w", "4", "-b", "0.0.0.0:5000", "--access-logfile", "-", "--error-logfile", "-", "app:app"]
