@@ -88,6 +88,22 @@ def serve_playlist(video_id: str) -> Response:
                 mimetype="text/plain",
             )
 
+        # Guard: playlist must be non-empty — producer may have segments on disk
+        # but not yet written the first EVENT playlist (batch still transcoding).
+        try:
+            if playlist.stat().st_size == 0:
+                return Response(
+                    "Transcoding in progress — retry shortly",
+                    status=202,
+                    mimetype="text/plain",
+                )
+        except OSError:
+            return Response(
+                "Transcoding in progress — retry shortly",
+                status=202,
+                mimetype="text/plain",
+            )
+
         update_last_accessed(video_id)
         threading.Thread(target=purge_lru_if_needed, daemon=True).start()
         return send_file(playlist, mimetype="application/vnd.apple.mpegurl")

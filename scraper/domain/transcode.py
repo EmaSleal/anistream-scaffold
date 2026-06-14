@@ -747,6 +747,13 @@ def transcode_progressive(video_id: str, source_url: str) -> Path:
                 resume_kwargs = {}
         # Fall through to the new-job path below.
 
+    # Fresh start (no resume): clear stale .ts files and empty playlist from any
+    # previous run so the route never serves 0-byte content while transcoding.
+    if not resume_kwargs and output_dir.exists():
+        for stale_ts in output_dir.glob("seg*.ts"):
+            stale_ts.unlink(missing_ok=True)
+        (output_dir / "playlist.m3u8").unlink(missing_ok=True)
+
     with _jobs_mutex:
         existing_job = _jobs.get(video_id)
 
