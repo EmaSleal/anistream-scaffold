@@ -125,7 +125,7 @@ def _probe_duration(source_url: str) -> float | None:
 def get_cache_path(video_id: str) -> Path | None:
     """Return Path to the cached playlist.m3u8 if the cache entry is complete."""
     playlist = CACHE_DIR / video_id / "playlist.m3u8"
-    if playlist.is_file():
+    if playlist.is_file() and playlist.stat().st_size > 0:
         return playlist
     return None
 
@@ -613,23 +613,28 @@ def transcode_progressive(video_id: str, source_url: str) -> Path:
     sentinel = output_dir / ".streaming"
 
     # Cross-worker: sentinel exists but this worker has no producer.
-    # Distinguish between a live producer in another worker (has output segments)
-    # and a stale sentinel left by a worker killed before its producer could clean up.
+    # The sentinel file contains the PID of the worker that owns the producer.
+    # We do a liveness check (os.kill(pid, 0)) to distinguish a live producer
+    # (may be in the download phase with 0 .ts files yet) from a stale sentinel
+    # left by a worker killed before its finally block could clean up.
     if sentinel.exists() and video_id not in _jobs:
-        seg_count = len(list(output_dir.glob("seg*.ts"))) if output_dir.exists() else 0
-        if seg_count > 0:
-            # Another worker is actively producing — poll for readiness.
+        try:
+            owner_pid = int(sentinel.read_text().strip())
+            os.kill(owner_pid, 0)  # signal 0 = liveness check, no actual signal sent
+            # Owner process is alive — producer is running in another worker.
             logger.warning(
-                "[progressive] video_id=%s sentinel from another worker (%d segs) — polling",
-                video_id, seg_count,
+                "[progressive] video_id=%s producer running in worker pid=%d — polling",
+                video_id, owner_pid,
             )
             output_dir.mkdir(parents=True, exist_ok=True)
             return output_dir / "playlist.m3u8"
+        except (ValueError, OSError):
+            # sentinel is unreadable, empty (legacy .touch()), or the PID is dead.
+            pass
 
-        # No segments yet and no in-memory job → stale sentinel from a killed worker.
-        # Clean up and restart the producer in this worker.
+        # Stale sentinel — clean up orphaned artifacts and restart the producer.
         logger.warning(
-            "[progressive] video_id=%s stale sentinel (0 segs, no job) — clearing and restarting",
+            "[progressive] video_id=%s stale sentinel (dead worker) — clearing and restarting",
             video_id,
         )
         sentinel.unlink(missing_ok=True)
@@ -649,7 +654,7 @@ def transcode_progressive(video_id: str, source_url: str) -> Path:
         output_dir.mkdir(parents=True, exist_ok=True)
         tmp_dir = CACHE_DIR / f"{video_id}_prog_tmp"
         tmp_dir.mkdir(parents=True, exist_ok=True)
-        sentinel.touch()
+        sentinel.write_text(str(os.getpid()))  # PID enables cross-worker liveness check
 
         ready_event = threading.Event()
         _job_events[video_id] = ready_event
