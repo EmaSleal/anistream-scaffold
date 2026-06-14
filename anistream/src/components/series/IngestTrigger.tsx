@@ -18,7 +18,7 @@ export default function IngestTrigger({ seriesId, malId, animeflvSlug }: Props) 
   const router = useRouter();
   const [phase, setPhase] = useState<Phase>("loading");
   const [animeflvCustom, setAnimeflvCustom] = useState("");
-  const [animeav1Custom, setAnimeav1Custom] = useState("");
+  const [fallbackCustom, setFallbackCustom] = useState("");
   const [retrying, setRetrying] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
@@ -42,7 +42,7 @@ export default function IngestTrigger({ seriesId, malId, animeflvSlug }: Props) 
     e.preventDefault();
     setRetrying(true);
     setErrorMsg(null);
-    await tryIngest(animeflvCustom.trim() || undefined, animeav1Custom.trim() || undefined);
+    await tryIngest(animeflvCustom.trim() || undefined, fallbackCustom.trim() || undefined);
     setRetrying(false);
   }
 
@@ -103,14 +103,14 @@ export default function IngestTrigger({ seriesId, malId, animeflvSlug }: Props) 
 
             <div className={styles.modalFieldGroup}>
               <label className="label-caps">
-                AnimeAV1 slug <span className={styles.optional}>(opcional — fuente de video alternativa)</span>
+                Fallback Slug (jkanime) <span className={styles.optional}>(opcional — fuente de video alternativa)</span>
               </label>
               <input
                 className="input-field"
                 type="text"
                 placeholder="ej: jujutsu-kaisen"
-                value={animeav1Custom}
-                onChange={(e) => setAnimeav1Custom(e.target.value)}
+                value={fallbackCustom}
+                onChange={(e) => setFallbackCustom(e.target.value)}
                 disabled={retrying}
               />
             </div>
@@ -118,7 +118,7 @@ export default function IngestTrigger({ seriesId, malId, animeflvSlug }: Props) 
             <button
               className="btn-primary"
               type="submit"
-              disabled={retrying || (!animeflvCustom.trim() && !animeav1Custom.trim())}
+              disabled={retrying || (!animeflvCustom.trim() && !fallbackCustom.trim())}
             >
               {retrying ? "Reintentando…" : "Reintentar ingest"}
             </button>

@@ -125,13 +125,13 @@ export async function getSeriesByFranchiseId(franchiseId: string): Promise<Serie
 
 export async function getSeriesStreamConfig(
   seriesId: string,
-): Promise<{ animeflvDisabled: boolean; animeav1Slug: string | null }> {
+): Promise<{ animeflvDisabled: boolean; fallbackSlug: string | null }> {
   try {
     const res = await fetch(`${BASE_URL}/api/series/${seriesId}/stream-config`, { cache: "no-store" });
-    if (!res.ok) return { animeflvDisabled: false, animeav1Slug: null };
-    return (await res.json()) as { animeflvDisabled: boolean; animeav1Slug: string | null };
+    if (!res.ok) return { animeflvDisabled: false, fallbackSlug: null };
+    return (await res.json()) as { animeflvDisabled: boolean; fallbackSlug: string | null };
   } catch {
-    return { animeflvDisabled: false, animeav1Slug: null };
+    return { animeflvDisabled: false, fallbackSlug: null };
   }
 }
 

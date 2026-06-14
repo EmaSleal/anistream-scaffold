@@ -19,7 +19,7 @@ interface Props {
 
 export default function IngestForm({ initialSlug }: Props) {
   const [slug, setSlug] = useState(initialSlug ?? "");
-  const [animeav1Slug, setAnimeav1Slug] = useState("");
+  const [fallbackSlug, setFallbackSlug] = useState("");
   const [malId, setMalId] = useState<number | null>(null);
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<SeriesResult | null>(null);
@@ -66,7 +66,7 @@ export default function IngestForm({ initialSlug }: Props) {
     setError(null);
 
     try {
-      const data = await ingestSeries(slug.trim(), malId, animeav1Slug.trim() || undefined);
+      const data = await ingestSeries(slug.trim(), malId, fallbackSlug.trim() || undefined);
       setResult(data);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unknown error");
@@ -75,7 +75,7 @@ export default function IngestForm({ initialSlug }: Props) {
     }
   }
 
-  const canSubmit = !!malId && (!!slug || !!animeav1Slug) && !loading;
+  const canSubmit = !!malId && (!!slug || !!fallbackSlug) && !loading;
 
   return (
     <form onSubmit={handleSubmit} className={styles.form}>
@@ -141,16 +141,16 @@ export default function IngestForm({ initialSlug }: Props) {
       </div>
 
       <div className={styles.field}>
-        <label className="label-caps" htmlFor="animeav1-slug">
-          AnimeAV1 slug <span style={{ fontWeight: 400, textTransform: "none" }}>(opcional — fuente secundaria)</span>
+        <label className="label-caps" htmlFor="fallback-slug">
+          Fallback Slug (jkanime) <span style={{ fontWeight: 400, textTransform: "none" }}>(opcional — fuente secundaria)</span>
         </label>
         <input
-          id="animeav1-slug"
+          id="fallback-slug"
           className="input-field"
           type="text"
           placeholder="jujutsu-kaisen"
-          value={animeav1Slug}
-          onChange={(e) => setAnimeav1Slug(e.target.value)}
+          value={fallbackSlug}
+          onChange={(e) => setFallbackSlug(e.target.value)}
           disabled={loading}
         />
       </div>

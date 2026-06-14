@@ -74,7 +74,7 @@ interface IngestResult {
 export async function ingestSeries(
   slug: string | undefined,
   malId: number,
-  animeav1Slug?: string
+  fallbackSlug?: string
 ): Promise<IngestResult> {
   const session = await auth();
   if (session?.user?.role !== "ADMIN") {
@@ -85,7 +85,7 @@ export async function ingestSeries(
   const res = await fetch(`${flaskUrl}/api/ingest`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ animeflv_slug: slug || undefined, mal_id: malId, animeav1_slug: animeav1Slug || undefined }),
+    body: JSON.stringify({ animeflv_slug: slug || undefined, mal_id: malId, fallback_slug: fallbackSlug || undefined }),
     cache: "no-store",
   });
 

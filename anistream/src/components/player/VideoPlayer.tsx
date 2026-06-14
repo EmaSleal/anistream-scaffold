@@ -102,10 +102,10 @@ export function VideoPlayer({
   const hlsRef = useRef<import("hls.js").default | null>(null);
   const isIos = useIsIos();
 
-  // Resolve which URL to use. When directStreamUrl is provided (animeav1 source):
+  // Resolve which URL to use. When directStreamUrl is provided (jkanime source):
   //   - null (pre-mount): hold off — return nothing until iOS detection resolves
   //   - true (iOS): use streamUrl (transcode proxy → H.264)
-  //   - false (non-iOS): use directStreamUrl (raw AV1 HLS — no transcode needed)
+  //   - false (non-iOS): use directStreamUrl (raw HLS — no transcode needed)
   // When directStreamUrl is absent (animeflv / mp4 sources): always use streamUrl as-is.
   const resolvedStreamUrl: string | undefined = directStreamUrl !== undefined
     ? (isIos === null ? undefined : (isIos ? streamUrl : directStreamUrl))

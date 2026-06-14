@@ -40,7 +40,7 @@ export default function StreamFallbackModal({ seriesId, seriesTitle, episodeTitl
           <strong>{seriesTitle}</strong> — {episodeTitle}.
         </p>
         <p className={styles.desc}>
-          Ingresá el slug de <strong>AnimeAV1</strong> para esta serie y lo
+          Ingresá el slug de <strong>jkanime</strong> para esta serie y lo
           usaremos como fuente alternativa.
         </p>
 

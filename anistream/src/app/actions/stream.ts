@@ -4,7 +4,7 @@ import { cookies } from "next/headers";
 
 export async function saveAnimeav1Source(
   seriesId: string,
-  animeav1Slug: string
+  fallbackSlug: string
 ): Promise<void> {
   const cookieStore = await cookies();
   const appUrl = process.env.APP_URL ?? "http://localhost:3000";
@@ -15,7 +15,7 @@ export async function saveAnimeav1Source(
       "Content-Type": "application/json",
       Cookie: cookieStore.toString(),
     },
-    body: JSON.stringify({ animeav1_slug: animeav1Slug }),
+    body: JSON.stringify({ fallback_slug: fallbackSlug }),
     cache: "no-store",
   });
 
