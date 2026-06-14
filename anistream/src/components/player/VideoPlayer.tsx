@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { Episode } from "@/types";
 import { usePlayerControls } from "@/hooks/usePlayerControls";
+import { useIsIos } from "@/hooks/useIsIos";
 import { saveWatchProgress, advanceToNextEpisode } from "@/app/actions/watchProgress";
 import { PlayerControls } from "./PlayerControls";
 import { MobilePlayerControls } from "./MobilePlayerControls";
@@ -19,6 +20,7 @@ interface VideoPlayerProps {
   nextEpisode?: Episode;
   initialProgress?: number;
   streamUrl?: string;
+  directStreamUrl?: string;
   streamType?: "mp4" | "hls";
 }
 
@@ -28,6 +30,7 @@ export function VideoPlayer({
   nextEpisode,
   initialProgress = 0,
   streamUrl,
+  directStreamUrl,
   streamType = "mp4",
 }: VideoPlayerProps) {
   const router = useRouter();
@@ -97,16 +100,26 @@ export function VideoPlayer({
   }, [togglePlay, skipSeconds, toggleMute, toggleFullscreen, setVolume, containerRef, videoRef]);
 
   const hlsRef = useRef<import("hls.js").default | null>(null);
+  const isIos = useIsIos();
+
+  // Resolve which URL to use. When directStreamUrl is provided (animeav1 source):
+  //   - null (pre-mount): hold off — return nothing until iOS detection resolves
+  //   - true (iOS): use streamUrl (transcode proxy → H.264)
+  //   - false (non-iOS): use directStreamUrl (raw AV1 HLS — no transcode needed)
+  // When directStreamUrl is absent (animeflv / mp4 sources): always use streamUrl as-is.
+  const resolvedStreamUrl: string | undefined = directStreamUrl !== undefined
+    ? (isIos === null ? undefined : (isIos ? streamUrl : directStreamUrl))
+    : streamUrl;
 
   useEffect(() => {
     const video = videoRef.current;
-    console.log("[player] HLS effect — streamUrl:", streamUrl, "streamType:", streamType, "video:", !!video);
-    if (!video || !streamUrl || streamType !== "hls") return;
+    console.log("[player] HLS effect — streamUrl:", resolvedStreamUrl, "streamType:", streamType, "video:", !!video);
+    if (!video || !resolvedStreamUrl || streamType !== "hls") return;
 
     // iOS / Safari: no MSE support — set src directly so it's ready before first tap
     if (typeof window !== "undefined" && !window.MediaSource) {
       console.log("[player] iOS native HLS path — setting src directly");
-      video.src = streamUrl;
+      video.src = resolvedStreamUrl;
       video.load();
       return () => { video.src = ""; };
     }
@@ -132,11 +145,11 @@ export function VideoPlayer({
             bitrate: l.bitrate,
           })));
         });
-        hlsRef.current.loadSource(streamUrl);
+        hlsRef.current.loadSource(resolvedStreamUrl);
         hlsRef.current.attachMedia(videoRef.current);
       } else if (canPlayNative) {
         console.log("[player] falling back to native HLS via src");
-        videoRef.current.src = streamUrl;
+        videoRef.current.src = resolvedStreamUrl;
         videoRef.current.load();
       } else {
         console.warn("[player] HLS not supported on this browser");
@@ -148,7 +161,7 @@ export function VideoPlayer({
       hlsRef.current?.destroy();
       hlsRef.current = null;
     };
-  }, [streamUrl, streamType, videoRef]);
+  }, [resolvedStreamUrl, streamType, videoRef]);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -252,7 +265,7 @@ export function VideoPlayer({
         <video
           ref={videoRef}
           className={styles.video}
-          src={streamType === "hls" ? undefined : (streamUrl ?? "/sample.mp4")}
+          src={streamType === "hls" ? undefined : (resolvedStreamUrl ?? "/sample.mp4")}
           playsInline
           preload="metadata"
           aria-label={`${episode.seriesTitle} – ${episode.title}`}

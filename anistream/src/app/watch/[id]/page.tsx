@@ -61,10 +61,20 @@ export default async function WatchPage({ params }: WatchPageProps) {
   }
 
   const streamType = streamResult.source === "animeav1" ? "hls" : "mp4";
-  const streamUrl =
-    streamResult.source === "animeflv"
-      ? `/api/proxy/stream?url=${encodeURIComponent(streamResult.url)}`
-      : streamResult.url;
+
+  let streamUrl: string;
+  let directStreamUrl: string | undefined;
+  if (streamResult.source === "animeav1") {
+    // Build the transcode URL (for iOS — AV1 → H.264 via proxy) and keep the
+    // raw AV1 HLS URL as directStreamUrl (for non-iOS clients that can decode AV1).
+    // The client-side useIsIos hook picks between them after mount.
+    const hash = streamResult.url.split("/").pop() ?? "";
+    streamUrl = `/api/transcode/${hash}/playlist.m3u8?src=${encodeURIComponent(streamResult.url)}`;
+    directStreamUrl = streamResult.url;
+  } else {
+    // animeflv (Streamtape) — proxy through Next.js to fix iOS Referer restriction.
+    streamUrl = `/api/proxy/stream?url=${encodeURIComponent(streamResult.url)}`;
+  }
 
   return (
     <VideoPlayer
@@ -73,6 +83,7 @@ export default async function WatchPage({ params }: WatchPageProps) {
       nextEpisode={enrichEpisode(adjacent.next) ?? undefined}
       initialProgress={initialProgress}
       streamUrl={streamUrl}
+      directStreamUrl={directStreamUrl}
       streamType={streamType}
     />
   );
