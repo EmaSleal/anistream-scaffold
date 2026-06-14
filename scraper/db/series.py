@@ -102,15 +102,30 @@ def get_stream_config(series_id: str) -> dict | None:
     return result.data if result else None
 
 
-def update_stream_source(series_id: str, animeav1_slug: str) -> bool:
-    """Set animeav1_slug and animeflv_disabled=True for a series.
+def update_stream_source(series_id: str, animeav1_slug: str, animeflv_disabled: bool = False) -> bool:
+    """Set animeav1_slug for a series. animeflv_disabled defaults to False.
 
     Returns True if a row was updated, False if series_id not found.
     """
     client = storage.get_client()
     result = (
         client.table("series")
-        .update({"animeav1_slug": animeav1_slug, "animeflv_disabled": True})
+        .update({"animeav1_slug": animeav1_slug, "animeflv_disabled": animeflv_disabled})
+        .eq("id", series_id)
+        .execute()
+    )
+    return bool(result.data)
+
+
+def reset_animeflv(series_id: str) -> bool:
+    """Re-enable animeflv for a series (set animeflv_disabled=False).
+
+    Returns True if a row was updated, False if series_id not found.
+    """
+    client = storage.get_client()
+    result = (
+        client.table("series")
+        .update({"animeflv_disabled": False})
         .eq("id", series_id)
         .execute()
     )

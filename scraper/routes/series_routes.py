@@ -334,21 +334,37 @@ def series_episodes(series_id: str):
 @series_bp.patch("/<series_id>/stream-source")
 @require_admin
 def update_stream_source(series_id: str):
-    """PATCH /api/series/<id>/stream-source — set animeav1 slug and disable animeflv."""
+    """PATCH /api/series/<id>/stream-source — set animeav1 slug (animeflv stays enabled by default).
+
+    Body:
+        animeav1_slug (str, required)
+        animeflv_disabled (bool, optional, default false)
+    """
     body = request.get_json(silent=True) or {}
     animeav1_slug = body.get("animeav1_slug")
     if not animeav1_slug:
         return jsonify({"error": "animeav1_slug is required"}), 400
 
-    updated = db_series.update_stream_source(series_id, animeav1_slug)
+    animeflv_disabled = bool(body.get("animeflv_disabled", False))
+    updated = db_series.update_stream_source(series_id, animeav1_slug, animeflv_disabled)
     if not updated:
         return jsonify({"error": "Series not found"}), 404
 
     return jsonify({
         "id": series_id,
         "animeav1Slug": animeav1_slug,
-        "animeflv_disabled": True,
+        "animeflvDisabled": animeflv_disabled,
     }), 200
+
+
+@series_bp.post("/<series_id>/reset-stream-source")
+@require_admin
+def reset_stream_source(series_id: str):
+    """POST /api/series/<id>/reset-stream-source — re-enable animeflv for a series."""
+    updated = db_series.reset_animeflv(series_id)
+    if not updated:
+        return jsonify({"error": "Series not found"}), 404
+    return jsonify({"id": series_id, "animeflvDisabled": False}), 200
 
 
 @series_bp.get("/<series_id>/stream-config")
