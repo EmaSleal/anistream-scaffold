@@ -94,7 +94,7 @@ def get_series_by_id(series_id: str) -> dict | None:
     client = get_client()
     result = (
         client.table("series")
-        .select("id, animeav1_slug")
+        .select("id, fallback_slug")
         .eq("id", series_id)
         .maybe_single()
         .execute()

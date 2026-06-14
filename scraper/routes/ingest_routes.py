@@ -193,7 +193,7 @@ def ingest():
     body = request.get_json(force=True) or {}
     mal_id = body.get("mal_id")
     animeflv_slug = body.get("animeflv_slug")
-    animeav1_slug = body.get("animeav1_slug")
+    fallback_slug = body.get("fallback_slug")
 
     if not mal_id:
         return jsonify({"error": "mal_id is required"}), 422
@@ -216,14 +216,14 @@ def ingest():
         return jsonify({"error": "Could not normalize series data"}), 502
 
     existing = get_series_by_mal_id(mal_id_int)
-    canonical_id = existing["id"] if existing else (animeflv_slug or animeav1_slug or f"mal-{mal_id_int}")
+    canonical_id = existing["id"] if existing else (animeflv_slug or fallback_slug or f"mal-{mal_id_int}")
 
     series["id"] = canonical_id
     series["slug"] = canonical_id
     if animeflv_slug:
         series["animeflv_slug"] = animeflv_slug
-    if animeav1_slug:
-        series["animeav1_slug"] = animeav1_slug
+    if fallback_slug:
+        series["fallback_slug"] = fallback_slug
 
     # Discover full franchise (BFS) — requires animeflv_slug
     if animeflv_slug:

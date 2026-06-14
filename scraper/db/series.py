@@ -90,11 +90,11 @@ def search_series(q: str, limit: int = 8) -> list[dict]:
 
 
 def get_stream_config(series_id: str) -> dict | None:
-    """Return animeflv_disabled and animeav1_slug for the given series."""
+    """Return animeflv_disabled and fallback_slug for the given series."""
     client = storage.get_client()
     result = (
         client.table("series")
-        .select("animeflv_disabled, animeav1_slug")
+        .select("animeflv_disabled, fallback_slug")
         .eq("id", series_id)
         .maybe_single()
         .execute()
@@ -102,15 +102,15 @@ def get_stream_config(series_id: str) -> dict | None:
     return result.data if result else None
 
 
-def update_stream_source(series_id: str, animeav1_slug: str, animeflv_disabled: bool = False) -> bool:
-    """Set animeav1_slug for a series. animeflv_disabled defaults to False.
+def update_stream_source(series_id: str, fallback_slug: str, animeflv_disabled: bool = False) -> bool:
+    """Set fallback_slug for a series. animeflv_disabled defaults to False.
 
     Returns True if a row was updated, False if series_id not found.
     """
     client = storage.get_client()
     result = (
         client.table("series")
-        .update({"animeav1_slug": animeav1_slug, "animeflv_disabled": animeflv_disabled})
+        .update({"fallback_slug": fallback_slug, "animeflv_disabled": animeflv_disabled})
         .eq("id", series_id)
         .execute()
     )

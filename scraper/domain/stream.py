@@ -39,7 +39,6 @@ def resolve_animeflv_stream(episode_slug: str) -> dict:
     Returns:
         { "url": str | None, "error_type": "no_source" | "network_error" | None }
     """
-    # Import here to keep this module importable in tests without side effects
     from scraper_animeflv import scrape_episode_servers
     from extractor import extract_streamtape, ExtractionError
 
@@ -49,7 +48,6 @@ def resolve_animeflv_stream(episode_slug: str) -> dict:
         logger.warning("[stream] animeflv scrape failed for slug=%s: %s", episode_slug, exc)
         return {"url": None, "error_type": "network_error"}
 
-    # Log available server codes so we can see what's offered
     all_codes = [
         s.get("title", "") or s.get("code", "")
         for lang in servers.values()
@@ -57,8 +55,6 @@ def resolve_animeflv_stream(episode_slug: str) -> dict:
     ]
     logger.warning("[stream] animeflv servers for slug=%s: %s", episode_slug, all_codes)
 
-    # Search for a streamtape server across all language groups.
-    # Match any streamtape TLD (streamtape.com, .net, .to, .cc, etc.)
     video_id = None
     for lang_servers in servers.values():
         for s in lang_servers:
@@ -84,26 +80,25 @@ def resolve_animeflv_stream(episode_slug: str) -> dict:
         return {"url": None, "error_type": "network_error"}
 
 
-def resolve_animeav1_stream(animeav1_slug: str, episode_number: int) -> dict:
-    """Attempt to resolve a stream URL via the animeav1 scraper.
+def resolve_jkanime_stream(fallback_slug: str, episode_number: int) -> dict:
+    """Attempt to resolve a stream URL via the jkanime scraper.
 
-    Wraps the animeav1 scraper logic extracted from the legacy
-    /api/stream/fallback route.
+    jkanime streams are H.264 HLS — playable directly without transcoding.
 
     Returns:
         { "url": str | None, "error_type": "no_source" | "network_error" | None }
     """
-    from scraper_animeav1 import scrape_animeav1_hash, get_zilla_m3u8_url
+    from scraper_jkanime import scrape_jkanime_m3u8
 
     try:
-        hash_id = scrape_animeav1_hash(animeav1_slug, episode_number)
+        url = scrape_jkanime_m3u8(fallback_slug, episode_number)
     except Exception:
         return {"url": None, "error_type": "network_error"}
 
-    if not hash_id:
+    if not url:
         return {"url": None, "error_type": "no_source"}
 
-    return {"url": get_zilla_m3u8_url(hash_id), "error_type": None}
+    return {"url": url, "error_type": None}
 
 
 def orchestrate_stream(episode: dict, stream_config: dict) -> dict:
@@ -113,8 +108,8 @@ def orchestrate_stream(episode: dict, stream_config: dict) -> dict:
       1. If animeflv_disabled is False: attempt primary (animeflv).
       2. If primary succeeds: return { url, source: "animeflv" }.
       3. If primary fails (no_source OR network_error) OR animeflv_disabled is True:
-         attempt fallback (animeav1) when animeav1_slug is set.
-      4. If fallback succeeds: return { url, source: "animeav1" }.
+         attempt fallback (jkanime) when fallback_slug is set.
+      4. If fallback succeeds: return { url, source: "jkanime" }.
       5. If network_error occurred (primary or fallback): raise UpstreamError.
       6. If neither resolves: raise NoSourceError.
 
@@ -122,27 +117,26 @@ def orchestrate_stream(episode: dict, stream_config: dict) -> dict:
         episode: raw episode dict from DB (must contain animeflv_slug,
                  episode_number, series_id).
         stream_config: raw stream-config dict from DB (animeflv_disabled,
-                       animeav1_slug).
+                       fallback_slug).
 
     Returns:
-        { "url": str, "source": "animeflv" | "animeav1" }
+        { "url": str, "source": "animeflv" | "jkanime" }
 
     Raises:
         NoSourceError: no URL could be resolved.
         UpstreamError: a network or parse error occurred.
     """
     animeflv_disabled = bool(stream_config.get("animeflv_disabled") or False)
-    animeav1_slug = stream_config.get("animeav1_slug")
+    fallback_slug = stream_config.get("fallback_slug")
     episode_slug = episode.get("animeflv_slug")
     episode_number = episode.get("episode_number", 0)
 
     logger.warning(
-        "[stream] orchestrate episode_slug=%s animeflv_disabled=%s animeav1_slug=%s",
-        episode_slug, animeflv_disabled, animeav1_slug,
+        "[stream] orchestrate episode_slug=%s animeflv_disabled=%s fallback_slug=%s",
+        episode_slug, animeflv_disabled, fallback_slug,
     )
 
     upstream_error_seen = False
-    primary_result = None
 
     if not animeflv_disabled:
         primary_result = resolve_animeflv_stream(episode_slug)
@@ -151,11 +145,10 @@ def orchestrate_stream(episode: dict, stream_config: dict) -> dict:
         if primary_result["error_type"] == "network_error":
             upstream_error_seen = True
 
-    # Attempt fallback if animeav1_slug is available
-    if animeav1_slug:
-        fallback_result = resolve_animeav1_stream(animeav1_slug, episode_number)
+    if fallback_slug:
+        fallback_result = resolve_jkanime_stream(fallback_slug, episode_number)
         if fallback_result["url"] is not None:
-            return {"url": fallback_result["url"], "source": "animeav1"}
+            return {"url": fallback_result["url"], "source": "jkanime"}
         if fallback_result["error_type"] == "network_error":
             upstream_error_seen = True
 

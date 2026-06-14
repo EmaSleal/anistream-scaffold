@@ -58,7 +58,7 @@ def _series_row(id: str = "s1", title: str = "Naruto") -> dict:
         "season_order": 1,
         "franchise_relation": None,
         "animeflv_slug": id,
-        "animeav1_slug": None,
+        "fallback_slug": None,
         "animeflv_disabled": False,
     }
 

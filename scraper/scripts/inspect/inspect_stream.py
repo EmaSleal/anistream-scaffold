@@ -82,7 +82,7 @@ else:
 
     series_row = (
         client.table("series")
-        .select("id, animeflv_slug, animeflv_disabled, animeav1_slug, is_simulcast")
+        .select("id, animeflv_slug, animeflv_disabled, fallback_slug, is_simulcast")
         .eq("id", ep["series_id"])
         .maybe_single()
         .execute()
@@ -95,5 +95,5 @@ else:
         print(f"  id               = {s['id']!r}")
         print(f"  animeflv_slug    = {s.get('animeflv_slug')!r}")
         print(f"  animeflv_disabled= {s.get('animeflv_disabled')!r}")
-        print(f"  animeav1_slug    = {s.get('animeav1_slug')!r}")
+        print(f"  fallback_slug    = {s.get('fallback_slug')!r}")
         print(f"  is_simulcast     = {s.get('is_simulcast')!r}")

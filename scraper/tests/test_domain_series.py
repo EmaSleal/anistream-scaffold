@@ -56,7 +56,7 @@ def make_series(
         "season_order": season_order,
         "franchise_relation": None,
         "animeflv_slug": animeflv_slug,
-        "animeav1_slug": None,
+        "fallback_slug": None,
         "animeflv_disabled": False,
     }
 

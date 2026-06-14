@@ -334,25 +334,25 @@ def series_episodes(series_id: str):
 @series_bp.patch("/<series_id>/stream-source")
 @require_admin
 def update_stream_source(series_id: str):
-    """PATCH /api/series/<id>/stream-source — set animeav1 slug (animeflv stays enabled by default).
+    """PATCH /api/series/<id>/stream-source — set fallback slug (animeflv stays enabled by default).
 
     Body:
-        animeav1_slug (str, required)
+        fallback_slug (str, required)
         animeflv_disabled (bool, optional, default false)
     """
     body = request.get_json(silent=True) or {}
-    animeav1_slug = body.get("animeav1_slug")
-    if not animeav1_slug:
-        return jsonify({"error": "animeav1_slug is required"}), 400
+    fallback_slug = body.get("fallback_slug")
+    if not fallback_slug:
+        return jsonify({"error": "fallback_slug is required"}), 400
 
     animeflv_disabled = bool(body.get("animeflv_disabled", False))
-    updated = db_series.update_stream_source(series_id, animeav1_slug, animeflv_disabled)
+    updated = db_series.update_stream_source(series_id, fallback_slug, animeflv_disabled)
     if not updated:
         return jsonify({"error": "Series not found"}), 404
 
     return jsonify({
         "id": series_id,
-        "animeav1Slug": animeav1_slug,
+        "fallbackSlug": fallback_slug,
         "animeflvDisabled": animeflv_disabled,
     }), 200
 
@@ -375,7 +375,7 @@ def series_stream_config(series_id: str):
         return jsonify({"error": "Series not found"}), 404
     return jsonify({
         "animeflvDisabled": config.get("animeflv_disabled", False),
-        "animeav1Slug": config.get("animeav1_slug"),
+        "fallbackSlug": config.get("fallback_slug"),
     })
 
 

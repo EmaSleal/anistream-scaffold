@@ -69,7 +69,7 @@ def _series_row(
         "season_order": season_order,
         "franchise_relation": None,
         "animeflv_slug": "naruto",
-        "animeav1_slug": None,
+        "fallback_slug": None,
         "animeflv_disabled": False,
     }
 
@@ -238,13 +238,13 @@ class TestSeriesEpisodes:
 
 class TestStreamConfig:
     def test_returns_config(self, client):
-        config = {"animeflv_disabled": False, "animeav1_slug": "naruto-av1"}
+        config = {"animeflv_disabled": False, "fallback_slug": "naruto-jk"}
         with patch("db.series.get_stream_config", return_value=config):
             res = client.get("/api/series/s1/stream-config")
         assert res.status_code == 200
         data = json.loads(res.data)
         assert "animeflvDisabled" in data
-        assert "animeav1Slug" in data
+        assert "fallbackSlug" in data
 
     def test_not_found_returns_404(self, client):
         with patch("db.series.get_stream_config", return_value=None):
@@ -262,16 +262,16 @@ class TestPatchStreamSource:
             res = client.patch(
                 "/api/series/s1/stream-source",
                 headers=_auth_header(role="ADMIN"),
-                data=json.dumps({"animeav1_slug": "naruto-av1"}),
+                data=json.dumps({"fallback_slug": "naruto-jk"}),
                 content_type="application/json",
             )
         assert res.status_code == 200
         data = json.loads(res.data)
         assert data["id"] == "s1"
-        assert data["animeav1Slug"] == "naruto-av1"
-        assert data["animeflv_disabled"] is True
+        assert data["fallbackSlug"] == "naruto-jk"
+        assert data["animeflvDisabled"] is False
 
-    def test_missing_animeav1_slug_returns_400(self, client):
+    def test_missing_fallback_slug_returns_400(self, client):
         res = client.patch(
             "/api/series/s1/stream-source",
             headers=_auth_header(role="ADMIN"),
@@ -291,7 +291,7 @@ class TestPatchStreamSource:
         res = client.patch(
             "/api/series/s1/stream-source",
             headers=_auth_header(role="USER"),
-            data=json.dumps({"animeav1_slug": "naruto-av1"}),
+            data=json.dumps({"fallback_slug": "naruto-jk"}),
             content_type="application/json",
         )
         assert res.status_code == 403
@@ -299,7 +299,7 @@ class TestPatchStreamSource:
     def test_no_token_returns_401(self, client):
         res = client.patch(
             "/api/series/s1/stream-source",
-            data=json.dumps({"animeav1_slug": "naruto-av1"}),
+            data=json.dumps({"fallback_slug": "naruto-jk"}),
             content_type="application/json",
         )
         assert res.status_code == 401
@@ -309,7 +309,7 @@ class TestPatchStreamSource:
             res = client.patch(
                 "/api/series/nonexistent/stream-source",
                 headers=_auth_header(role="ADMIN"),
-                data=json.dumps({"animeav1_slug": "naruto-av1"}),
+                data=json.dumps({"fallback_slug": "naruto-jk"}),
                 content_type="application/json",
             )
         assert res.status_code == 404
@@ -356,7 +356,7 @@ class TestRecommendationsEndpoint:
             "season_order": 1,
             "franchise_relation": None,
             "animeflv_slug": "naruto",
-            "animeav1_slug": None,
+            "fallback_slug": None,
             "animeflv_disabled": False,
         }
 
@@ -481,7 +481,7 @@ class TestRecommendationsEndpoint:
 
 class TestUpdateStreamSource:
     def test_updates_correct_fields_and_returns_true(self):
-        """update_stream_source calls UPDATE with animeav1_slug + animeflv_disabled=True."""
+        """update_stream_source calls UPDATE with fallback_slug + animeflv_disabled=False."""
         mock_result = MagicMock()
         mock_result.data = [{"id": "s1"}]
 
@@ -496,11 +496,11 @@ class TestUpdateStreamSource:
         with patch("storage.get_client", return_value=mock_client):
             import importlib
             import db.series as db_series_mod
-            result = db_series_mod.update_stream_source("s1", "naruto-av1")
+            result = db_series_mod.update_stream_source("s1", "naruto-jk")
 
         assert result is True
         mock_table.update.assert_called_once_with(
-            {"animeav1_slug": "naruto-av1", "animeflv_disabled": True}
+            {"fallback_slug": "naruto-jk", "animeflv_disabled": False}
         )
         mock_table.eq.assert_called_once_with("id", "s1")
 
@@ -519,6 +519,6 @@ class TestUpdateStreamSource:
 
         with patch("storage.get_client", return_value=mock_client):
             import db.series as db_series_mod
-            result = db_series_mod.update_stream_source("nonexistent", "some-slug")
+            result = db_series_mod.update_stream_source("nonexistent", "some-fallback-slug")
 
         assert result is False
