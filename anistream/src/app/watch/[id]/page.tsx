@@ -61,6 +61,10 @@ export default async function WatchPage({ params }: WatchPageProps) {
   }
 
   const streamType = streamResult.source === "animeav1" ? "hls" : "mp4";
+  const streamUrl =
+    streamResult.source === "animeflv"
+      ? `/api/proxy/stream?url=${encodeURIComponent(streamResult.url)}`
+      : streamResult.url;
 
   return (
     <VideoPlayer
@@ -68,7 +72,7 @@ export default async function WatchPage({ params }: WatchPageProps) {
       previousEpisode={enrichEpisode(adjacent.prev) ?? undefined}
       nextEpisode={enrichEpisode(adjacent.next) ?? undefined}
       initialProgress={initialProgress}
-      streamUrl={streamResult.url}
+      streamUrl={streamUrl}
       streamType={streamType}
     />
   );
