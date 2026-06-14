@@ -593,46 +593,44 @@ def _progressive_fallback(
 def transcode_progressive(video_id: str, source_url: str) -> Path:
     """Start (or join) a progressive transcode job for video_id.
 
-    Blocks until at least TRANSCODE_MIN_SEGMENTS output segments are available,
-    then returns the path to the growing EVENT playlist.  The rest of the
-    transcode continues in a background daemon thread.
+    NON-BLOCKING — returns immediately with the output_dir path regardless of
+    whether segments are ready yet.  The caller (route) must check readiness by
+    counting .ts files on disk and return HTTP 202 until enough are present.
 
     Thread/process safety:
     - Single process: in-memory _jobs dict prevents duplicate producers.
-    - Multiple gunicorn workers: on-disk .streaming sentinel prevents a second
-      worker from starting a producer; if sentinel exists but video_id is not in
-      _jobs (different worker), falls back to transcode_and_cache().
+    - Multiple gunicorn workers: if the .streaming sentinel exists but video_id
+      is not in _jobs (another worker owns the producer), return the path and let
+      the route poll — do NOT call transcode_and_cache() which would block.
     """
+    output_dir = CACHE_DIR / video_id
+
     # Fast path: already fully cached (VOD playlist)
     cached = get_cache_path(video_id)
     if cached is not None:
         return cached
 
-    output_dir = CACHE_DIR / video_id
     sentinel = output_dir / ".streaming"
 
-    # Cross-worker safety check BEFORE acquiring the in-process lock
+    # Cross-worker: sentinel exists but this worker has no producer — return path
+    # and let the route poll for readiness via disk segment count.
     if sentinel.exists() and video_id not in _jobs:
         logger.warning(
-            "[progressive] video_id=%s sentinel exists but not in _jobs (other worker) — full-transcode fallback",
+            "[progressive] video_id=%s sentinel from another worker — polling path returned",
             video_id,
         )
-        return transcode_and_cache(video_id, source_url)
+        output_dir.mkdir(parents=True, exist_ok=True)
+        return output_dir / "playlist.m3u8"
 
     with _jobs_mutex:
         existing_job = _jobs.get(video_id)
 
         if existing_job is not None:
-            status = existing_job["status"]
-            if status == "done":
-                return existing_job["playlist_path"] or get_cache_path(video_id)  # type: ignore[return-value]
-            if status in ("streaming", "pending"):
-                # Join existing job — wait for MIN_SEGMENTS below
-                ready_event = _job_events[video_id]
-                ready_event.wait()
-                return output_dir / "playlist.m3u8"
+            # Job already tracked by this worker — return path, route will poll.
+            playlist = existing_job.get("playlist_path")
+            return playlist if playlist is not None else output_dir / "playlist.m3u8"
 
-        # Create a new job
+        # New job: create output dir, sentinel, and start producer thread.
         output_dir.mkdir(parents=True, exist_ok=True)
         tmp_dir = CACHE_DIR / f"{video_id}_prog_tmp"
         tmp_dir.mkdir(parents=True, exist_ok=True)
@@ -640,15 +638,7 @@ def transcode_progressive(video_id: str, source_url: str) -> Path:
 
         ready_event = threading.Event()
         _job_events[video_id] = ready_event
-        _jobs[video_id] = JobStatus(
-            status="pending",
-            playlist_path=None,
-            segment_count=0,
-        )
-
-    # Update status to streaming outside the mutex (no need to hold it)
-    with _jobs_mutex:
-        _jobs[video_id]["status"] = "streaming"
+        _jobs[video_id] = JobStatus(status="streaming", playlist_path=None, segment_count=0)
 
     thread = threading.Thread(
         target=_progressive_producer,
@@ -658,9 +648,7 @@ def transcode_progressive(video_id: str, source_url: str) -> Path:
     )
     thread.start()
 
-    # Block until MIN_SEGMENTS ready (or job completes/fails)
-    ready_event.wait()
-
+    # Return immediately — the route polls for readiness via HTTP 202/200.
     return output_dir / "playlist.m3u8"
 
 

@@ -16,8 +16,6 @@ from domain.transcode import (
     CACHE_DIR,
     PROGRESSIVE_ENABLED,
     TRANSCODE_MIN_SEGMENTS,
-    _jobs,
-    _jobs_mutex,
     get_cache_path,
     purge_lru_if_needed,
     transcode_and_cache,
@@ -59,24 +57,25 @@ def serve_playlist(video_id: str) -> Response:
         abort(400, description="Query param 'src' is required on cache miss")
 
     if PROGRESSIVE_ENABLED:
+        # transcode_progressive() is non-blocking — starts the job and returns
+        # the output path immediately. Readiness is determined by counting .ts
+        # files on disk so it works correctly across gunicorn workers.
         try:
             playlist = transcode_progressive(video_id, source_url)
         except RuntimeError as exc:
             logger.warning("[transcode] progressive transcode failed for video_id=%s: %s", video_id, exc)
             abort(502, description=str(exc))
 
-        # Re-check full cache first — covers the fallback path where transcode_and_cache
-        # completed but segment_count was never updated to reflect readiness.
+        # Full VOD cache takes priority (covers fallback path from transcode_and_cache).
         full_cache = get_cache_path(video_id)
         if full_cache is not None:
             update_last_accessed(video_id)
             threading.Thread(target=purge_lru_if_needed, daemon=True).start()
             return send_file(full_cache, mimetype="application/vnd.apple.mpegurl")
 
-        # Check how many segments are ready in the growing EVENT playlist
-        with _jobs_mutex:
-            job = _jobs.get(video_id)
-            seg_count = job["segment_count"] if job is not None else 0
+        # Count .ts segments on disk — works across all gunicorn workers.
+        output_dir = CACHE_DIR / video_id
+        seg_count = len(list(output_dir.glob("seg*.ts")))
 
         if seg_count < TRANSCODE_MIN_SEGMENTS:
             logger.warning(
