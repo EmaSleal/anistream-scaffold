@@ -374,22 +374,25 @@ _TARGET_DURATION = 6  # seconds, matches -hls_time value
 def _write_event_playlist(
     output_dir: Path,
     ts_filenames: list[str],
+    extinf_durations: list[float],
     finalize: bool = False,
 ) -> None:
     """Atomically write (or overwrite) playlist.m3u8 in output_dir.
 
     When finalize=False the playlist type is EVENT (open-ended).
     When finalize=True the type is upgraded to VOD and #EXT-X-ENDLIST is appended.
+    extinf_durations are the actual per-segment durations from FFmpeg output.
     """
     playlist_type = "VOD" if finalize else "EVENT"
+    target_duration = int(max(extinf_durations, default=_TARGET_DURATION)) + 1
     lines = [
         "#EXTM3U",
         "#EXT-X-VERSION:3",
-        f"#EXT-X-TARGETDURATION:{_TARGET_DURATION}",
+        f"#EXT-X-TARGETDURATION:{target_duration}",
         f"#EXT-X-PLAYLIST-TYPE:{playlist_type}",
     ]
-    for fname in ts_filenames:
-        lines.append(f"#EXTINF:{_TARGET_DURATION}.000,")
+    for fname, dur in zip(ts_filenames, extinf_durations):
+        lines.append(f"#EXTINF:{dur:.3f},")
         lines.append(fname)
     if finalize:
         lines.append("#EXT-X-ENDLIST")
@@ -414,10 +417,12 @@ def _run_ffmpeg_batch(
     batch_idx: int,
     global_seg_offset: int,
     preset: str,
-) -> list[str]:
+    ts_offset: float = 0.0,
+) -> tuple[list[str], list[float]]:
     """Run FFmpeg on a single batch m3u8 and move output .ts files to output_dir.
 
-    Returns the list of .ts filenames (relative to output_dir) produced.
+    Returns (ts_filenames, extinf_durations). ts_filenames are relative to output_dir.
+    extinf_durations are the actual per-segment durations parsed from FFmpeg output.
     Raises RuntimeError on FFmpeg failure.
     """
     batch_playlist_tmp = tmp_dir / f"batch_{batch_idx:03d}_out.m3u8"
@@ -433,6 +438,7 @@ def _run_ffmpeg_batch(
         "-hls_time", str(_TARGET_DURATION),
         "-hls_segment_filename", seg_pattern,
         "-start_number", str(global_seg_offset),
+        "-output_ts_offset", f"{ts_offset:.3f}",
         str(batch_playlist_tmp),
     ]
 
@@ -462,9 +468,18 @@ def _run_ffmpeg_batch(
         produced.append(dest_name)
         seg_num += 1
 
+    # Parse actual segment durations from FFmpeg's output playlist before cleanup
+    extinf_durations: list[float] = []
+    try:
+        for line in batch_playlist_tmp.read_text(encoding="utf-8").splitlines():
+            if line.startswith("#EXTINF:"):
+                extinf_durations.append(float(line.split(":")[1].rstrip(",")))
+    except OSError:
+        extinf_durations = [float(_TARGET_DURATION)] * len(produced)
+
     # Clean up batch m3u8 produced by FFmpeg
     batch_playlist_tmp.unlink(missing_ok=True)
-    return produced
+    return produced, extinf_durations
 
 
 # ---------------------------------------------------------------------------
@@ -501,6 +516,8 @@ def _progressive_producer(
     resume_global_seg_offset: int = 0,
     resume_batch_idx: int = 0,
     resume_all_ts: "list[str] | None" = None,
+    resume_cumulative_duration: float = 0.0,
+    resume_all_extinf: "list[float] | None" = None,
 ) -> None:
     """Background producer: downloads + transcodes in batches, updates EVENT playlist.
 
@@ -517,6 +534,8 @@ def _progressive_producer(
             _download_init_segment(init_url, tmp_dir)
 
         all_ts: list[str] = list(resume_all_ts) if resume_all_ts else []
+        all_extinf: list[float] = list(resume_all_extinf) if resume_all_extinf else []
+        cumulative_duration: float = resume_cumulative_duration
         total_segs = len(segment_urls)
         batch_size = TRANSCODE_BATCH_SIZE
         global_seg_offset = resume_global_seg_offset
@@ -537,15 +556,16 @@ def _progressive_producer(
                 batch_idx=batch_idx,
             )
 
-            # Transcode this batch
+            # Transcode this batch — ts_offset ensures continuous PTS across batches
             try:
-                produced_ts = _run_ffmpeg_batch(
+                produced_ts, extinf_durations = _run_ffmpeg_batch(
                     batch_m3u8,
                     output_dir,
                     tmp_dir,
                     batch_idx,
                     global_seg_offset,
                     preset,
+                    ts_offset=cumulative_duration,
                 )
             except RuntimeError as exc:
                 logger.warning("[progressive] video_id=%s batch %d failed: %s — falling back", video_id, batch_idx, exc)
@@ -553,11 +573,13 @@ def _progressive_producer(
                 return
 
             all_ts.extend(produced_ts)
+            all_extinf.extend(extinf_durations)
+            cumulative_duration += sum(extinf_durations)
             global_seg_offset += len(produced_ts)
             batch_idx += 1
 
-            # Update playlist atomically
-            _write_event_playlist(output_dir, all_ts, finalize=is_last_batch)
+            # Update playlist atomically with actual per-segment durations
+            _write_event_playlist(output_dir, all_ts, all_extinf, finalize=is_last_batch)
 
             # Persist resume checkpoint AFTER playlist is committed (ordering invariant)
             _write_resume_state(output_dir, batch_start + batch_size, global_seg_offset, batch_idx)
@@ -691,9 +713,13 @@ def transcode_progressive(video_id: str, source_url: str) -> Path:
                 g_offset = int(state["global_seg_offset"])
                 b_idx = int(state["batch_idx"])
 
-                # Reconstruct all_ts from playlist (ADR-5: unreadable playlist = full fresh run)
+                # Reconstruct all_ts and all_extinf from playlist (ADR-5: unreadable = fresh run)
                 raw_lines = playlist_path.read_text(encoding="utf-8").splitlines()
                 prior_ts = [l for l in raw_lines if l and not l.startswith("#")]
+                prior_extinf = [
+                    float(l.split(":")[1].rstrip(","))
+                    for l in raw_lines if l.startswith("#EXTINF:")
+                ]
 
                 # Prune orphaned .ts files not referenced in the playlist
                 referenced = set(prior_ts)
@@ -706,6 +732,8 @@ def transcode_progressive(video_id: str, source_url: str) -> Path:
                     "resume_global_seg_offset": g_offset,
                     "resume_batch_idx": b_idx,
                     "resume_all_ts": prior_ts,
+                    "resume_cumulative_duration": sum(prior_extinf),
+                    "resume_all_extinf": prior_extinf,
                 }
                 logger.warning(
                     "[progressive] video_id=%s resuming from batch src=%d offset=%d segs=%d",
