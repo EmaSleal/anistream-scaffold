@@ -9,6 +9,7 @@ import { usePlayerControls } from "@/hooks/usePlayerControls";
 import { saveWatchProgress, advanceToNextEpisode } from "@/app/actions/watchProgress";
 import { PlayerControls } from "./PlayerControls";
 import { MobilePlayerControls } from "./MobilePlayerControls";
+import { AddToHomeHint } from "./AddToHomeHint";
 import { EpisodeCard } from "@/components/shared/EpisodeCard";
 import { Badge } from "@/components/ui/Badge";
 import { formatEpisodeLabel } from "@/lib/utils";
@@ -35,6 +36,7 @@ export function VideoPlayer({
   const containerRef = useRef<HTMLDivElement>(null);
   const hasTriggered = useRef<boolean>(false);
   const [countdown, setCountdown] = useState<number | null>(null);
+  const [showAddToHomeHint, setShowAddToHomeHint] = useState(false);
   const {
     playerState,
     videoRef,
@@ -88,7 +90,7 @@ export function VideoPlayer({
         case "f":
         case "F":
           e.preventDefault();
-          toggleFullscreen(containerRef);
+          handleToggleFullscreen();
           break;
         case "ArrowUp":
           e.preventDefault();
@@ -250,6 +252,22 @@ export function VideoPlayer({
 
   const nextEpisodeHref = nextEpisode ? `/watch/${nextEpisode.id}` : undefined;
 
+  function handleToggleFullscreen() {
+    const el = containerRef.current;
+    const canNativeFs = !!el?.requestFullscreen;
+    const isStandalone =
+      typeof window !== "undefined" &&
+      (window.matchMedia("(display-mode: fullscreen)").matches ||
+        window.matchMedia("(display-mode: standalone)").matches ||
+        (navigator as Navigator & { standalone?: boolean }).standalone === true);
+
+    if (!canNativeFs && !isStandalone && !playerState.isFullscreen) {
+      setShowAddToHomeHint(true);
+      return;
+    }
+    toggleFullscreen(containerRef);
+  }
+
   return (
     <div className={styles.page}>
       {/* ── Video zone ──────────────────────────────────── */}
@@ -297,7 +315,7 @@ export function VideoPlayer({
           onToggleMute={toggleMute}
           onSetVolume={setVolume}
           onSetPlaybackRate={setPlaybackRate}
-          onToggleFullscreen={() => toggleFullscreen(containerRef)}
+          onToggleFullscreen={handleToggleFullscreen}
           show={playerState.showControls}
         />
 
@@ -306,11 +324,15 @@ export function VideoPlayer({
           onTogglePlay={togglePlay}
           onSkip={skipSeconds}
           onSeek={seek}
-          onToggleFullscreen={() => toggleFullscreen(containerRef)}
+          onToggleFullscreen={handleToggleFullscreen}
           onRevealControls={revealControls}
           nextEpisodeHref={nextEpisodeHref}
           show={playerState.showControls}
         />
+
+        {showAddToHomeHint && (
+          <AddToHomeHint onDismiss={() => setShowAddToHomeHint(false)} />
+        )}
 
         {countdown !== null && (
           <div className={styles.autoAdvanceOverlay}>

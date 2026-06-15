@@ -8,11 +8,19 @@ export const metadata: Metadata = {
   title: { default: "Anistream", template: "%s | Anistream" },
   description: "Watch the best anime, anytime, anywhere.",
   robots: { index: true, follow: true },
+  manifest: "/manifest.webmanifest",
+  appleWebApp: {
+    capable: true,
+    title: "Anistream",
+    statusBarStyle: "black-translucent",
+  },
 };
 
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
+  themeColor: "#0a0a0a",
+  viewportFit: "cover",
 };
 
 export default function RootLayout({
