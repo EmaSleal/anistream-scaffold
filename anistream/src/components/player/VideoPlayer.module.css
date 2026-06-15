@@ -252,7 +252,7 @@
 }
 
 /* ── Responsive ──────────────────────────────────── */
-@media (max-width: 1024px) {
+@media (max-width: 1180px) {
   
   .metaLeft { border-right: none; border-bottom: 0.5px solid var(--color-border); }
   .sidebar { border-top: none; max-width: 16rem;}

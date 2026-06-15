@@ -152,6 +152,6 @@
 }
 .rateBtn:hover { color: #fff; border-color: rgba(255,255,255,0.6); }
 
-@media (max-width: 1024px) {
+@media (max-width: 1180px) {
   .controls { display: none !important; }
 }

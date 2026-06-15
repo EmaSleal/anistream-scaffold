@@ -466,7 +466,7 @@ Implementación: debounce(50ms) en mousemove para evitar thrashing
 
 ```css
 /* Tablet */
-@media (max-width: 1024px) {
+@media (max-width: 1180px) {
   /* Browse grid: auto-fill minmax(140px, 1fr) se adapta automáticamente */
 }
 
