@@ -16,7 +16,8 @@ export default auth((req) => {
     return NextResponse.redirect(new URL("/", req.url));
   }
 
-  if (!isLoggedIn && pathname !== "/login") {
+  const isPublic = pathname === "/" || pathname === "/login";
+  if (!isLoggedIn && !isPublic) {
     return NextResponse.redirect(new URL("/login", req.url));
   }
 });
