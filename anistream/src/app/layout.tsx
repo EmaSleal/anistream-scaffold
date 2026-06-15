@@ -5,6 +5,7 @@ import { ErudaDebug } from "@/components/debug/ErudaDebug";
 import "@/styles/globals.css";
 
 export const metadata: Metadata = {
+  metadataBase: new URL("https://anistream.astro-solutions.net"),
   title: { default: "Anistream", template: "%s | Anistream" },
   description: "Watch the best anime, anytime, anywhere.",
   robots: { index: true, follow: true },

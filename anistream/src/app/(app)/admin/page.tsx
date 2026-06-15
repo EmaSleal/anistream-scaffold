@@ -5,7 +5,7 @@ import IngestForm from "@/components/admin/IngestForm";
 import { AdminNav } from "@/components/admin/AdminNav";
 import styles from "./admin.module.css";
 
-export const metadata: Metadata = { title: "Admin" };
+export const metadata: Metadata = { title: "Admin", robots: { index: false, follow: false } };
 
 interface AdminPageProps {
   searchParams: Promise<{ slug?: string }>;

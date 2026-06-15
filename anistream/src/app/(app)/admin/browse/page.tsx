@@ -7,7 +7,7 @@ import styles from "../admin.module.css";
 
 export const dynamic = "force-dynamic";
 
-export const metadata: Metadata = { title: "Browse Catalog" };
+export const metadata: Metadata = { title: "Browse Catalog", robots: { index: false, follow: false } };
 
 export default async function BrowsePage() {
   const session = await auth();

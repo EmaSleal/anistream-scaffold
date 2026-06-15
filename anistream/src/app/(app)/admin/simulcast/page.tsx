@@ -8,7 +8,7 @@ import styles from "../admin.module.css";
 
 export const dynamic = "force-dynamic";
 
-export const metadata: Metadata = { title: "Simulcast Manager" };
+export const metadata: Metadata = { title: "Simulcast Manager", robots: { index: false, follow: false } };
 
 export default async function SimulcastPage() {
   const session = await auth();

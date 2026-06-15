@@ -10,7 +10,7 @@ import type { Metadata } from "next";
 import styles from "../browse/browse.module.css";
 import sc from "./simulcast.module.css";
 
-export const metadata: Metadata = { title: "Simulcasts" };
+export const metadata: Metadata = { title: "Simulcasts", robots: { index: false, follow: false } };
 
 export default async function SimulcastPage() {
   const session = await auth();

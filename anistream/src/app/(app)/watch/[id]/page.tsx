@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 import type { Episode } from "@/types";
+import { redirect } from "next/navigation";
+import { auth } from "@/auth";
 import { VideoPlayer } from "@/components/player/VideoPlayer";
 import { getEpisodeProgress } from "@/app/actions/watchProgress";
 import { getEpisodeByWatchId, getAdjacentEpisodes, getEpisodeStreamUrl } from "@/lib/episodes";
@@ -15,10 +17,14 @@ export async function generateMetadata({ params }: WatchPageProps): Promise<Meta
   const dbResult = await getEpisodeByWatchId(id);
   return {
     title: dbResult ? `${dbResult.episode.seriesTitle} – ${dbResult.episode.title}` : "Watch",
+    robots: { index: false, follow: false },
   };
 }
 
 export default async function WatchPage({ params }: WatchPageProps) {
+  const session = await auth();
+  if (!session) redirect("/");
+
   const { id } = await params;
 
   const dbResult = await getEpisodeByWatchId(id);

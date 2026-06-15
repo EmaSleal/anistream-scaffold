@@ -12,7 +12,7 @@ import { getRecommendations } from "@/app/actions/recommendations";
 import type { Metadata } from "next";
 import type { Genre } from "@/types";
 
-export const metadata: Metadata = { title: "Home" };
+export const metadata: Metadata = { title: "Home", robots: { index: false, follow: false } };
 
 export default async function HomePage() {
   const [series, featured, watchlistIds, continueWatching, recs, simulcasts] = await Promise.all([

@@ -10,7 +10,7 @@ import { ContinueWatchingRow } from "@/components/home/ContinueWatchingRow";
 import { SeriesRow } from "@/components/home/SeriesRow";
 import { getWatchHistory, getRecentSeries } from "@/app/actions/watchProgress";
 
-export const metadata: Metadata = { title: "My Lists" };
+export const metadata: Metadata = { title: "My Lists", robots: { index: false, follow: false } };
 
 async function getWatchlist(): Promise<Series[]> {
   const baseUrl = process.env.APP_URL ?? "http://localhost:3000";

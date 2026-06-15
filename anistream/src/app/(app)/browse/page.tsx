@@ -7,7 +7,7 @@ import GenresTab from "@/components/browse/GenresTab";
 import type { Metadata } from "next";
 import styles from "./browse.module.css";
 
-export const metadata: Metadata = { title: "Browse" };
+export const metadata: Metadata = { title: "Browse", robots: { index: false, follow: false } };
 
 const TABS = [
   { label: "All Anime",    key: "all",        href: "/browse" },

@@ -6,7 +6,7 @@ import { auth, signOut } from "@/auth";
 import { getWatchlistIds } from "@/app/actions/watchlist";
 import styles from "./account.module.css";
 
-export const metadata: Metadata = { title: "Account" };
+export const metadata: Metadata = { title: "Account", robots: { index: false, follow: false } };
 
 export default async function AccountPage() {
   const [session, watchlistIds] = await Promise.all([

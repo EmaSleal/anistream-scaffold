@@ -17,12 +17,13 @@ interface SeriesPageProps {
 export async function generateMetadata({ params }: SeriesPageProps): Promise<Metadata> {
   const { id } = await params;
   const series = await getSeriesById(id);
-  return { title: series?.title ?? "Series" };
+  return { title: series?.title ?? "Series", robots: { index: false, follow: false } };
 }
 
 export default async function SeriesPage({ params }: SeriesPageProps) {
   const { id } = await params;
   const [series, session] = await Promise.all([getSeriesById(id), auth()]);
+  if (!session) redirect("/");
   const isAdmin = session?.user?.role === "ADMIN";
 
   if (!series) {
