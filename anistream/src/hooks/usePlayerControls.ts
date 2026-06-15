@@ -18,12 +18,14 @@ interface UsePlayerControlsReturn {
   handleMouseMove: () => void;
   skipSeconds: (delta: number) => void;
   revealControls: () => void;
+  isFakeFullscreen: boolean;
 }
 
 export function usePlayerControls(initialDuration = 0, initialTime = 0): UsePlayerControlsReturn {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const autoplayAttempted = useRef(false);
+  const [fakeFs, setFakeFs] = useState(false);
 
   const [playerState, setPlayerState] = useState<PlayerState>({
     isPlaying: false,
@@ -112,27 +114,44 @@ export function usePlayerControls(initialDuration = 0, initialTime = 0): UsePlay
     (containerRef: React.RefObject<HTMLDivElement | null>) => {
       const el = containerRef.current;
       if (!el) return;
-      const isFs = !!(document.fullscreenElement ?? (document as Document & { webkitFullscreenElement?: Element }).webkitFullscreenElement);
-      if (!isFs) {
-        if (el.requestFullscreen) {
-          void el.requestFullscreen();
-        } else {
-          // iOS Safari: requestFullscreen on div is unsupported — fall back to video element
-          const video = el.querySelector("video");
-          if (video && (video as HTMLVideoElement & { webkitEnterFullscreen?: () => void }).webkitEnterFullscreen) {
-            (video as HTMLVideoElement & { webkitEnterFullscreen: () => void }).webkitEnterFullscreen();
-          }
-        }
+
+      const nativeFs = !!(document.fullscreenElement ?? (document as Document & { webkitFullscreenElement?: Element }).webkitFullscreenElement);
+
+      if (nativeFs) {
+        if (document.exitFullscreen) void document.exitFullscreen();
+        else (document as Document & { webkitExitFullscreen?: () => void }).webkitExitFullscreen?.();
+        return;
+      }
+
+      if (fakeFs) {
+        setFakeFs(false);
+        return;
+      }
+
+      if (el.requestFullscreen) {
+        void el.requestFullscreen();
       } else {
-        if (document.exitFullscreen) {
-          void document.exitFullscreen();
-        } else {
-          (document as Document & { webkitExitFullscreen?: () => void }).webkitExitFullscreen?.();
-        }
+        // iPhone: requestFullscreen on div unsupported — use fake fullscreen + orientation lock
+        setFakeFs(true);
       }
     },
-    []
+    [fakeFs]
   );
+
+  // Sync fakeFs into playerState.isFullscreen
+  useEffect(() => {
+    setPlayerState((p) => ({ ...p, isFullscreen: fakeFs || !!(document.fullscreenElement ?? (document as Document & { webkitFullscreenElement?: Element }).webkitFullscreenElement) }));
+  }, [fakeFs]);
+
+  // Orientation lock for fake fullscreen on iPhone
+  useEffect(() => {
+    if (!fakeFs) {
+      (screen.orientation as ScreenOrientation & { unlock?: () => void })?.unlock?.();
+      return;
+    }
+    (screen.orientation as ScreenOrientation & { lock?: (o: string) => Promise<void> })?.lock?.("landscape").catch(() => { /* not supported — silently skip */ });
+    return () => { (screen.orientation as ScreenOrientation & { unlock?: () => void })?.unlock?.(); };
+  }, [fakeFs]);
 
   // Sync video events → state
   useEffect(() => {
@@ -240,5 +259,6 @@ export function usePlayerControls(initialDuration = 0, initialTime = 0): UsePlay
     handleMouseMove,
     skipSeconds,
     revealControls,
+    isFakeFullscreen: fakeFs,
   };
 }

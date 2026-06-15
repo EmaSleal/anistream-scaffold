@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { cn } from "@/lib/utils";
 import type { Episode } from "@/types";
 import { usePlayerControls } from "@/hooks/usePlayerControls";
 import { saveWatchProgress, advanceToNextEpisode } from "@/app/actions/watchProgress";
@@ -46,7 +47,14 @@ export function VideoPlayer({
     toggleFullscreen,
     handleMouseMove,
     revealControls,
+    isFakeFullscreen,
   } = usePlayerControls(episode.duration, initialProgress);
+
+  // Lock body scroll when iPhone fake fullscreen is active
+  useEffect(() => {
+    document.body.style.overflow = isFakeFullscreen ? "hidden" : "";
+    return () => { document.body.style.overflow = ""; };
+  }, [isFakeFullscreen]);
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -247,7 +255,7 @@ export function VideoPlayer({
       {/* ── Video zone ──────────────────────────────────── */}
       <div
         ref={containerRef}
-        className={styles.videoWrap}
+        className={cn(styles.videoWrap, isFakeFullscreen && styles.fakeFullscreen)}
         onMouseMove={handleMouseMove}
         onClick={togglePlay}
       >
