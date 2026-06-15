@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState, useEffect, useTransition } from "react";
 import Image from "next/image";
 import type { Series } from "@/types";
 import { Button } from "@/components/ui/Button";
@@ -19,6 +19,14 @@ export function HeroBanner({ featured, watchlistIds }: HeroBannerProps) {
   const [optimisticIds, setOptimisticIds] = useState<string[]>(watchlistIds);
   const [isPending, startTransition] = useTransition();
   const current = featured[activeIndex];
+
+  useEffect(() => {
+    if (featured.length <= 1) return;
+    const id = setTimeout(() => {
+      setActiveIndex((i) => (i + 1) % featured.length);
+    }, 5000);
+    return () => clearTimeout(id);
+  }, [activeIndex, featured.length]);
 
   if (!current) return null;
 
@@ -99,7 +107,11 @@ export function HeroBanner({ featured, watchlistIds }: HeroBannerProps) {
               aria-label={`View ${s.title}`}
               className={cn(styles.dot, i === activeIndex && styles.dotActive)}
               onClick={() => setActiveIndex(i)}
-            />
+            >
+              {i === activeIndex && (
+                <span key={activeIndex} className={styles.dotFill} aria-hidden="true" />
+              )}
+            </button>
           ))}
         </div>
       )}

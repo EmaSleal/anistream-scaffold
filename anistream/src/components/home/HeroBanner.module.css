@@ -130,16 +130,34 @@
   gap: 6px;
 }
 .dot {
+  position: relative;
   width: 8px;
   height: 8px;
   border-radius: 4px;
   background: rgba(255,255,255,0.30);
   border: none;
+  padding: 0;
+  overflow: hidden;
+  cursor: pointer;
   transition: width var(--transition-base), background var(--transition-base);
 }
 .dotActive {
   width: 2.4rem;
+  background: rgba(255,255,255,0.20);
+}
+
+@keyframes fillProgress {
+  from { transform: scaleX(0); }
+  to   { transform: scaleX(1); }
+}
+
+.dotFill {
+  position: absolute;
+  inset: 0;
   background: var(--color-brand);
+  transform-origin: left center;
+  animation: fillProgress 5s linear forwards;
+  border-radius: 4px;
 }
 
 
