@@ -73,7 +73,7 @@
   /* Layout */
   --container-max:      1440px;
   --homepage-max:       1800px;
-  --nav-height:         4rem;
+  --nav-height:         calc(4rem + env(safe-area-inset-top, 0px));
   --bottom-nav-height:  56px;
 }
 
