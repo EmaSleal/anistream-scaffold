@@ -10,7 +10,7 @@ import { cn } from "@/lib/utils";
 import styles from "./Navbar.module.css";
 
 const NAV_ITEMS = [
-  { label: "Home",       href: "/" },
+  { label: "Home",       href: "/home" },
   { label: "My Lists",   href: "/my-lists" },
   { label: "Browse",     href: "/browse" },
   { label: "Simulcasts", href: "/simulcast" },
@@ -18,7 +18,7 @@ const NAV_ITEMS = [
 ] as const;
 
 const BOTTOM_NAV_ITEMS = [
-  { label: "Home",       href: "/" },
+  { label: "Home",       href: "/home" },
   { label: "My Lists",   href: "/my-lists" },
   { label: "Browse",     href: "/browse" },
   { label: "Simulcasts", href: "/simulcast" },
@@ -26,7 +26,7 @@ const BOTTOM_NAV_ITEMS = [
 
 function NavIcon({ href }: { href: string }) {
   switch (href) {
-    case "/":
+    case "/home":
       return (
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
           <path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />

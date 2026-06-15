@@ -63,15 +63,13 @@ export default async function MyListsPage() {
           ))}
         </div>
       )}
-      
+
       {recentSeries.length > 0 && (
         <SeriesRow title="Recently Watched" series={recentSeries} />
       )}
 
       {/* Watch history row — ContinueWatchingRow returns null when empty */}
       <ContinueWatchingRow episodes={history} />
-
-      
     </div>
   );
 }

@@ -1,7 +1,5 @@
 export const dynamic = "force-dynamic";
 
-import { auth } from "@/auth";
-import { LandingPage } from "@/components/landing/LandingPage";
 import { HeroBanner } from "@/components/home/HeroBanner";
 import { SeriesRow } from "@/components/home/SeriesRow";
 import { ContinueWatchingRow } from "@/components/home/ContinueWatchingRow";
@@ -17,11 +15,6 @@ import type { Genre } from "@/types";
 export const metadata: Metadata = { title: "Home" };
 
 export default async function HomePage() {
-  const session = await auth();
-  if (!session) {
-    const series = await getSeriesList({ limit: 20, sort: "score" });
-    return <LandingPage series={series} />;
-  }
   const [series, featured, watchlistIds, continueWatching, recs, simulcasts] = await Promise.all([
     getSeriesList({ limit: 100, consolidated: true }),
     getFeaturedSeries(),
@@ -49,8 +42,6 @@ export default async function HomePage() {
         {genres.map((genre) => {
           const rows = shuffle(series)
             .filter((s) => s.genres?.includes(genre as Genre))
-            //.sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
-
             .slice(0, 10);
           return rows.length > 0 ? (
             <SeriesRow key={genre} title={`Top ${genre}`} series={rows} watchlistIds={watchlistSet} />
