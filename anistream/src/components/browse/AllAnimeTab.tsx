@@ -1,7 +1,7 @@
 import { AnimeCard } from "@/components/home/AnimeCard";
 import { getSeriesList } from "@/lib/series";
 import { getWatchlistIds } from "@/app/actions/watchlist";
-import styles from "@/app/browse/browse.module.css";
+import styles from "@/app/(app)/browse/browse.module.css";
 
 export default async function AllAnimeTab() {
   const [series, watchlistIds] = await Promise.all([getSeriesList(50), getWatchlistIds()]);

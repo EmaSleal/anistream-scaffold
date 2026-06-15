@@ -3,7 +3,7 @@
 import { useRef, useState, useEffect } from "react";
 import Link from "next/link";
 import type { RecentEpisode } from "@/lib/simulcast-episodes";
-import sc from "@/app/simulcast/simulcast.module.css";
+import sc from "@/app/(app)/simulcast/simulcast.module.css";
 
 function formatAiredAt(airedAt: string | undefined): string {
   if (!airedAt) return "";

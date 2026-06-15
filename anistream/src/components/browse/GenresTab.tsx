@@ -5,7 +5,7 @@ import { topGenres } from "@/lib/genres";
 import { FilterBar } from "@/components/browse/FilterBar";
 import { getWatchlistIds } from "@/app/actions/watchlist";
 import type { Series } from "@/types";
-import styles from "@/app/browse/browse.module.css";
+import styles from "@/app/(app)/browse/browse.module.css";
 
 interface GenresTabProps {
   genre?: string;
