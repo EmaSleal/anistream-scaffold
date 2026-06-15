@@ -80,7 +80,7 @@ def get_recent_simulcast_episodes(limit: int = 20) -> list[dict]:
         client.table("episodes")
         .select("id, series_id, episode_number, title, thumbnail_url, aired_at, animeflv_slug, created_at")
         .in_("series_id", series_ids)
-        .order("aired_at", desc=True, nullsfirst=False)
+        .order("created_at", desc=True)
         .limit(limit * 4)
         .execute()
     )
