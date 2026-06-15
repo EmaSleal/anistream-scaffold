@@ -1,13 +1,13 @@
 import Link from "next/link";
 import Image from "next/image";
 import type { Series } from "@/types";
-import styles from "./LandingCard.module.css";
+import styles from "./MarketingCard.module.css";
 
-interface LandingCardProps {
+interface MarketingCardProps {
   series: Series;
 }
 
-export function LandingCard({ series }: LandingCardProps) {
+export function MarketingCard({ series }: MarketingCardProps) {
   return (
     <Link href={`/series/${series.id}`} className={styles.card}>
       <div className={styles.thumb}>

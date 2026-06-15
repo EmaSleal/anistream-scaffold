@@ -4,14 +4,14 @@ import { useState, useEffect } from "react";
 import Image from "next/image";
 import { signIn } from "next-auth/react";
 import type { Series } from "@/types";
-import styles from "./LandingHero.module.css";
+import styles from "./MarketingHero.module.css";
 import { cn } from "@/lib/utils";
 
-interface LandingHeroProps {
+interface MarketingHeroProps {
   series: Series[];
 }
 
-export function LandingHero({ series }: LandingHeroProps) {
+export function MarketingHero({ series }: MarketingHeroProps) {
   const [activeIndex, setActiveIndex] = useState(0);
   const current = series[activeIndex];
 
