@@ -4,6 +4,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { useSession } from "next-auth/react";
+import { signIn } from "next-auth/react";
 import { useScrollHide } from "@/hooks/useScrollHide";
 import { cn } from "@/lib/utils";
 import styles from "./Navbar.module.css";
@@ -59,7 +60,7 @@ function NavIcon({ href }: { href: string }) {
 export function Navbar() {
   const pathname = usePathname();
   const isScrolled = useScrollHide(40);
-  const { data: session } = useSession();
+  const { data: session, status } = useSession();
 
   return (
     <>
@@ -74,79 +75,97 @@ export function Navbar() {
           <span className={styles.logoText}>anistream</span>
         </Link>
 
-        <ul className={styles.navList}>
-          {NAV_ITEMS.map(({ label, href }) => (
-            <li key={href}>
-              <Link
-                href={href}
-                className={cn(
-                  styles.navItem,
-                  pathname === href && styles.active
-                )}
-              >
-                {label}
-              </Link>
-            </li>
-          ))}
-          {session?.user?.role === "ADMIN" && (
-            <li>
-              <Link
-                href="/admin/simulcast"
-                className={cn(styles.navItem, styles.adminItem, pathname === "/admin/simulcast" && styles.active)}
-              >
-                Admin
-              </Link>
-            </li>
-          )}
-        </ul>
+        {status !== "unauthenticated" && (
+          <ul className={styles.navList}>
+            {NAV_ITEMS.map(({ label, href }) => (
+              <li key={href}>
+                <Link
+                  href={href}
+                  className={cn(
+                    styles.navItem,
+                    pathname === href && styles.active
+                  )}
+                >
+                  {label}
+                </Link>
+              </li>
+            ))}
+            {session?.user?.role === "ADMIN" && (
+              <li>
+                <Link
+                  href="/admin/simulcast"
+                  className={cn(styles.navItem, styles.adminItem, pathname === "/admin/simulcast" && styles.active)}
+                >
+                  Admin
+                </Link>
+              </li>
+            )}
+          </ul>
+        )}
 
         <div className={styles.actions}>
-          <button className={styles.iconBtn} aria-label="Search">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-              <circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" />
-            </svg>
-          </button>
-          <button className={styles.iconBtn} aria-label="Watchlist">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-              <path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z" />
-            </svg>
-          </button>
-          <Link
-            href="/account"
-            className={styles.avatar}
-            aria-label="Account"
-            title={session?.user?.name ?? "Account"}
-          >
-            {session?.user?.image ? (
-              <Image
-                src={session.user.image}
-                alt={session.user.name ?? "User avatar"}
-                width={32}
-                height={32}
-                className={styles.avatarImg}
-              />
-            ) : (
-              <span aria-hidden="true">
-                {(session?.user?.name ?? "U")[0].toUpperCase()}
-              </span>
-            )}
-          </Link>
+          {status !== "unauthenticated" && (
+            <>
+              <button className={styles.iconBtn} aria-label="Search">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                  <circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" />
+                </svg>
+              </button>
+              <button className={styles.iconBtn} aria-label="Watchlist">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                  <path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z" />
+                </svg>
+              </button>
+            </>
+          )}
+          {status === "unauthenticated" ? (
+            <button
+              className={styles.signInBtn}
+              onClick={() => signIn("google")}
+              type="button"
+            >
+              Sign In
+            </button>
+          ) : (
+            <Link
+              href="/account"
+              className={styles.avatar}
+              aria-label="Account"
+              title={session?.user?.name ?? "Account"}
+            >
+              {session?.user?.image ? (
+                <Image
+                  src={session.user.image}
+                  alt={session.user.name ?? "User avatar"}
+                  width={32}
+                  height={32}
+                  className={styles.avatarImg}
+                />
+              ) : (
+                <span aria-hidden="true">
+                  {(session?.user?.name ?? "U")[0].toUpperCase()}
+                </span>
+              )}
+            </Link>
+          )}
         </div>
       </nav>
     </header>
 
-    <nav className={styles.bottomNav} aria-label="Mobile navigation">
-      {BOTTOM_NAV_ITEMS.map(({ label, href }) => (
-        <Link
-          key={href}
-          href={href}
-          className={cn(styles.bottomNavItem, pathname === href && styles.bottomNavActive)}
-        >
-          <NavIcon href={href} />
-          <span>{label}</span>
-        </Link>
-      ))}
-    </nav>
+    {status !== "unauthenticated" && (
+      <nav className={styles.bottomNav} aria-label="Mobile navigation">
+        {BOTTOM_NAV_ITEMS.map(({ label, href }) => (
+          <Link
+            key={href}
+            href={href}
+            className={cn(styles.bottomNavItem, pathname === href && styles.bottomNavActive)}
+          >
+            <NavIcon href={href} />
+            <span>{label}</span>
+          </Link>
+        ))}
+      </nav>
+    )}
     </>
   );
 }

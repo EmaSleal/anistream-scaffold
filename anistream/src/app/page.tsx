@@ -1,5 +1,7 @@
 export const dynamic = "force-dynamic";
 
+import { auth } from "@/auth";
+import { LandingPage } from "@/components/landing/LandingPage";
 import { HeroBanner } from "@/components/home/HeroBanner";
 import { SeriesRow } from "@/components/home/SeriesRow";
 import { ContinueWatchingRow } from "@/components/home/ContinueWatchingRow";
@@ -15,6 +17,8 @@ import type { Genre } from "@/types";
 export const metadata: Metadata = { title: "Home" };
 
 export default async function HomePage() {
+  const session = await auth();
+  if (!session) return <LandingPage />;
   const [series, featured, watchlistIds, continueWatching, recs, simulcasts] = await Promise.all([
     getSeriesList({ limit: 100, consolidated: true }),
     getFeaturedSeries(),
