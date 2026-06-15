@@ -1,0 +1,13 @@
+/* Marketing landing page — section spacing */
+.page {
+  min-height: 100vh;
+  background: var(--color-bg-primary);
+  padding-top: var(--nav-height);
+  display: flex;
+  flex-direction: column;
+}
+
+/* Let the hero bleed behind the fixed nav */
+.page > :first-child {
+  margin-top: calc(-1 * var(--nav-height));
+}
