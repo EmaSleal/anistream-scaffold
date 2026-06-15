@@ -1,58 +1,66 @@
 .root {
+  background: var(--color-bg-primary);
   min-height: 100vh;
+}
+
+/* ── Cards section ──────────────────────────────────────── */
+
+.cardsSection {
+  padding: 2.4rem 2.4rem 0;
+  max-width: var(--homepage-max, 1800px);
+  margin: 0 auto;
+}
+
+@media (max-width: 768px) {
+  .cardsSection { padding: 2rem 1.2rem 0; }
+}
+
+.sectionTitle {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--color-text-primary);
+  margin-bottom: 1.2rem;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.cardsRow {
+  display: flex;
+  gap: 12px;
+  overflow-x: auto;
+  padding-bottom: 1.2rem;
+  scrollbar-width: none;
+}
+
+.cardsRow::-webkit-scrollbar { display: none; }
+
+/* ── Bottom CTA ─────────────────────────────────────────── */
+
+.cta {
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
-  background: radial-gradient(ellipse at 50% 0%, rgba(244, 117, 33, 0.12) 0%, #000 60%);
-  padding: var(--space-8);
+  padding: 4rem 2.4rem 5rem;
   text-align: center;
 }
 
-.card {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  max-width: 420px;
-  width: 100%;
-}
-
-.logo {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: var(--space-4);
-  margin-bottom: var(--space-8);
-}
-
-.appName {
-  font-size: 48px;
-  font-weight: 800;
-  color: #fff;
-  letter-spacing: -0.03em;
-  line-height: 1;
-  font-family: var(--font-sans);
-}
-
-.tagline {
-  font-size: 18px;
-  color: var(--color-text-secondary);
-  margin-bottom: var(--space-10);
-  max-width: 360px;
-  line-height: 1.5;
-  font-family: var(--font-sans);
+.ctaText {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--color-text-primary);
+  margin-bottom: 1.5rem;
 }
 
 .signInBtn {
   display: inline-flex;
   align-items: center;
-  gap: var(--space-3);
+  gap: 10px;
   background: var(--color-brand);
   color: #fff;
   font-family: var(--font-sans);
-  font-size: 15px;
+  font-size: 16px;
   font-weight: 700;
-  padding: 13px 28px;
+  padding: 14px 32px;
   border-radius: var(--radius-pill);
   border: none;
   cursor: pointer;
@@ -65,13 +73,8 @@
   transform: translateY(-1px);
 }
 
-.signInBtn:active {
-  transform: translateY(0);
-}
-
 .footnote {
-  margin-top: var(--space-5);
+  margin-top: 1rem;
   font-size: 13px;
   color: var(--color-text-muted);
-  font-family: var(--font-sans);
 }

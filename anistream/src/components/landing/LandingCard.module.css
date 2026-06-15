@@ -1,0 +1,44 @@
+.card {
+  display: flex;
+  flex-direction: column;
+  width: 140px;
+  flex-shrink: 0;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  background: var(--color-bg-card);
+  transition: transform var(--transition-base);
+}
+
+@media (max-width: 480px) {
+  .card { width: 110px; }
+}
+
+.card:hover { transform: scale(1.04); }
+.card:hover .overlay { opacity: 1; }
+
+.thumb {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 2 / 3;
+  background: var(--color-bg-card);
+}
+
+.image { object-fit: cover; }
+
+.overlay {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to top, rgba(0,0,0,0.55) 0%, transparent 50%);
+  opacity: 0;
+  transition: opacity var(--transition-base);
+}
+
+.title {
+  padding: 6px 8px 8px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

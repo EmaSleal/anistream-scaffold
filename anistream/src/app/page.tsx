@@ -18,7 +18,10 @@ export const metadata: Metadata = { title: "Home" };
 
 export default async function HomePage() {
   const session = await auth();
-  if (!session) return <LandingPage />;
+  if (!session) {
+    const series = await getSeriesList({ limit: 20, sort: "score" });
+    return <LandingPage series={series} />;
+  }
   const [series, featured, watchlistIds, continueWatching, recs, simulcasts] = await Promise.all([
     getSeriesList({ limit: 100, consolidated: true }),
     getFeaturedSeries(),

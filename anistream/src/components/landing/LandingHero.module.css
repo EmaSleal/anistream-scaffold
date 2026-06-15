@@ -1,0 +1,172 @@
+.hero {
+  position: relative;
+  width: 100%;
+  min-height: 35rem;
+  display: flex;
+  align-items: flex-end;
+  padding-bottom: 5rem;
+  overflow: hidden;
+}
+
+@media (max-width: 768px) {
+  .hero { min-height: 22rem; padding-bottom: 4rem; }
+}
+
+.backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+}
+
+.backdropImg {
+  object-fit: cover;
+  object-position: center top;
+}
+
+.gradientLeft {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to right, #000 0%, rgba(0,0,0,0.7) 40%, transparent 70%);
+}
+
+.gradientBottom {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to top, #000 0%, transparent 45%);
+}
+
+@media (max-width: 768px) {
+  .gradientLeft { background: linear-gradient(to right, #000 0%, rgba(0,0,0,0.65) 25%, transparent 55%); }
+  .gradientBottom { background: linear-gradient(to top, #000 0%, transparent 25%); }
+}
+
+.content {
+  position: relative;
+  z-index: 1;
+  padding: 0 2.4rem;
+  max-width: 560px;
+}
+
+@media (max-width: 768px) {
+  .content { padding: 0 1.2rem; max-width: 100%; }
+}
+
+.meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+
+.rating {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--color-brand);
+  background: var(--color-brand-dim, rgba(244,117,33,0.15));
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+}
+
+.genres {
+  font-size: 12px;
+  color: var(--color-text-secondary);
+}
+
+.title {
+  font-size: 38px;
+  font-weight: 800;
+  color: #fff;
+  line-height: 1.1;
+  margin-bottom: 12px;
+  letter-spacing: -0.02em;
+}
+
+@media (max-width: 768px) {
+  .title { font-size: 26px; }
+}
+
+.description {
+  font-size: 14px;
+  color: rgba(255,255,255,0.65);
+  line-height: 1.6;
+  margin-bottom: 24px;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+@media (max-width: 768px) {
+  .description { display: none; }
+}
+
+.cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--color-brand);
+  color: #fff;
+  font-family: var(--font-sans);
+  font-size: 15px;
+  font-weight: 700;
+  padding: 12px 24px;
+  border-radius: var(--radius-pill);
+  border: none;
+  cursor: pointer;
+  transition: background var(--transition-fast), transform var(--transition-fast);
+}
+
+.cta:hover {
+  background: var(--color-brand-hover);
+  transform: translateY(-1px);
+}
+
+/* ── Dots ───────────────────────────────────── */
+
+.dots {
+  position: absolute;
+  bottom: 2rem;
+  left: 2.4rem;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+@media (max-width: 768px) {
+  .dots { left: 1.2rem; }
+}
+
+.dot {
+  position: relative;
+  width: 8px;
+  height: 8px;
+  border-radius: 4px;
+  background: rgba(255,255,255,0.30);
+  border: none;
+  padding: 0;
+  overflow: hidden;
+  cursor: pointer;
+  transition: width var(--transition-base), background var(--transition-base);
+}
+
+.dotActive {
+  width: 2.4rem;
+  background: rgba(255,255,255,0.20);
+}
+
+/* Fill animation — spans the active dot's width and animates from 0 to 100% */
+@keyframes fillProgress {
+  from { transform: scaleX(0); }
+  to   { transform: scaleX(1); }
+}
+
+.dotFill {
+  position: absolute;
+  inset: 0;
+  background: var(--color-brand);
+  transform-origin: left center;
+  animation: fillProgress 5s linear forwards;
+  border-radius: 4px;
+}
