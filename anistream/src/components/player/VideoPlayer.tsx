@@ -5,7 +5,6 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { Episode } from "@/types";
 import { usePlayerControls } from "@/hooks/usePlayerControls";
-import { useIsIos } from "@/hooks/useIsIos";
 import { saveWatchProgress, advanceToNextEpisode } from "@/app/actions/watchProgress";
 import { PlayerControls } from "./PlayerControls";
 import { MobilePlayerControls } from "./MobilePlayerControls";
@@ -20,7 +19,6 @@ interface VideoPlayerProps {
   nextEpisode?: Episode;
   initialProgress?: number;
   streamUrl?: string;
-  directStreamUrl?: string;
   streamType?: "mp4" | "hls";
 }
 
@@ -30,7 +28,6 @@ export function VideoPlayer({
   nextEpisode,
   initialProgress = 0,
   streamUrl,
-  directStreamUrl,
   streamType = "mp4",
 }: VideoPlayerProps) {
   const router = useRouter();
@@ -100,16 +97,8 @@ export function VideoPlayer({
   }, [togglePlay, skipSeconds, toggleMute, toggleFullscreen, setVolume, containerRef, videoRef]);
 
   const hlsRef = useRef<import("hls.js").default | null>(null);
-  const isIos = useIsIos();
 
-  // Resolve which URL to use. When directStreamUrl is provided (jkanime source):
-  //   - null (pre-mount): hold off — return nothing until iOS detection resolves
-  //   - true (iOS): use streamUrl (transcode proxy → H.264)
-  //   - false (non-iOS): use directStreamUrl (raw HLS — no transcode needed)
-  // When directStreamUrl is absent (animeflv / mp4 sources): always use streamUrl as-is.
-  const resolvedStreamUrl: string | undefined = directStreamUrl !== undefined
-    ? (isIos === null ? undefined : (isIos ? streamUrl : directStreamUrl))
-    : streamUrl;
+  const resolvedStreamUrl = streamUrl;
 
   useEffect(() => {
     const video = videoRef.current;

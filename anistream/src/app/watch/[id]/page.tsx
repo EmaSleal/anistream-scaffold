@@ -63,7 +63,6 @@ export default async function WatchPage({ params }: WatchPageProps) {
   const streamType = streamResult.source === "jkanime" ? "hls" : "mp4";
 
   let streamUrl: string;
-  let directStreamUrl: string | undefined;
   if (streamResult.source === "jkanime") {
     // jkanime provides H.264 HLS — play directly, no transcoding needed.
     streamUrl = streamResult.url;
@@ -79,7 +78,6 @@ export default async function WatchPage({ params }: WatchPageProps) {
       nextEpisode={enrichEpisode(adjacent.next) ?? undefined}
       initialProgress={initialProgress}
       streamUrl={streamUrl}
-      directStreamUrl={directStreamUrl}
       streamType={streamType}
     />
   );
