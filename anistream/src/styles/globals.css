@@ -4,8 +4,8 @@
 /* ── Design Tokens ────────────────────────────────────────── */
 :root {
   /* Brand */
-  --color-brand:          #F47521;
-  --color-brand-hover:    #e06318;
+  --color-brand:          #f42121;
+  --color-brand-hover:    #e01818;
   --color-brand-dim:      rgba(244, 117, 33, 0.15);
 
   /* Backgrounds */
@@ -19,7 +19,7 @@
   --color-text-primary:   #FFFFFF;
   --color-text-secondary: rgba(255, 255, 255, 0.60);
   --color-text-muted:     rgba(255, 255, 255, 0.35);
-  --color-text-brand:     #F47521;
+  --color-text-brand:     #f42121;
 
   /* Borders */
   --color-border:         rgba(255, 255, 255, 0.08);
@@ -34,7 +34,7 @@
 
   /* Player specific */
   --color-progress-track: rgba(255, 255, 255, 0.20);
-  --color-progress-fill:  #F47521;
+  --color-progress-fill:  #f42121;
   --color-ctrl-icon:      rgba(255, 255, 255, 0.85);
 
   /* Typography */

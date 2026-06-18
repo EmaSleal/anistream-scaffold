@@ -68,7 +68,7 @@ export function Navbar() {
       <nav className={styles.nav} aria-label="Main navigation">
         <Link href="/" className={styles.logo} aria-label="Anistream home">
           <svg width="28" height="28" viewBox="0 0 28 28" aria-hidden="true">
-            <circle cx="14" cy="14" r="14" fill="#F47521" />
+            <circle cx="14" cy="14" r="14" fill="#f42121" />
             <circle cx="14" cy="14" r="7" fill="none" stroke="white" strokeWidth="3" />
             <circle cx="14" cy="14" r="3" fill="white" />
           </svg>
