@@ -1,5 +1,6 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
@@ -8,6 +9,7 @@ import { signIn } from "next-auth/react";
 import { useScrollHide } from "@/hooks/useScrollHide";
 import { cn } from "@/lib/utils";
 import styles from "./Navbar.module.css";
+import { SearchOverlay } from "./SearchOverlay";
 
 const NAV_ITEMS = [
   { label: "Home",       href: "/home" },
@@ -61,6 +63,11 @@ export function Navbar() {
   const pathname = usePathname();
   const isScrolled = useScrollHide(40);
   const { data: session, status } = useSession();
+  const [searchOpen, setSearchOpen] = useState(false);
+
+  useEffect(() => {
+    setSearchOpen(false);
+  }, [pathname]);
 
   return (
     <>
@@ -106,7 +113,12 @@ export function Navbar() {
         <div className={styles.actions}>
           {status !== "unauthenticated" && (
             <>
-              <button className={styles.iconBtn} aria-label="Search">
+              <button
+                className={cn(styles.iconBtn, searchOpen && styles.iconBtnActive)}
+                aria-label="Search"
+                aria-expanded={searchOpen}
+                onClick={() => setSearchOpen((v) => !v)}
+              >
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
                   <circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" />
                 </svg>
@@ -151,6 +163,8 @@ export function Navbar() {
         </div>
       </nav>
     </header>
+
+    {searchOpen && <SearchOverlay onClose={() => setSearchOpen(false)} />}
 
     {status !== "unauthenticated" && (
       <nav className={styles.bottomNav} aria-label="Mobile navigation">

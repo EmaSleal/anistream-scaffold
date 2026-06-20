@@ -61,17 +61,19 @@ export interface SeriesListParams {
   year?: number;
   season?: string;
   consolidated?: boolean;
+  search?: string;
 }
 
 export async function getSeriesList(arg: number | SeriesListParams = 50): Promise<Series[]> {
   const params: SeriesListParams = typeof arg === "number" ? { limit: arg } : arg;
-  const { limit = 50, sort = "score", genre, year, season, consolidated } = params;
+  const { limit = 50, sort = "score", genre, year, season, consolidated, search } = params;
 
   const qs = new URLSearchParams({ limit: String(limit), sort });
   if (genre) qs.set("genre", genre);
   if (year) qs.set("year", String(year));
   if (season) qs.set("season", season);
   if (consolidated) qs.set("consolidated", "true");
+  if (search) qs.set("q", search);
 
   const rows = await apiFetch<Record<string, unknown>[]>(
     `/api/series?${qs.toString()}`,

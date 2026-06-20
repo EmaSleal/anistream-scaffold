@@ -5,6 +5,7 @@ import { auth } from "@/auth";
 import { flaskFetch } from "@/lib/flask-client";
 
 export interface SeriesResult {
+  id: string;
   mal_id: number;
   title: string;
   slug: string;
@@ -21,8 +22,8 @@ export async function searchSeries(query: string): Promise<SeriesResult[]> {
   const params = new URLSearchParams({ q: query.trim(), limit: "8" });
   const res = await flaskFetch("/api/series/search", params);
   if (!res.ok) return [];
-  const raw = (await res.json()) as Array<{ malId: number; title: string; slug: string }>;
-  return raw.map((r) => ({ mal_id: r.malId, title: r.title, slug: r.slug }));
+  const raw = (await res.json()) as Array<{ id: string; malId: number; title: string; slug: string }>;
+  return raw.map((r) => ({ id: r.id, mal_id: r.malId, title: r.title, slug: r.slug }));
 }
 
 export async function searchAnimeFlv(query: string): Promise<AnimeFlvResult[]> {
