@@ -7,6 +7,7 @@ export async function GET() {
 
   // Strip server-only fields before sending to the client.
   // auth() reads the JWT cookie directly so server-side role checks are unaffected.
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const { id: _id, role: _role, ...safeUser } = session.user;
   return NextResponse.json({ user: safeUser, expires: session.expires });
 }
