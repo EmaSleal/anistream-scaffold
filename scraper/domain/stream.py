@@ -138,7 +138,7 @@ def orchestrate_stream(episode: dict, stream_config: dict) -> dict:
 
     upstream_error_seen = False
 
-    if not animeflv_disabled:
+    if not animeflv_disabled and episode_slug:
         primary_result = resolve_animeflv_stream(episode_slug)
         if primary_result["url"] is not None:
             return {"url": primary_result["url"], "source": "animeflv"}
