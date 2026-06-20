@@ -15,6 +15,7 @@ def get_series_list(
     simulcast: bool = False,
     genre: str | None = None,
     year: int | None = None,
+    search: str | None = None,
 ) -> list[dict]:
     """Return a list of series rows.
 
@@ -28,6 +29,7 @@ def get_series_list(
         simulcast: If True, filter to is_simulcast=true.
         genre: If set, filter to series containing this genre (case-sensitive).
         year: If set (and non-zero), filter to series with this release year.
+        search: If set, filter by ILIKE title match.
     """
     client = storage.get_client()
     query = client.table("series").select("*")
@@ -46,6 +48,9 @@ def get_series_list(
 
     if year:
         query = query.eq("year", year)
+
+    if search:
+        query = query.ilike("title", f"%{search}%")
 
     if sort == "title":
         query = query.order("title", desc=False)

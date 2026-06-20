@@ -47,6 +47,7 @@ def list_series():
     genre = request.args.get("genre")
     year = request.args.get("year", type=int)
     season = request.args.get("season")
+    search = request.args.get("q") or None
 
     featured = featured_param is not None and featured_param.lower() not in ("false", "0", "")
     consolidated = consolidated_param is not None and consolidated_param.lower() not in ("false", "0", "")
@@ -61,6 +62,7 @@ def list_series():
         simulcast=simulcast,
         genre=genre,
         year=year,
+        search=search,
     )
     mapped = [map_series_row(r) for r in rows]
 
@@ -104,6 +106,7 @@ def search_series():
     # Return minimal projection: malId, title, slug
     result = [
         {
+            "id": r.get("id"),
             "malId": r.get("mal_id"),
             "title": r.get("title"),
             "slug": r.get("slug"),
