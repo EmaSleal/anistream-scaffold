@@ -95,11 +95,11 @@ def search_series(q: str, limit: int = 8) -> list[dict]:
 
 
 def get_stream_config(series_id: str) -> dict | None:
-    """Return animeflv_disabled and fallback_slug for the given series."""
+    """Return animeflv_disabled, fallback_slug, and principal_slug for the given series."""
     client = storage.get_client()
     result = (
         client.table("series")
-        .select("animeflv_disabled, fallback_slug")
+        .select("animeflv_disabled, fallback_slug, principal_slug")
         .eq("id", series_id)
         .maybe_single()
         .execute()
@@ -107,15 +107,33 @@ def get_stream_config(series_id: str) -> dict | None:
     return result.data if result else None
 
 
-def update_stream_source(series_id: str, fallback_slug: str, animeflv_disabled: bool = False) -> bool:
-    """Set fallback_slug for a series. animeflv_disabled defaults to False.
+def update_stream_source(
+    series_id: str,
+    fallback_slug: str,
+    animeflv_disabled: bool = False,
+    principal_slug: str | None = None,
+) -> bool:
+    """Set stream source fields for a series.
+
+    Args:
+        series_id: UUID of the series row.
+        fallback_slug: JKAnime slug for fallback playback.
+        animeflv_disabled: Whether to skip the AnimeFlv source. Defaults to False.
+        principal_slug: AnimeAV1 slug for primary HLS playback. When None, the
+            column is left unchanged (not included in the update payload).
 
     Returns True if a row was updated, False if series_id not found.
     """
     client = storage.get_client()
+    payload: dict = {
+        "fallback_slug": fallback_slug,
+        "animeflv_disabled": animeflv_disabled,
+    }
+    if principal_slug is not None:
+        payload["principal_slug"] = principal_slug
     result = (
         client.table("series")
-        .update({"fallback_slug": fallback_slug, "animeflv_disabled": animeflv_disabled})
+        .update(payload)
         .eq("id", series_id)
         .execute()
     )
