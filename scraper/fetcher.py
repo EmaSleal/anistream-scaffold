@@ -267,6 +267,22 @@ def fetch_kitsu_series_status(kitsu_id: str) -> str | None:
         return None
 
 
+def fetch_jikan_relations(mal_id: int) -> list[dict]:
+    """Fetch related anime entries for a given MAL ID from Jikan.
+
+    GET https://api.jikan.moe/v4/anime/{mal_id}/relations
+
+    Returns:
+        list of { relation: str, entries: [{ mal_id: int, name: str, type: str }] }
+        Empty list on any error (fail-open).
+    """
+    try:
+        data = _get(f"anime/{mal_id}/relations")
+        return data.get("data", [])
+    except Exception:
+        return []
+
+
 def fetch_jikan_by_genre(genre_id: int, limit: int = 15) -> list[dict]:
     """Fetch top-scored anime for a Jikan genre ID.
 
