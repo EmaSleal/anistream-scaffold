@@ -12,6 +12,7 @@ from domain.series import (
 )
 from auth import require_admin, require_auth
 from fetcher import fetch_recommendations, fetch_jikan_by_genre, search_animeflv
+from scraper_animeav1 import search_animeav1
 from cache import TTLCache
 
 series_bp = Blueprint("series", __name__, url_prefix="/api/series")
@@ -158,6 +159,27 @@ def search_animeflv_results():
 
     results = search_animeflv(q, limit=limit)
     return jsonify(results)
+
+
+@series_bp.get("/search-animeav1")
+@require_admin
+def search_animeav1_results():
+    """GET /api/series/search-animeav1?q=&limit= — search AnimeAV1 for slugs.
+
+    Admin-only endpoint. Scrapes AnimeAV1 public catalog search results.
+    Returns list of {title, slug, animeav1_url, thumbnail_url}.
+    """
+    q = request.args.get("q")
+    if not q or not q.strip():
+        return jsonify({"error": "Missing required parameter: q"}), 422
+
+    try:
+        limit = min(int(request.args.get("limit", 10)), 30)
+    except (TypeError, ValueError):
+        limit = 10
+
+    results = search_animeav1(q)
+    return jsonify(results[:limit])
 
 
 @series_bp.get("/recommendations")
@@ -337,11 +359,12 @@ def series_episodes(series_id: str):
 @series_bp.patch("/<series_id>/stream-source")
 @require_admin
 def update_stream_source(series_id: str):
-    """PATCH /api/series/<id>/stream-source — set fallback slug (animeflv stays enabled by default).
+    """PATCH /api/series/<id>/stream-source — set stream source fields for a series.
 
     Body:
         fallback_slug (str, required)
         animeflv_disabled (bool, optional, default false)
+        principal_slug (str, optional) — AnimeAV1 slug for primary HLS playback
     """
     body = request.get_json(silent=True) or {}
     fallback_slug = body.get("fallback_slug")
@@ -349,7 +372,11 @@ def update_stream_source(series_id: str):
         return jsonify({"error": "fallback_slug is required"}), 400
 
     animeflv_disabled = bool(body.get("animeflv_disabled", False))
-    updated = db_series.update_stream_source(series_id, fallback_slug, animeflv_disabled)
+    principal_slug = body.get("principal_slug")
+
+    updated = db_series.update_stream_source(
+        series_id, fallback_slug, animeflv_disabled, principal_slug=principal_slug
+    )
     if not updated:
         return jsonify({"error": "Series not found"}), 404
 
@@ -357,6 +384,7 @@ def update_stream_source(series_id: str):
         "id": series_id,
         "fallbackSlug": fallback_slug,
         "animeflvDisabled": animeflv_disabled,
+        "principalSlug": principal_slug,
     }), 200
 
 
