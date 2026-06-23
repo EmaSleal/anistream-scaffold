@@ -19,6 +19,9 @@ from domain.stream import (
     UpstreamError,
 )
 
+# Proxy URL prefix used by resolve_animeav1_stream when wrapping the Zilla URL.
+_PROXY_PREFIX = "/api/stream/animeav1-proxy?path="
+
 
 # ---------------------------------------------------------------------------
 # Fixtures — minimal episode and stream_config dicts
@@ -33,10 +36,11 @@ def _episode(animeflv_slug="naruto-1", episode_number=1, series_id="s1"):
     }
 
 
-def _stream_config(animeflv_disabled=False, fallback_slug=None):
+def _stream_config(animeflv_disabled=False, fallback_slug=None, principal_slug=None):
     return {
         "animeflv_disabled": animeflv_disabled,
         "fallback_slug": fallback_slug,
+        "principal_slug": principal_slug,
     }
 
 
@@ -136,6 +140,157 @@ class TestOrchestrateStream:
         with patch(
             "domain.stream.resolve_animeflv_stream",
             return_value={"url": None, "error_type": "no_source"},
+        ), patch(
+            "domain.stream.resolve_jkanime_stream",
+            return_value={"url": None, "error_type": "network_error"},
+        ):
+            with pytest.raises(UpstreamError):
+                orchestrate_stream(ep, cfg)
+
+
+# ---------------------------------------------------------------------------
+# AnimeAV1 + hint matrix tests (TDD — verifies the new branch order)
+# Patch target: domain.stream.resolve_animeav1_stream
+# ---------------------------------------------------------------------------
+
+class TestOrchestrateStreamAnimeAV1:
+
+    # AV1 succeeds when principal_slug is set and hint is None
+    def test_animeav1_succeeds_returns_animeav1_source(self):
+        ep = _episode()
+        cfg = _stream_config(
+            animeflv_disabled=True,
+            fallback_slug="naruto-jk",
+            principal_slug="naruto",
+        )
+        proxy_url = f"{_PROXY_PREFIX}https%3A//player.zilla-networks.com/m3u8/abc123"
+
+        with patch(
+            "domain.stream.resolve_animeav1_stream",
+            return_value={"url": proxy_url, "error_type": None},
+        ) as mock_av1, patch(
+            "domain.stream.resolve_jkanime_stream"
+        ) as mock_jk:
+            result = orchestrate_stream(ep, cfg, hint=None)
+
+        mock_av1.assert_called_once_with("naruto", 1)
+        mock_jk.assert_not_called()
+        assert result["url"] == proxy_url
+        assert result["source"] == "animeav1"
+
+    # hint=h264 skips AV1 even when principal_slug is set
+    def test_animeav1_hint_h264_skips_to_jkanime(self):
+        ep = _episode()
+        cfg = _stream_config(
+            animeflv_disabled=True,
+            fallback_slug="naruto-jk",
+            principal_slug="naruto",
+        )
+
+        with patch(
+            "domain.stream.resolve_animeav1_stream"
+        ) as mock_av1, patch(
+            "domain.stream.resolve_jkanime_stream",
+            return_value={"url": "https://jkanime.net/m3u8/xyz.m3u8", "error_type": None},
+        ):
+            result = orchestrate_stream(ep, cfg, hint="h264")
+
+        mock_av1.assert_not_called()
+        assert result["source"] == "jkanime"
+        assert result["url"] == "https://jkanime.net/m3u8/xyz.m3u8"
+
+    # principal_slug=None: AV1 not attempted, goes directly to JKAnime
+    def test_no_principal_slug_skips_to_jkanime(self):
+        ep = _episode()
+        cfg = _stream_config(
+            animeflv_disabled=True,
+            fallback_slug="naruto-jk",
+            principal_slug=None,
+        )
+
+        with patch(
+            "domain.stream.resolve_animeav1_stream"
+        ) as mock_av1, patch(
+            "domain.stream.resolve_jkanime_stream",
+            return_value={"url": "https://jkanime.net/m3u8/xyz.m3u8", "error_type": None},
+        ):
+            result = orchestrate_stream(ep, cfg)
+
+        mock_av1.assert_not_called()
+        assert result["source"] == "jkanime"
+
+    # AV1 returns no_source → falls through to JKAnime
+    def test_animeav1_fails_falls_through_to_jkanime(self):
+        ep = _episode()
+        cfg = _stream_config(
+            animeflv_disabled=True,
+            fallback_slug="naruto-jk",
+            principal_slug="naruto",
+        )
+
+        with patch(
+            "domain.stream.resolve_animeav1_stream",
+            return_value={"url": None, "error_type": "no_source"},
+        ), patch(
+            "domain.stream.resolve_jkanime_stream",
+            return_value={"url": "https://jkanime.net/m3u8/xyz.m3u8", "error_type": None},
+        ):
+            result = orchestrate_stream(ep, cfg)
+
+        assert result["source"] == "jkanime"
+        assert result["url"] == "https://jkanime.net/m3u8/xyz.m3u8"
+
+    # AV1 returns network_error → falls through to JKAnime
+    def test_animeav1_network_error_falls_through_to_jkanime(self):
+        ep = _episode()
+        cfg = _stream_config(
+            animeflv_disabled=True,
+            fallback_slug="naruto-jk",
+            principal_slug="naruto",
+        )
+
+        with patch(
+            "domain.stream.resolve_animeav1_stream",
+            return_value={"url": None, "error_type": "network_error"},
+        ), patch(
+            "domain.stream.resolve_jkanime_stream",
+            return_value={"url": "https://jkanime.net/m3u8/xyz.m3u8", "error_type": None},
+        ):
+            result = orchestrate_stream(ep, cfg)
+
+        assert result["source"] == "jkanime"
+
+    # AV1 no_source + JKAnime no_source → NoSourceError
+    def test_all_sources_fail_raises_no_source(self):
+        ep = _episode()
+        cfg = _stream_config(
+            animeflv_disabled=True,
+            fallback_slug="naruto-jk",
+            principal_slug="naruto",
+        )
+
+        with patch(
+            "domain.stream.resolve_animeav1_stream",
+            return_value={"url": None, "error_type": "no_source"},
+        ), patch(
+            "domain.stream.resolve_jkanime_stream",
+            return_value={"url": None, "error_type": "no_source"},
+        ):
+            with pytest.raises(NoSourceError):
+                orchestrate_stream(ep, cfg)
+
+    # AV1 network_error + JKAnime network_error → UpstreamError
+    def test_all_sources_network_error_raises_upstream(self):
+        ep = _episode()
+        cfg = _stream_config(
+            animeflv_disabled=True,
+            fallback_slug="naruto-jk",
+            principal_slug="naruto",
+        )
+
+        with patch(
+            "domain.stream.resolve_animeav1_stream",
+            return_value={"url": None, "error_type": "network_error"},
         ), patch(
             "domain.stream.resolve_jkanime_stream",
             return_value={"url": None, "error_type": "network_error"},
