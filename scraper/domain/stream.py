@@ -114,17 +114,13 @@ def resolve_animeav1_stream(serie_slug: str, episode_number: int) -> dict:
         return {"url": None, "error_type": "no_source"}
 
     raw_m3u8 = get_zilla_m3u8_url(hash_id)
-    proxy_url = (
-        f"{SCRAPER_BASE_URL}/api/stream/animeav1-proxy"
-        f"?path={quote(raw_m3u8, safe='')}"
-    )
     logger.warning(
-        "[stream] animeav1 resolved for slug=%s ep=%s → proxy=%s",
+        "[stream] animeav1 resolved for slug=%s ep=%s → m3u8=%s",
         serie_slug,
         episode_number,
-        proxy_url,
+        raw_m3u8,
     )
-    return {"url": proxy_url, "error_type": None}
+    return {"url": raw_m3u8, "error_type": None}
 
 
 def resolve_jkanime_stream(fallback_slug: str, episode_number: int) -> dict:

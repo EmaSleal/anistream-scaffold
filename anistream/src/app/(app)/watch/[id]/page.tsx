@@ -79,9 +79,11 @@ export default async function WatchPage({ params }: WatchPageProps) {
     streamResult.source === "jkanime" || streamResult.source === "animeav1" ? "hls" : "mp4";
 
   let streamUrl: string;
-  if (streamResult.source === "jkanime" || streamResult.source === "animeav1") {
-    // jkanime: direct H.264 HLS. animeav1: proxy HLS URL already built server-side.
+  if (streamResult.source === "jkanime") {
     streamUrl = streamResult.url;
+  } else if (streamResult.source === "animeav1") {
+    // Zilla CDN requires Referer: https://animeav1.com/ — proxy through Next.js to avoid CORS.
+    streamUrl = `/api/stream/animeav1-proxy?path=${encodeURIComponent(streamResult.url)}`;
   } else {
     // animeflv (Streamtape) — proxy through Next.js to fix iOS Referer restriction.
     streamUrl = `/api/proxy/stream?url=${encodeURIComponent(streamResult.url)}`;
