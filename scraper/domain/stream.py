@@ -229,12 +229,14 @@ def orchestrate_stream(episode: dict, stream_config: dict, hint: str | None = No
     if NAS_BASE_URL and NAS_API_KEY and series_id:
         nas_result = resolve_nas_stream(series_id, episode_number)
         if nas_result["url"] is not None:
+            logger.warning("[stream] RESOLVED source=nas url=%s", nas_result["url"])
             return {"url": nas_result["url"], "source": "nas"}
 
     # Branch 1: AnimeFlv (legacy — effectively dormant when animeflv_disabled=True)
     if not animeflv_disabled and episode_slug:
         primary_result = resolve_animeflv_stream(episode_slug)
         if primary_result["url"] is not None:
+            logger.warning("[stream] RESOLVED source=animeflv url=%s", primary_result["url"])
             return {"url": primary_result["url"], "source": "animeflv"}
         if primary_result["error_type"] == "network_error":
             upstream_error_seen = True
@@ -244,6 +246,7 @@ def orchestrate_stream(episode: dict, stream_config: dict, hint: str | None = No
     if hint != "h264" and principal_slug:
         av1_result = resolve_animeav1_stream(principal_slug, episode_number)
         if av1_result["url"] is not None:
+            logger.warning("[stream] RESOLVED source=animeav1 url=%s", av1_result["url"])
             return {"url": av1_result["url"], "source": "animeav1"}
         if av1_result["error_type"] == "network_error":
             upstream_error_seen = True
@@ -252,6 +255,7 @@ def orchestrate_stream(episode: dict, stream_config: dict, hint: str | None = No
     if fallback_slug:
         fallback_result = resolve_jkanime_stream(fallback_slug, episode_number)
         if fallback_result["url"] is not None:
+            logger.warning("[stream] RESOLVED source=jkanime url=%s", fallback_result["url"])
             return {"url": fallback_result["url"], "source": "jkanime"}
         if fallback_result["error_type"] == "network_error":
             upstream_error_seen = True
