@@ -7,6 +7,7 @@ from routes.watchlist_routes import watchlist_bp
 from routes.progress_routes import progress_bp
 from routes.auth_routes import auth_bp
 from routes.simulcast_routes import simulcast_bp
+from routes.stream_proxy_routes import stream_proxy_bp
 
 
 def create_app():
@@ -19,6 +20,7 @@ def create_app():
     app.register_blueprint(progress_bp)
     app.register_blueprint(auth_bp)
     app.register_blueprint(simulcast_bp)
+    app.register_blueprint(stream_proxy_bp)
     return app
 
 
