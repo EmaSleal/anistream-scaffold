@@ -13,3 +13,7 @@ ANIMEFLV_BASE = "https://www4.animeflv.net"
 KITSU_BASE = "https://kitsu.io/api/edge"
 TPEAD_BASE = "https://tpead.net"
 CLOUDSCRAPER_BROWSER = {"browser": "chrome", "platform": "windows", "mobile": False}
+
+# Base URL for this scraper service — used to build self-referencing proxy URLs.
+# Override via environment variable when running behind a reverse proxy.
+SCRAPER_BASE_URL = os.environ.get("SCRAPER_BASE_URL", "http://localhost:5000")
