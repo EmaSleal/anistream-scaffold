@@ -71,13 +71,18 @@ export async function getEpisodesBySeriesId(seriesId: string): Promise<Episode[]
 
 export async function getEpisodeStreamUrl(
   id: string,
-): Promise<{ url: string; source: "animeflv" | "jkanime" } | null> {
+  hint?: string,
+): Promise<{ url: string; source: "animeflv" | "jkanime" | "animeav1" } | null> {
   try {
-    const res = await fetch(`${BASE_URL}/api/episodes/watch/${id}/stream-url`, {
+    const qs = hint ? `?hint=${encodeURIComponent(hint)}` : "";
+    const res = await fetch(`${BASE_URL}/api/episodes/watch/${id}/stream-url${qs}`, {
       cache: "no-store",
     });
     if (!res.ok) return null;
-    const data = (await res.json()) as { url: string; source: "animeflv" | "jkanime" };
+    const data = (await res.json()) as {
+      url: string;
+      source: "animeflv" | "jkanime" | "animeav1";
+    };
     return data;
   } catch {
     return null;

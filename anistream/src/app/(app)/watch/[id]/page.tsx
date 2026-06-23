@@ -1,12 +1,17 @@
 import type { Metadata } from "next";
 import type { Episode } from "@/types";
 import { redirect } from "next/navigation";
+import { headers } from "next/headers";
 import { auth } from "@/auth";
 import { VideoPlayer } from "@/components/player/VideoPlayer";
 import { getEpisodeProgress } from "@/app/actions/watchProgress";
 import { getEpisodeByWatchId, getAdjacentEpisodes, getEpisodeStreamUrl } from "@/lib/episodes";
 import { getEpisodeProgressMap } from "@/lib/progress-server";
 import StreamFallbackModal from "@/components/player/StreamFallbackModal";
+
+function isSafari(userAgent: string): boolean {
+  return /^((?!chrome|android).)*safari/i.test(userAgent);
+}
 
 interface WatchPageProps {
   params: Promise<{ id: string }>;
@@ -38,8 +43,12 @@ export default async function WatchPage({ params }: WatchPageProps) {
 
   const { episode } = dbResult;
 
+  const headersList = await headers();
+  const ua = headersList.get("user-agent") ?? "";
+  const hint = isSafari(ua) ? "h264" : undefined;
+
   const [streamResult, initialProgress, adjacent, progressMap] = await Promise.all([
-    getEpisodeStreamUrl(id),
+    getEpisodeStreamUrl(id, hint),
     getEpisodeProgress(episode.id),
     getAdjacentEpisodes(episode.seriesId, episode.episode),
     getEpisodeProgressMap(episode.seriesId),
@@ -66,11 +75,12 @@ export default async function WatchPage({ params }: WatchPageProps) {
     );
   }
 
-  const streamType = streamResult.source === "jkanime" ? "hls" : "mp4";
+  const streamType =
+    streamResult.source === "jkanime" || streamResult.source === "animeav1" ? "hls" : "mp4";
 
   let streamUrl: string;
-  if (streamResult.source === "jkanime") {
-    // jkanime provides H.264 HLS — play directly, no transcoding needed.
+  if (streamResult.source === "jkanime" || streamResult.source === "animeav1") {
+    // jkanime: direct H.264 HLS. animeav1: proxy HLS URL already built server-side.
     streamUrl = streamResult.url;
   } else {
     // animeflv (Streamtape) — proxy through Next.js to fix iOS Referer restriction.
