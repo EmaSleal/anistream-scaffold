@@ -41,8 +41,9 @@ def watch_episode_stream(watch_id: str):
     if not stream_config:
         return jsonify({"error": "Series not found"}), 404
 
+    hint = request.args.get("hint")
     try:
-        result = orchestrate_stream(row, stream_config)
+        result = orchestrate_stream(row, stream_config, hint=hint)
         return jsonify({"url": result["url"], "source": result["source"]}), 200
     except NoSourceError:
         return jsonify({"error": "No stream source available for this episode"}), 404
