@@ -14,7 +14,9 @@ Raised exceptions from orchestrate_stream:
 
 import re
 import logging
+import requests
 from urllib.parse import quote
+from config import NAS_BASE_URL, NAS_API_KEY
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +27,40 @@ class NoSourceError(Exception):
 
 class UpstreamError(Exception):
     """Raised when an upstream scraping call fails (network/parse error)."""
+
+
+def resolve_nas_stream(series_id: str, episode_number: int) -> dict:
+    """Check whether the NAS already has a local copy of this episode.
+
+    Returns the NAS download URL when found so the orchestrator can skip all
+    stream-site dependencies.  Network errors fall through silently — a NAS
+    outage must never break playback.
+
+    Returns:
+        { "url": str | None, "error_type": "no_source" | "network_error" | None }
+    """
+    try:
+        resp = requests.get(
+            f"{NAS_BASE_URL}/api/episodes/{series_id}/{episode_number}",
+            headers={"X-API-Key": NAS_API_KEY},
+            timeout=5,
+        )
+    except Exception:
+        logger.warning("[stream] NAS unreachable for series=%s ep=%s", series_id, episode_number)
+        return {"url": None, "error_type": "network_error"}
+
+    if resp.status_code == 404:
+        return {"url": None, "error_type": "no_source"}
+
+    if not resp.ok:
+        logger.warning("[stream] NAS error %s for series=%s ep=%s", resp.status_code, series_id, episode_number)
+        return {"url": None, "error_type": "network_error"}
+
+    data = resp.json()
+    file_id = data.get("id")
+    url = f"{NAS_BASE_URL}/api/files/{file_id}/download"
+    logger.warning("[stream] NAS hit for series=%s ep=%s → %s", series_id, episode_number, url)
+    return {"url": url, "error_type": None}
 
 
 def resolve_animeflv_stream(episode_slug: str) -> dict:
@@ -178,14 +214,22 @@ def orchestrate_stream(episode: dict, stream_config: dict, hint: str | None = No
     principal_slug = stream_config.get("principal_slug")
     episode_slug = episode.get("animeflv_slug")
     episode_number = episode.get("episode_number", 0)
+    series_id = episode.get("series_id")
 
     logger.warning(
-        "[stream] orchestrate episode_slug=%s animeflv_disabled=%s "
+        "[stream] orchestrate series=%s ep=%s animeflv_disabled=%s "
         "principal_slug=%s fallback_slug=%s hint=%s",
-        episode_slug, animeflv_disabled, principal_slug, fallback_slug, hint,
+        series_id, episode_number, animeflv_disabled, principal_slug, fallback_slug, hint,
     )
 
     upstream_error_seen = False
+
+    # Branch 0: NAS — local copy takes priority over all stream sites.
+    # Falls through silently on miss or network error (never blocks playback).
+    if NAS_BASE_URL and NAS_API_KEY and series_id:
+        nas_result = resolve_nas_stream(series_id, episode_number)
+        if nas_result["url"] is not None:
+            return {"url": nas_result["url"], "source": "nas"}
 
     # Branch 1: AnimeFlv (legacy — effectively dormant when animeflv_disabled=True)
     if not animeflv_disabled and episode_slug:

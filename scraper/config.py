@@ -17,3 +17,7 @@ CLOUDSCRAPER_BROWSER = {"browser": "chrome", "platform": "windows", "mobile": Fa
 # Base URL for this scraper service — used to build self-referencing proxy URLs.
 # Override via environment variable when running behind a reverse proxy.
 SCRAPER_BASE_URL = os.environ.get("SCRAPER_BASE_URL", "http://localhost:5000")
+
+# NAS API (disk-api-skeleton on astro1). Both must be set for NAS lookups to activate.
+NAS_BASE_URL = os.environ.get("NAS_BASE_URL", "")
+NAS_API_KEY = os.environ.get("NAS_API_KEY", "")

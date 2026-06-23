@@ -300,6 +300,74 @@ class TestOrchestrateStreamAnimeAV1:
 
 
 # ---------------------------------------------------------------------------
+# NAS branch 0 tests
+# ---------------------------------------------------------------------------
+
+class TestOrchestrateStreamNAS:
+
+    def _patch_nas(self, nas_url="", nas_key=""):
+        return patch.multiple(
+            "domain.stream",
+            NAS_BASE_URL=nas_url,
+            NAS_API_KEY=nas_key,
+        )
+
+    def test_nas_hit_returns_nas_source_skips_all_scrapers(self):
+        ep = _episode(series_id="s1")
+        cfg = _stream_config(animeflv_disabled=True, fallback_slug="naruto-jk", principal_slug="naruto")
+        nas_url = "https://nas.astro-solutions.net/api/files/42/download"
+
+        with self._patch_nas("https://nas.astro-solutions.net", "secret"), \
+             patch("domain.stream.resolve_nas_stream", return_value={"url": nas_url, "error_type": None}) as mock_nas, \
+             patch("domain.stream.resolve_animeav1_stream") as mock_av1, \
+             patch("domain.stream.resolve_jkanime_stream") as mock_jk:
+            result = orchestrate_stream(ep, cfg)
+
+        mock_nas.assert_called_once_with("s1", 1)
+        mock_av1.assert_not_called()
+        mock_jk.assert_not_called()
+        assert result["source"] == "nas"
+        assert result["url"] == nas_url
+
+    def test_nas_miss_falls_through_to_animeav1(self):
+        ep = _episode(series_id="s1")
+        cfg = _stream_config(animeflv_disabled=True, fallback_slug=None, principal_slug="naruto")
+        av1_url = "https://player.zilla-networks.com/m3u8/abc"
+
+        with self._patch_nas("https://nas.astro-solutions.net", "secret"), \
+             patch("domain.stream.resolve_nas_stream", return_value={"url": None, "error_type": "no_source"}), \
+             patch("domain.stream.resolve_animeav1_stream", return_value={"url": av1_url, "error_type": None}):
+            result = orchestrate_stream(ep, cfg)
+
+        assert result["source"] == "animeav1"
+
+    def test_nas_network_error_falls_through_gracefully(self):
+        ep = _episode(series_id="s1")
+        cfg = _stream_config(animeflv_disabled=True, fallback_slug="naruto-jk", principal_slug=None)
+        jk_url = "https://jkanime.net/m3u8/xyz.m3u8"
+
+        with self._patch_nas("https://nas.astro-solutions.net", "secret"), \
+             patch("domain.stream.resolve_nas_stream", return_value={"url": None, "error_type": "network_error"}), \
+             patch("domain.stream.resolve_jkanime_stream", return_value={"url": jk_url, "error_type": None}):
+            result = orchestrate_stream(ep, cfg)
+
+        assert result["source"] == "jkanime"
+
+    def test_nas_disabled_when_env_not_set_skips_nas(self):
+        ep = _episode(series_id="s1")
+        cfg = _stream_config(animeflv_disabled=True, fallback_slug="naruto-jk")
+        jk_url = "https://jkanime.net/m3u8/xyz.m3u8"
+
+        with self._patch_nas("", ""), \
+             patch("domain.stream.resolve_nas_stream") as mock_nas, \
+             patch("domain.stream.resolve_jkanime_stream", return_value={"url": jk_url, "error_type": None}):
+            result = orchestrate_stream(ep, cfg)
+
+        mock_nas.assert_not_called()
+        assert result["source"] == "jkanime"
+
+
+# ---------------------------------------------------------------------------
 # Integration tests — Flask test client
 # 5.7 — GET /api/episodes/watch/<id>/stream-url status codes
 # ---------------------------------------------------------------------------
