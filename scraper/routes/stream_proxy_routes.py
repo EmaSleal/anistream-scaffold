@@ -15,6 +15,7 @@ Behavior:
     - All other content (`.ts`, binary segments) → stream bytes unchanged
 """
 
+import re
 import urllib.parse
 import requests
 from flask import Blueprint, request, Response, jsonify
@@ -69,7 +70,6 @@ def _rewrite_m3u8(manifest_text: str, base_url: str) -> str:
                 encoded = urllib.parse.quote(absolute, safe="")
                 return f'URI="{_PROXY_PATH}?path={encoded}"'
 
-            import re
             rewritten = re.sub(r'URI="([^"]+)"', _rewrite_uri, stripped)
             out.append(rewritten + newline)
 
