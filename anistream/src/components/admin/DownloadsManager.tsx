@@ -338,7 +338,7 @@ function EpisodeRow({
   sources,
   selectedSource,
   job,
-  seriesId,
+  seriesId: _seriesId,
   onExpand,
   onSelectSource,
   onTrigger,

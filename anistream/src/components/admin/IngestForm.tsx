@@ -13,9 +13,7 @@ interface IngestResult {
   kitsu_episodes_matched: number;
 }
 
-interface Props {}
-
-export default function IngestForm({}: Props) {
+export default function IngestForm() {
   const [fallbackSlug, setFallbackSlug] = useState("");
   const [principalSlug, setPrincipalSlug] = useState("");
   const [malId, setMalId] = useState<number | null>(null);
