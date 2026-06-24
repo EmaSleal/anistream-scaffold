@@ -20,6 +20,7 @@ interface Props {
 export default function IngestForm({ initialSlug }: Props) {
   const [slug, setSlug] = useState(initialSlug ?? "");
   const [fallbackSlug, setFallbackSlug] = useState("");
+  const [principalSlug, setPrincipalSlug] = useState("");
   const [malId, setMalId] = useState<number | null>(null);
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<SeriesResult | null>(null);
@@ -66,7 +67,12 @@ export default function IngestForm({ initialSlug }: Props) {
     setError(null);
 
     try {
-      const data = await ingestSeries(slug.trim(), malId, fallbackSlug.trim() || undefined);
+      const data = await ingestSeries(
+        slug.trim(),
+        malId,
+        fallbackSlug.trim() || undefined,
+        principalSlug.trim() || undefined
+      );
       setResult(data);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unknown error");
@@ -75,7 +81,7 @@ export default function IngestForm({ initialSlug }: Props) {
     }
   }
 
-  const canSubmit = !!malId && (!!slug || !!fallbackSlug) && !loading;
+  const canSubmit = !!malId && (!!slug || !!fallbackSlug || !!principalSlug) && !loading;
 
   return (
     <form onSubmit={handleSubmit} className={styles.form}>
@@ -122,10 +128,14 @@ export default function IngestForm({ initialSlug }: Props) {
       </div>
 
       <div className={styles.field}>
-        <label className="label-caps">AnimeFlv slug</label>
+        <label className="label-caps">AnimeFlv / AnimeAV1 slug</label>
         <AnimeFlvSlugSearch
-          onSelect={(selectedSlug) => {
-            setSlug(selectedSlug);
+          onSelect={(selectedSlug, _title, source) => {
+            if (source === "animeav1") {
+              setPrincipalSlug(selectedSlug);
+            } else {
+              setSlug(selectedSlug);
+            }
           }}
           disabled={loading}
         />
@@ -133,7 +143,7 @@ export default function IngestForm({ initialSlug }: Props) {
           id="slug"
           className="input-field"
           type="text"
-          placeholder="shingeki-no-kyojin"
+          placeholder="AnimeFlv slug (e.g. shingeki-no-kyojin)"
           value={slug}
           onChange={(e) => setSlug(e.target.value)}
           disabled={loading}
@@ -141,8 +151,23 @@ export default function IngestForm({ initialSlug }: Props) {
       </div>
 
       <div className={styles.field}>
+        <label className="label-caps" htmlFor="principal-slug">
+          AnimeAV1 slug (principal) <span style={{ fontWeight: 400, textTransform: "none" }}>(opcional)</span>
+        </label>
+        <input
+          id="principal-slug"
+          className="input-field"
+          type="text"
+          placeholder="sono-bisque-doll-wa-koi-wo-suru"
+          value={principalSlug}
+          onChange={(e) => setPrincipalSlug(e.target.value)}
+          disabled={loading}
+        />
+      </div>
+
+      <div className={styles.field}>
         <label className="label-caps" htmlFor="fallback-slug">
-          Fallback Slug (jkanime) <span style={{ fontWeight: 400, textTransform: "none" }}>(opcional — fuente secundaria)</span>
+          Fallback Slug (jkanime) <span style={{ fontWeight: 400, textTransform: "none" }}>(opcional)</span>
         </label>
         <input
           id="fallback-slug"
