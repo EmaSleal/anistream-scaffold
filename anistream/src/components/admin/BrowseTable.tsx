@@ -89,7 +89,7 @@ export default function BrowseTable() {
     if (!slug) return;
     setIngestRowState(malId, "loading");
     try {
-      await ingestSeries(slug, malId);
+      await ingestSeries(malId, undefined, slug);
       setIngestRowState(malId, "done");
     } catch (err) {
       setIngestRowState(malId, "error");

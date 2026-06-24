@@ -255,7 +255,6 @@ def _ingest_related(entry: dict, franchise_id: str) -> dict:
 def ingest():
     body = request.get_json(force=True) or {}
     mal_id = body.get("mal_id")
-    animeflv_slug = body.get("animeflv_slug")
     fallback_slug = body.get("fallback_slug")
     animeav1_slug = body.get("animeav1_slug")
 
@@ -280,12 +279,10 @@ def ingest():
         return jsonify({"error": "Could not normalize series data"}), 502
 
     existing = get_series_by_mal_id(mal_id_int)
-    canonical_id = existing["id"] if existing else (animeflv_slug or animeav1_slug or fallback_slug or f"mal-{mal_id_int}")
+    canonical_id = existing["id"] if existing else (animeav1_slug or fallback_slug or f"mal-{mal_id_int}")
 
     series["id"] = canonical_id
     series["slug"] = canonical_id
-    if animeflv_slug:
-        series["animeflv_slug"] = animeflv_slug
     if fallback_slug:
         series["fallback_slug"] = fallback_slug
     if animeav1_slug:
@@ -322,20 +319,9 @@ def ingest():
     print(f"  Fetching episode titles from Jikan for mal_id={mal_id_int}...")
     jikan_titles = fetch_jikan_episodes(mal_id_int)
 
-    # Build episodes for main series — priority: animeflv > animeav1 > metadata
+    # Build episodes for main series — priority: animeav1 > metadata
     main_count = 0
-    if animeflv_slug:
-        try:
-            main_episodes = _build_episodes(canonical_id, animeflv_slug, kitsu_eps, jikan_titles)
-            if not main_episodes:
-                raise RuntimeError(
-                    f"'var episodes' not found in animeflv/{animeflv_slug} — "
-                    "check the slug or Cloudflare"
-                )
-        except RuntimeError as exc:
-            return jsonify({"error": str(exc)}), 502
-        main_count = upsert_episodes(main_episodes)
-    elif animeav1_slug:
+    if animeav1_slug:
         main_episodes = _build_episodes_from_animeav1(canonical_id, animeav1_slug, kitsu_eps, jikan_titles)
         main_count = upsert_episodes(main_episodes)
     else:

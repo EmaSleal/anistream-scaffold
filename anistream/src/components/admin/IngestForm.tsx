@@ -13,12 +13,9 @@ interface IngestResult {
   kitsu_episodes_matched: number;
 }
 
-interface Props {
-  initialSlug?: string;
-}
+interface Props {}
 
-export default function IngestForm({ initialSlug }: Props) {
-  const [slug, setSlug] = useState(initialSlug ?? "");
+export default function IngestForm({}: Props) {
   const [fallbackSlug, setFallbackSlug] = useState("");
   const [principalSlug, setPrincipalSlug] = useState("");
   const [malId, setMalId] = useState<number | null>(null);
@@ -68,7 +65,6 @@ export default function IngestForm({ initialSlug }: Props) {
 
     try {
       const data = await ingestSeries(
-        slug.trim(),
         malId,
         fallbackSlug.trim() || undefined,
         principalSlug.trim() || undefined
@@ -81,7 +77,7 @@ export default function IngestForm({ initialSlug }: Props) {
     }
   }
 
-  const canSubmit = !!malId && (!!slug || !!fallbackSlug || !!principalSlug) && !loading;
+  const canSubmit = !!malId && (!!fallbackSlug || !!principalSlug) && !loading;
 
   return (
     <form onSubmit={handleSubmit} className={styles.form}>
@@ -128,24 +124,11 @@ export default function IngestForm({ initialSlug }: Props) {
       </div>
 
       <div className={styles.field}>
-        <label className="label-caps">AnimeFlv / AnimeAV1 slug</label>
+        <label className="label-caps">AnimeAV1 slug</label>
         <AnimeFlvSlugSearch
-          onSelect={(selectedSlug, _title, source) => {
-            if (source === "animeav1") {
-              setPrincipalSlug(selectedSlug);
-            } else {
-              setSlug(selectedSlug);
-            }
+          onSelect={(selectedSlug) => {
+            setPrincipalSlug(selectedSlug);
           }}
-          disabled={loading}
-        />
-        <input
-          id="slug"
-          className="input-field"
-          type="text"
-          placeholder="AnimeFlv slug (e.g. shingeki-no-kyojin)"
-          value={slug}
-          onChange={(e) => setSlug(e.target.value)}
           disabled={loading}
         />
       </div>

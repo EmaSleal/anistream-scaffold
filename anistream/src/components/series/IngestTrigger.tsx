@@ -22,9 +22,9 @@ export default function IngestTrigger({ seriesId, malId, animeflvSlug }: Props) 
   const [retrying, setRetrying] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  async function tryIngest(flvSlug: string | undefined, av1Slug?: string) {
+  async function tryIngest(fallbackSlug?: string, av1Slug?: string) {
     try {
-      await ingestSeries(flvSlug, malId, av1Slug);
+      await ingestSeries(malId, fallbackSlug, av1Slug);
       setPhase("success");
       router.refresh();
     } catch (err) {
@@ -34,7 +34,7 @@ export default function IngestTrigger({ seriesId, malId, animeflvSlug }: Props) 
   }
 
   useEffect(() => {
-    tryIngest(animeflvSlug ?? seriesId);
+    tryIngest(animeflvSlug ?? seriesId, undefined);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

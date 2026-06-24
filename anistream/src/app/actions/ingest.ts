@@ -73,7 +73,6 @@ interface IngestResult {
 }
 
 export async function ingestSeries(
-  slug: string | undefined,
   malId: number,
   fallbackSlug?: string,
   animeav1Slug?: string
@@ -88,7 +87,6 @@ export async function ingestSeries(
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      animeflv_slug: slug || undefined,
       mal_id: malId,
       fallback_slug: fallbackSlug || undefined,
       animeav1_slug: animeav1Slug || undefined,

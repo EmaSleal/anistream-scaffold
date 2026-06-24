@@ -7,11 +7,7 @@ import styles from "./admin.module.css";
 
 export const metadata: Metadata = { title: "Admin", robots: { index: false, follow: false } };
 
-interface AdminPageProps {
-  searchParams: Promise<{ slug?: string }>;
-}
-
-export default async function AdminPage({ searchParams }: AdminPageProps) {
+export default async function AdminPage() {
   const session = await auth();
 
   if (!session) redirect("/login");
@@ -26,8 +22,6 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
     );
   }
 
-  const { slug } = await searchParams;
-
   return (
     <div className="page-content">
       <AdminNav />
@@ -38,7 +32,7 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
             Links an existing series (by MAL ID) to its AnimeFlv source and pulls episodes.
           </p>
         </div>
-        <IngestForm initialSlug={slug} />
+        <IngestForm />
       </div>
     </div>
   );

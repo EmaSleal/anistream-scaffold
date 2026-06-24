@@ -184,42 +184,35 @@ def orchestrate_stream(episode: dict, stream_config: dict, hint: str | None = No
     """Orchestrate stream URL resolution following the branch order from the spec.
 
     Branch order:
-      1. If animeflv_disabled is False and episode has animeflv_slug: attempt AnimeFlv (legacy).
-         On success: return { url, source: "animeflv" }.
-      2. If hint != "h264" AND stream_config.principal_slug is set: attempt AnimeAV1.
+      1. If hint != "h264" AND stream_config.principal_slug is set: attempt AnimeAV1.
          On success: return { url, source: "animeav1" }.
          On no_source or network_error: continue to next branch.
-      3. If fallback_slug is set: attempt JKAnime.
+      2. If fallback_slug is set: attempt JKAnime.
          On success: return { url, source: "jkanime" }.
-      4. If any network_error was encountered: raise UpstreamError (503).
-      5. Otherwise: raise NoSourceError (404).
+      3. If any network_error was encountered: raise UpstreamError (503).
+      4. Otherwise: raise NoSourceError (404).
 
     Args:
-        episode: raw episode dict from DB (must contain animeflv_slug,
-                 episode_number, series_id).
-        stream_config: raw stream-config dict from DB (animeflv_disabled,
-                       fallback_slug, principal_slug).
+        episode: raw episode dict from DB (must contain episode_number, series_id).
+        stream_config: raw stream-config dict from DB (fallback_slug, principal_slug).
         hint: optional client hint string. "h264" causes AnimeAV1 to be skipped
               (Safari fallback). Any other value is treated as absent.
 
     Returns:
-        { "url": str, "source": "animeflv" | "animeav1" | "jkanime" }
+        { "url": str, "source": "animeav1" | "jkanime" }
 
     Raises:
         NoSourceError: no URL could be resolved.
         UpstreamError: a network or parse error occurred.
     """
-    animeflv_disabled = bool(stream_config.get("animeflv_disabled") or False)
     fallback_slug = stream_config.get("fallback_slug")
     principal_slug = stream_config.get("principal_slug")
-    episode_slug = episode.get("animeflv_slug")
     episode_number = episode.get("episode_number", 0)
     series_id = episode.get("series_id")
 
     logger.warning(
-        "[stream] orchestrate series=%s ep=%s animeflv_disabled=%s "
-        "principal_slug=%s fallback_slug=%s hint=%s",
-        series_id, episode_number, animeflv_disabled, principal_slug, fallback_slug, hint,
+        "[stream] orchestrate series=%s ep=%s principal_slug=%s fallback_slug=%s hint=%s",
+        series_id, episode_number, principal_slug, fallback_slug, hint,
     )
 
     upstream_error_seen = False
@@ -232,16 +225,7 @@ def orchestrate_stream(episode: dict, stream_config: dict, hint: str | None = No
             logger.warning("[stream] RESOLVED source=nas url=%s", nas_result["url"])
             return {"url": nas_result["url"], "source": "nas"}
 
-    # Branch 1: AnimeFlv (legacy — effectively dormant when animeflv_disabled=True)
-    if not animeflv_disabled and episode_slug:
-        primary_result = resolve_animeflv_stream(episode_slug)
-        if primary_result["url"] is not None:
-            logger.warning("[stream] RESOLVED source=animeflv url=%s", primary_result["url"])
-            return {"url": primary_result["url"], "source": "animeflv"}
-        if primary_result["error_type"] == "network_error":
-            upstream_error_seen = True
-
-    # Branch 2: AnimeAV1 — primary HLS source
+    # Branch 1: AnimeAV1 — primary HLS source
     # Skip when hint="h264" (Safari) or when principal_slug is absent.
     if hint != "h264" and principal_slug:
         av1_result = resolve_animeav1_stream(principal_slug, episode_number)
@@ -251,7 +235,7 @@ def orchestrate_stream(episode: dict, stream_config: dict, hint: str | None = No
         if av1_result["error_type"] == "network_error":
             upstream_error_seen = True
 
-    # Branch 3: JKAnime fallback
+    # Branch 2: JKAnime fallback
     if fallback_slug:
         fallback_result = resolve_jkanime_stream(fallback_slug, episode_number)
         if fallback_result["url"] is not None:
