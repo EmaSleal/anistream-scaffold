@@ -13,13 +13,16 @@ from __future__ import annotations
 import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
+import requests
 from flask import Blueprint, jsonify, request
 
 from auth import require_admin
+from config import NAS_API_KEY, NAS_BASE_URL
 from db import episodes as db_episodes
 from db import series as db_series
 from domain.download_sources import probe_sources, resolve_source
 from domain.nas_jobs import NasUnavailable, check_episode_status, create_download_job, get_job_status, nas_configured
+from domain.stream import resolve_animeav1_stream
 
 logger = logging.getLogger(__name__)
 
@@ -158,6 +161,58 @@ def trigger_download():
         return jsonify({"error": "nas_unavailable"}), 503
 
     return jsonify(job), 202
+
+
+@downloads_bp.post("/trigger-animeav1")
+@require_admin
+def trigger_animeav1_download():
+    """Resolve an AnimeAV1 stream URL directly and create a NAS download job.
+
+    Unlike /trigger, this route bypasses the DB entirely — the series only needs
+    to exist on AnimeAV1, not in our database. The slug is used both as the
+    AnimeAV1 identifier and as the series_id key in the NAS job.
+
+    Request body: {series_id, slug, episode_number}
+
+    Returns:
+        202  {"job_id": str, "status": "pending"}
+        400  {"error": "Missing required fields"}
+        422  {"error": "no_source"}
+        503  {"error": "nas_unavailable"}
+    """
+    body = request.get_json(silent=True) or {}
+    series_id = body.get("series_id", "")
+    slug = body.get("slug", "")
+    try:
+        episode_number = int(body.get("episode_number", ""))
+    except (ValueError, TypeError):
+        return jsonify({"error": "Missing required fields"}), 400
+
+    if not series_id or not slug:
+        return jsonify({"error": "Missing required fields"}), 400
+
+    result = resolve_animeav1_stream(slug, episode_number)
+    if not result.get("url"):
+        return jsonify({"error": "no_source"}), 422
+
+    try:
+        nas_res = requests.post(
+            f"{NAS_BASE_URL}/api/jobs",
+            headers={"X-API-Key": NAS_API_KEY},
+            json={
+                "url": result["url"],
+                "category": "videos",
+                "series_id": series_id,
+                "episode_number": episode_number,
+            },
+            timeout=10,
+        )
+        nas_res.raise_for_status()
+        nas_body = nas_res.json()
+    except Exception:
+        return jsonify({"error": "nas_unavailable"}), 503
+
+    return jsonify({"job_id": nas_body.get("job_id", ""), "status": "pending"}), 202
 
 
 @downloads_bp.get("/jobs/<job_id>")
