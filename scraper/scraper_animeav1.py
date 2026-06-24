@@ -97,23 +97,26 @@ def scrape_animeav1_episodes(slug: str) -> list[dict]:
 
     soup = BeautifulSoup(resp.text, "html.parser")
 
-    # Try to extract the numeric anime_id for CDN thumbnail URLs.
-    # Best-effort: look for data-id attribute or a known JS pattern.
+    # Extract numeric anime_id for CDN thumbnail URLs.
+    # Priority: data-id attr → JS "anime_id" → CDN URL already present in page.
     numeric_id = None
     data_id_tag = soup.find(attrs={"data-id": True})
     if data_id_tag:
-        numeric_id = data_id_tag.get("data-id")
+        numeric_id = str(data_id_tag.get("data-id"))
     if not numeric_id:
-        # Fallback: scan script tags for a numeric ID pattern
         for script in soup.find_all("script"):
             text = script.string or ""
             m = re.search(r'"anime_id"\s*:\s*(\d+)', text)
             if m:
                 numeric_id = m.group(1)
                 break
+    if not numeric_id:
+        # Last resort: pick numeric_id from any CDN screenshot URL already in the HTML
+        cdn_m = re.search(r'cdn\.animeav1\.com/screenshots/(\d+)/', resp.text)
+        if cdn_m:
+            numeric_id = cdn_m.group(1)
 
     episodes = []
-    # Episode links match /media/{slug}/{N}
     ep_pattern = re.compile(rf"^/media/{re.escape(slug)}/(\d+)$")
 
     seen = set()
@@ -127,23 +130,24 @@ def scrape_animeav1_episodes(slug: str) -> list[dict]:
             continue
         seen.add(ep_num)
 
-        # Thumbnail: cdn.animeav1.com/screenshots/{numeric_id}/{ep_num}.jpg
         thumbnail_url = None
         if numeric_id:
             thumbnail_url = (
                 f"https://cdn.animeav1.com/screenshots/{numeric_id}/{ep_num}.jpg"
             )
-        # Also check for an <img> inside this link/card
+
+        # Prefer an actual img in the card; handle lazy-loaded src attributes.
         img = link.find("img")
-        if img and img.get("src"):
-            thumbnail_url = img["src"]
+        if img:
+            src = img.get("src") or img.get("data-src") or img.get("data-lazy-src") or img.get("data-original")
+            if src:
+                thumbnail_url = src
 
         episodes.append({
             "episode_number": ep_num,
             "thumbnail_url": thumbnail_url,
         })
 
-    # Return sorted ascending by episode number
     episodes.sort(key=lambda e: e["episode_number"])
     return episodes
 
