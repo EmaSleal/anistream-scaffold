@@ -11,8 +11,7 @@ from fetcher import (
 )
 from normalizer import normalize
 from storage import upsert_series, upsert_episodes, get_series_by_mal_id, get_episode_count
-from scraper_animeflv import scrape_episode_list
-from scraper_animeav1 import scrape_animeav1_episodes
+from scraper_animeav1 import scrape_animeav1_episodes, search_animeav1
 
 bp = Blueprint("api", __name__)
 
@@ -209,22 +208,27 @@ def _ingest_related(entry: dict, franchise_id: str) -> dict:
             return {"status": "normalize_failed", "episodes_ingested": 0}
 
         existing = get_series_by_mal_id(mal_id)
-        canonical_id = existing["id"] if existing else f"mal-{mal_id}"
+
+        # Try to auto-match this franchise member on AnimeAV1 by title.
+        series_title = series.get("title", "") or title
+        av1_results = search_animeav1(series_title)
+        av1_slug = av1_results[0]["slug"] if av1_results else None
+
+        canonical_id = existing["id"] if existing else (av1_slug or f"mal-{mal_id}")
 
         series["id"] = canonical_id
         series["slug"] = canonical_id
         series["franchise_id"] = franchise_id
         series["season_order"] = order
         series["franchise_relation"] = relation
-        series["principal_slug"] = None  # Set manually via search-animeav1 endpoint
+        series["principal_slug"] = av1_slug
 
-        kitsu_result = search_kitsu_anime(series.get("title", "") or title)
+        kitsu_result = search_kitsu_anime(series_title)
         kitsu_id = kitsu_result["id"] if kitsu_result else None
         if kitsu_result and kitsu_result.get("cover_url"):
             series["banner_url"] = kitsu_result["cover_url"]
         kitsu_eps = fetch_kitsu_episodes(kitsu_id) if kitsu_id else {}
 
-        # Fetch Kitsu status and re-normalize with simulcast metadata
         kitsu_status = fetch_kitsu_series_status(kitsu_id) if kitsu_id else None
         normalized_with_kitsu = normalize(jikan_raw, kitsu_id=kitsu_id, kitsu_status=kitsu_status)
         if normalized_with_kitsu:
@@ -234,15 +238,16 @@ def _ingest_related(entry: dict, franchise_id: str) -> dict:
 
         upsert_series(series)
 
-        # If this series was already scraped in a previous (partial) run,
-        # skip episode scraping — metadata above is already updated.
         if existing:
             ep_count = get_episode_count(canonical_id)
             if ep_count > 0:
                 return {"status": "already_scraped", "episodes_ingested": ep_count}
 
         jikan_titles = fetch_jikan_episodes(mal_id)
-        episodes = _build_episodes_from_metadata(canonical_id, kitsu_eps, jikan_titles)
+        if av1_slug:
+            episodes = _build_episodes_from_animeav1(canonical_id, av1_slug, kitsu_eps, jikan_titles)
+        else:
+            episodes = _build_episodes_from_metadata(canonical_id, kitsu_eps, jikan_titles)
         count = upsert_episodes(episodes)
 
         return {"status": "ok", "episodes_ingested": count}
