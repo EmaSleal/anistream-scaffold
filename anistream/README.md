@@ -64,6 +64,21 @@ All tokens live in `src/styles/globals.css` as CSS custom properties:
 - `--color-bg-card`: #1E1E1E
 - `--nav-height`: 60px
 
+## Admin Downloads Feature
+
+The `/admin/downloads` page lets admins trigger NAS downloads for any episode.
+
+### Required environment variables (scraper service)
+
+| Variable | Description |
+|----------|-------------|
+| `NAS_BASE_URL` | Base URL of the NAS disk-api service, e.g. `http://astro1:8080` |
+| `NAS_API_KEY` | API key for the NAS `X-API-Key` header |
+
+Both must be set in `scraper/.env.local`. When either is absent, NAS status checks degrade gracefully to `"unknown"` and download triggers return 503.
+
+The NAS key is never forwarded to the browser — all NAS communication happens server-side inside Flask.
+
 ## Next Steps
 
 1. Replace mock data with a real API layer (`src/lib/api.ts`)
