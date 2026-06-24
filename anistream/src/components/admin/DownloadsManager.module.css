@@ -1,0 +1,240 @@
+.root {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  padding: var(--space-6) 0;
+}
+
+/* ── Series search ─────────────────────────────────── */
+.searchSection {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  max-width: 480px;
+  position: relative;
+}
+
+.searchLabel {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+}
+
+.searchInput {
+  padding: var(--space-2) var(--space-3);
+  background: var(--color-bg-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  color: var(--color-text-primary);
+  font-family: inherit;
+  font-size: 0.9rem;
+  outline: none;
+  transition: border-color var(--transition-fast);
+  width: 100%;
+}
+
+.searchInput:focus {
+  border-color: var(--color-brand);
+}
+
+.dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  background: var(--color-bg-card);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  z-index: 10;
+  list-style: none;
+  margin: 0;
+  padding: var(--space-1) 0;
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.dropdownItem {
+  padding: var(--space-2) var(--space-3);
+  cursor: pointer;
+  font-size: 0.875rem;
+  color: var(--color-text-primary);
+  transition: background var(--transition-fast);
+}
+
+.dropdownItem:hover {
+  background: var(--color-bg-surface);
+}
+
+.dropdownEmpty {
+  padding: var(--space-3);
+  font-size: 0.875rem;
+  color: var(--color-text-secondary);
+}
+
+/* ── Episode list ──────────────────────────────────── */
+.episodeSection {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.sectionTitle {
+  font-size: 1rem;
+  font-weight: 700;
+  margin: 0;
+}
+
+.episodeEmpty {
+  color: var(--color-text-secondary);
+  font-size: 0.875rem;
+  padding: var(--space-4) 0;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+}
+
+.table th {
+  padding: var(--space-2) var(--space-3);
+  font-weight: 600;
+  text-align: left;
+  border-bottom: 1px solid var(--color-border);
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+}
+
+.table td {
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--color-border);
+  vertical-align: middle;
+}
+
+/* ── Status badges ─────────────────────────────────── */
+.badge {
+  display: inline-block;
+  padding: 2px var(--space-2);
+  border-radius: var(--radius-sm);
+  font-size: 0.75rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.badgeDownloaded {
+  background: color-mix(in srgb, #86efac 15%, transparent);
+  color: #86efac;
+  border: 1px solid color-mix(in srgb, #86efac 30%, transparent);
+}
+
+.badgeMissing {
+  background: color-mix(in srgb, #fca5a5 10%, transparent);
+  color: #fca5a5;
+  border: 1px solid color-mix(in srgb, #fca5a5 25%, transparent);
+}
+
+.badgeUnknown {
+  background: var(--color-bg-surface);
+  color: var(--color-text-muted);
+  border: 1px solid var(--color-border);
+}
+
+.badgeLoading {
+  background: var(--color-bg-surface);
+  color: var(--color-text-secondary);
+  border: 1px solid var(--color-border);
+}
+
+/* ── Source selector + actions ─────────────────────── */
+.actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.sourceSelect {
+  padding: var(--space-1) var(--space-2);
+  background: var(--color-bg-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  color: var(--color-text-primary);
+  font-family: inherit;
+  font-size: 0.8rem;
+  outline: none;
+  cursor: pointer;
+}
+
+.sourceSelect:focus {
+  border-color: var(--color-brand);
+}
+
+.sourceSelect option {
+  background: var(--color-bg-card);
+}
+
+.triggerBtn {
+  padding: var(--space-1) var(--space-3);
+  background: var(--color-brand);
+  border: none;
+  border-radius: var(--radius-md);
+  color: #fff;
+  font-family: inherit;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background var(--transition-fast);
+  white-space: nowrap;
+}
+
+.triggerBtn:hover:not(:disabled) {
+  background: var(--color-brand-hover);
+}
+
+.triggerBtn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.triggerBtnSecondary {
+  background: var(--color-bg-surface);
+  color: var(--color-text-secondary);
+  border: 1px solid var(--color-border);
+}
+
+/* ── Job status inline ──────────────────────────────── */
+.jobStatus {
+  font-size: 0.75rem;
+  white-space: nowrap;
+}
+
+.jobPending {
+  color: var(--color-text-secondary);
+}
+
+.jobDownloading {
+  color: #93c5fd;
+}
+
+.jobDone {
+  color: #86efac;
+}
+
+.jobFailed {
+  color: #fca5a5;
+}
+
+.jobUnknown {
+  color: var(--color-text-muted);
+}
+
+/* ── Error banner ───────────────────────────────────── */
+.error {
+  padding: var(--space-3);
+  background: var(--color-error-dim);
+  border: 1px solid var(--color-error-border);
+  border-radius: var(--radius-md);
+  font-size: 0.875rem;
+  color: var(--color-error);
+  max-width: 480px;
+}
