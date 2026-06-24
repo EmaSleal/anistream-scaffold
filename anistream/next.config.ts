@@ -8,6 +8,7 @@ const nextConfig: NextConfig = {
       { protocol: "https", hostname: "lh3.googleusercontent.com" },
       { protocol: "https", hostname: "cdn.myanimelist.net" },
       { protocol: "https", hostname: "cdn.animeflv.net" },
+      { protocol: "https", hostname: "cdn.animeav1.com" },
       { protocol: "https", hostname: "media.kitsu.app" },
     ],
     formats: ["image/avif", "image/webp"],
