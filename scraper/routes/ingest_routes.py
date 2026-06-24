@@ -325,14 +325,13 @@ def ingest():
     jikan_titles = fetch_jikan_episodes(mal_id_int)
 
     # Build episodes for main series — priority: animeav1 > metadata
-    main_count = 0
+    main_episodes = []
     if animeav1_slug:
         main_episodes = _build_episodes_from_animeav1(canonical_id, animeav1_slug, kitsu_eps, jikan_titles)
-        main_count = upsert_episodes(main_episodes)
-    else:
+    if not main_episodes:
         media_type = raw.get("type", "")
         main_episodes = _build_episodes_from_metadata(canonical_id, kitsu_eps, jikan_titles, media_type)
-        main_count = upsert_episodes(main_episodes)
+    main_count = upsert_episodes(main_episodes)
 
     # Ingest each related franchise member (skip the root entry)
     franchise_results = []
