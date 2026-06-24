@@ -3,14 +3,23 @@
 import { useState } from "react";
 import { searchAnimeFlv, type AnimeFlvResult } from "@/app/actions/ingest";
 
+type SearchSource = "animeflv" | "animeav1";
+
+interface AV1Result {
+  title: string;
+  slug: string;
+  thumbnail_url: string;
+}
+
 interface Props {
-  onSelect: (slug: string, title: string) => void;
+  onSelect: (slug: string, title: string, source?: SearchSource) => void;
   disabled?: boolean;
 }
 
 export default function AnimeFlvSlugSearch({ onSelect, disabled = false }: Props) {
+  const [source, setSource] = useState<SearchSource>("animeflv");
   const [query, setQuery] = useState("");
-  const [results, setResults] = useState<AnimeFlvResult[]>([]);
+  const [results, setResults] = useState<AnimeFlvResult[] | AV1Result[]>([]);
   const [loading, setLoading] = useState(false);
   const [open, setOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -24,29 +33,40 @@ export default function AnimeFlvSlugSearch({ onSelect, disabled = false }: Props
     setLoading(true);
     setError(null);
     setResults([]);
+    setOpen(false);
 
     try {
-      console.log("[AnimeFlvSlugSearch] Searching for:", query);
-      const res = await searchAnimeFlv(query);
-      console.log("[AnimeFlvSlugSearch] Got results:", res.length);
-
-      if (res.length === 0) {
-        setError("No results found on AnimeFlv");
+      if (source === "animeflv") {
+        const res = await searchAnimeFlv(query);
+        if (res.length === 0) {
+          setError("No results found on AnimeFlv");
+        } else {
+          setResults(res);
+          setOpen(true);
+        }
       } else {
-        setResults(res);
-        setOpen(true);
+        const res = await fetch(
+          `/api/admin/downloads/search-animeav1?q=${encodeURIComponent(query)}&limit=10`,
+          { cache: "no-store" }
+        );
+        if (!res.ok) throw new Error(`Search failed (${res.status})`);
+        const data = (await res.json()) as AV1Result[];
+        if (data.length === 0) {
+          setError("No results found on AnimeAV1");
+        } else {
+          setResults(data);
+          setOpen(true);
+        }
       }
     } catch (err) {
-      const errMsg = err instanceof Error ? err.message : "Search failed";
-      console.error("[AnimeFlvSlugSearch] Error:", errMsg);
-      setError(errMsg);
+      setError(err instanceof Error ? err.message : "Search failed");
     } finally {
       setLoading(false);
     }
   }
 
-  function handleSelect(result: AnimeFlvResult) {
-    onSelect(result.slug, result.title);
+  function handleSelect(result: AnimeFlvResult | AV1Result) {
+    onSelect(result.slug, result.title, source);
     setQuery("");
     setResults([]);
     setOpen(false);
@@ -59,18 +79,63 @@ export default function AnimeFlvSlugSearch({ onSelect, disabled = false }: Props
     }
   }
 
+  function switchSource(next: SearchSource) {
+    setSource(next);
+    setResults([]);
+    setOpen(false);
+    setError(null);
+  }
+
+  const placeholder =
+    source === "animeflv"
+      ? "Search AnimeFlv (e.g., Re:ZERO)…"
+      : "Search AnimeAV1 (e.g., Sono Bisque)…";
+
+  const btnLabel = loading
+    ? "Searching…"
+    : source === "animeflv"
+    ? "Search AnimeFlv"
+    : "Search AnimeAV1";
+
   return (
     <div style={{ marginBottom: "1rem" }}>
       <div
         style={{
           display: "flex",
-          gap: "0.5rem",
           marginBottom: "0.5rem",
+          border: "1px solid var(--color-border)",
+          borderRadius: "var(--radius-md)",
+          overflow: "hidden",
+          width: "fit-content",
         }}
       >
+        {(["animeflv", "animeav1"] as SearchSource[]).map((s) => (
+          <button
+            key={s}
+            type="button"
+            disabled={disabled}
+            onClick={() => switchSource(s)}
+            style={{
+              padding: "0.3rem 0.75rem",
+              border: "none",
+              borderLeft: s === "animeav1" ? "1px solid var(--color-border)" : "none",
+              background: source === s ? "var(--color-brand)" : "var(--color-bg-surface)",
+              color: source === s ? "#fff" : "var(--color-text-secondary)",
+              fontFamily: "inherit",
+              fontSize: "0.8rem",
+              fontWeight: source === s ? 600 : 400,
+              cursor: disabled ? "not-allowed" : "pointer",
+            }}
+          >
+            {s === "animeflv" ? "AnimeFlv" : "AnimeAV1"}
+          </button>
+        ))}
+      </div>
+
+      <div style={{ display: "flex", gap: "0.5rem", marginBottom: "0.5rem" }}>
         <input
           type="text"
-          placeholder="Search AnimeFlv (e.g., Re:ZERO)…"
+          placeholder={placeholder}
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={handleKeyDown}
@@ -80,7 +145,7 @@ export default function AnimeFlvSlugSearch({ onSelect, disabled = false }: Props
         />
         <button
           type="button"
-          onClick={handleSearch}
+          onClick={() => void handleSearch()}
           disabled={loading || disabled || !query.trim()}
           style={{
             padding: "0.5rem 1rem",
@@ -96,7 +161,7 @@ export default function AnimeFlvSlugSearch({ onSelect, disabled = false }: Props
             whiteSpace: "nowrap",
           }}
         >
-          {loading ? "Searching…" : "Search AnimeFlv"}
+          {btnLabel}
         </button>
       </div>
 
@@ -119,7 +184,6 @@ export default function AnimeFlvSlugSearch({ onSelect, disabled = false }: Props
       {open && results.length > 0 && (
         <ul
           style={{
-            marginBottom: "0.5rem",
             maxHeight: "250px",
             overflowY: "auto",
             background: "var(--color-bg-primary)",
@@ -140,12 +204,9 @@ export default function AnimeFlvSlugSearch({ onSelect, disabled = false }: Props
               style={{
                 display: "flex",
                 flexDirection: "column",
-                justifyContent: "space-between",
-                alignItems: "center",
-                gap: "0.8rem",
+                gap: "0.25rem",
                 padding: "0.7rem 1rem",
                 borderRadius: "0.5rem",
-                fontSize: "1.3rem",
                 color: "var(--color-text-secondary)",
                 cursor: "pointer",
                 userSelect: "none",
@@ -160,13 +221,12 @@ export default function AnimeFlvSlugSearch({ onSelect, disabled = false }: Props
                 e.currentTarget.style.color = "var(--color-text-secondary)";
               }}
             >
-              <span style={{ flex: 1, fontWeight: 500 }}>{result.title}</span>
+              <span style={{ fontWeight: 500, fontSize: "0.95rem" }}>{result.title}</span>
               <span
                 style={{
                   fontSize: "0.75rem",
                   color: "var(--color-text-secondary)",
                   fontFamily: "monospace",
-                  whiteSpace: "nowrap",
                 }}
               >
                 {result.slug}
