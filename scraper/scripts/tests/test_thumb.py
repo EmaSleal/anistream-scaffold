@@ -1,9 +1,9 @@
 import re
 import cloudscraper
-from config import CLOUDSCRAPER_BROWSER, ANIMEFLV_BASE
+from config import CLOUDSCRAPER_BROWSER, ANIMEAV1_BASE
 
 s = cloudscraper.create_scraper(browser=CLOUDSCRAPER_BROWSER)
-r = s.get(f"{ANIMEFLV_BASE}/anime/tsue-to-tsurugi-no-wistoria-season-2")
+r = s.get(f"{ANIMEAV1_BASE}/media/tsue-to-tsurugi-no-wistoria-season-2")
 
 # Look for animeflv internal anime ID in JS variables
 patterns = [

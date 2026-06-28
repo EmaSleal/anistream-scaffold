@@ -1,9 +1,9 @@
 from scraper_animeflv import _scraper
-from config import ANIMEFLV_BASE
+from config import ANIMEAV1_BASE
 from bs4 import BeautifulSoup
 
 slug = "jujutsu-kaisen-0-movie"
-url = f"{ANIMEFLV_BASE}/anime/{slug}"
+url = f"{ANIMEAV1_BASE}/media/{slug}"
 
 resp = _scraper.get(url, timeout=15)
 resp.raise_for_status()

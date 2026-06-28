@@ -1,7 +1,7 @@
 import re
 import json
 import cloudscraper
-from config import ANIMEFLV_BASE, CLOUDSCRAPER_BROWSER
+from config import ANIMEAV1_BASE, CLOUDSCRAPER_BROWSER
 
 _scraper = cloudscraper.create_scraper(browser=CLOUDSCRAPER_BROWSER)
 
@@ -9,7 +9,7 @@ _scraper = cloudscraper.create_scraper(browser=CLOUDSCRAPER_BROWSER)
 def scrape_episode_list(slug: str) -> list[dict]:
     """Scrape the episode list for an anime series from animeflv.
 
-    Fetches ``{ANIMEFLV_BASE}/anime/{slug}`` and parses the inline
+    Fetches ``{ANIMEAV1_BASE}/media/{slug}`` and parses the inline
     ``var episodes = [...]`` JavaScript variable.
 
     Each array entry has the shape ``[episode_number, ?, title_or_null]``.
@@ -20,7 +20,7 @@ def scrape_episode_list(slug: str) -> list[dict]:
     Raises:
         RuntimeError: if the page is unreachable or the variable is absent.
     """
-    url = f"{ANIMEFLV_BASE}/anime/{slug}"
+    url = f"{ANIMEAV1_BASE}/media/{slug}"
     try:
         response = _scraper.get(url, timeout=15)
         response.raise_for_status()
@@ -70,7 +70,7 @@ def scrape_next_episode_date(slug: str) -> str | None:
 
     Returns the date string (e.g. ``"2026-06-05"``) or None if not found.
     """
-    url = f"{ANIMEFLV_BASE}/anime/{slug}"
+    url = f"{ANIMEAV1_BASE}/media/{slug}"
     try:
         response = _scraper.get(url, timeout=15)
         response.raise_for_status()
@@ -92,7 +92,7 @@ def scrape_related_series(slug: str) -> list[dict]:
     relation is one of "Secuela", "Precuela", "Historia paralela", "OVA", etc.
     Returns an empty list if the page is unreachable or no relations exist.
     """
-    url = f"{ANIMEFLV_BASE}/anime/{slug}"
+    url = f"{ANIMEAV1_BASE}/media/{slug}"
     try:
         response = _scraper.get(url, timeout=15)
         response.raise_for_status()
@@ -108,7 +108,7 @@ def scrape_related_series(slug: str) -> list[dict]:
         return []
 
     items = re.findall(
-        r'<a\s+href="/anime/([^"]+)">([^<]+)</a>\s*\(([^)]+)\)',
+        r'<a\s+href="/media/([^"]+)">([^<]+)</a>\s*\(([^)]+)\)',
         ul_match.group(1),
     )
     return [
@@ -120,7 +120,7 @@ def scrape_related_series(slug: str) -> list[dict]:
 def scrape_episode_servers(episode_slug: str) -> dict:
     """Scrape the server list for an episode from animeflv.
 
-    Fetches ``{ANIMEFLV_BASE}/ver/{episode_slug}`` and parses the inline
+    Fetches ``{ANIMEAV1_BASE}/media/{episode_slug}`` and parses the inline
     ``var videos = {...}`` JavaScript variable.
 
     Returns:
@@ -130,7 +130,7 @@ def scrape_episode_servers(episode_slug: str) -> dict:
     Raises:
         RuntimeError: if the page is unreachable or the variable is absent.
     """
-    url = f"{ANIMEFLV_BASE}/ver/{episode_slug}"
+    url = f"{ANIMEAV1_BASE}/media/{episode_slug}"
     try:
         response = _scraper.get(url, timeout=15)
         response.raise_for_status()
