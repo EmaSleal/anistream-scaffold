@@ -9,6 +9,7 @@ from routes.auth_routes import auth_bp
 from routes.simulcast_routes import simulcast_bp
 from routes.stream_proxy_routes import stream_proxy_bp
 from routes.downloads_routes import downloads_bp
+from scheduler import init_scheduler
 
 
 def create_app():
@@ -23,6 +24,11 @@ def create_app():
     app.register_blueprint(simulcast_bp)
     app.register_blueprint(stream_proxy_bp)
     app.register_blueprint(downloads_bp)
+
+    scheduler = init_scheduler(app)
+    if scheduler is not None:
+        app.extensions["scheduler"] = scheduler
+
     return app
 
 
