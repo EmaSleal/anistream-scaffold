@@ -25,6 +25,7 @@ export function usePlayerControls(initialDuration = 0, initialTime = 0): UsePlay
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const autoplayAttempted = useRef(false);
+  const pendingInitialSeek = useRef(false);
   const [fakeFs, setFakeFs] = useState(false);
 
   const [playerState, setPlayerState] = useState<PlayerState>({
@@ -173,8 +174,7 @@ export function usePlayerControls(initialDuration = 0, initialTime = 0): UsePlay
       setPlayerState((p) => ({ ...p, currentTime: video.currentTime }));
     const onDurationChange = () =>
       setPlayerState((p) => ({ ...p, duration: video.duration }));
-    const onCanPlay = () => {
-      console.log("[player] canplay — duration:", video.duration, "readyState:", video.readyState, "src:", video.src);
+    const attemptAutoplay = () => {
       if (autoplayAttempted.current) return;
       autoplayAttempted.current = true;
       video.play().catch((err: unknown) => {
@@ -184,9 +184,24 @@ export function usePlayerControls(initialDuration = 0, initialTime = 0): UsePlay
       });
     };
 
+    const onCanPlay = () => {
+      console.log("[player] canplay — duration:", video.duration, "readyState:", video.readyState, "src:", video.src);
+      // If there's a pending initial seek, defer autoplay to the seeked event.
+      if (pendingInitialSeek.current) return;
+      attemptAutoplay();
+    };
+
+    const onSeeked = () => {
+      if (pendingInitialSeek.current) {
+        pendingInitialSeek.current = false;
+        attemptAutoplay();
+      }
+    };
+
     const onLoadedMetadata = () => {
       if (initialTime > 0) {
         video.currentTime = Math.min(initialTime, video.duration);
+        pendingInitialSeek.current = true;
       }
       setPlayerState((p) => ({ ...p, duration: video.duration }));
     };
@@ -211,6 +226,7 @@ export function usePlayerControls(initialDuration = 0, initialTime = 0): UsePlay
     const onLoadStart = () => console.log("[player] loadstart — src:", video.src);
 
     video.addEventListener("canplay", onCanPlay);
+    video.addEventListener("seeked", onSeeked);
     video.addEventListener("play", onPlay);
     video.addEventListener("pause", onPause);
     video.addEventListener("error", onError);
@@ -226,6 +242,7 @@ export function usePlayerControls(initialDuration = 0, initialTime = 0): UsePlay
 
     return () => {
       video.removeEventListener("canplay", onCanPlay);
+      video.removeEventListener("seeked", onSeeked);
       video.removeEventListener("play", onPlay);
       video.removeEventListener("pause", onPause);
       video.removeEventListener("error", onError);
