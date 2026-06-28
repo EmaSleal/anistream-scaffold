@@ -66,19 +66,20 @@ def parse_broadcast_day(day_str: str | None) -> int | None:
     return _DAY_MAP.get(day_str.strip().lower())
 
 
-def compute_broadcast_utc(day: int, time_str: str, tz_str: str) -> datetime:
-    """Convert a weekday + local time into the next matching UTC datetime.
-
-    The function finds the closest upcoming occurrence of ``day`` (0 = Monday)
-    from the current moment, combines it with ``time_str``, interprets the
-    result in ``tz_str``, then converts to UTC.
-
-    This is used to compute the centre of the ±12-hour broadcast window.
+def compute_broadcast_utc(
+    day: int,
+    time_str: str,
+    tz_str: str,
+    now: datetime | None = None,
+) -> datetime:
+    """Convert a weekday + local time into the most recent matching UTC datetime.
 
     Args:
         day:      0-based weekday (Monday = 0, Sunday = 6).
         time_str: Time in "HH:MM" format (local to tz_str).
         tz_str:   IANA timezone name, e.g. "Asia/Tokyo".
+        now:      Reference UTC datetime (defaults to current time). Pass
+                  explicitly in tests to avoid real-clock dependency.
 
     Returns:
         A timezone-aware UTC datetime representing the broadcast moment.
@@ -88,7 +89,7 @@ def compute_broadcast_utc(day: int, time_str: str, tz_str: str) -> datetime:
         zoneinfo.ZoneInfoNotFoundError: If tz_str is not a valid IANA zone.
     """
     tz = ZoneInfo(tz_str)
-    now_utc = datetime.now(timezone.utc)
+    now_utc = now if now is not None else datetime.now(timezone.utc)
     now_local = now_utc.astimezone(tz)
 
     hour, minute = (int(p) for p in time_str.split(":"))
@@ -225,7 +226,7 @@ def is_simulcast_candidate(
         return False
 
     try:
-        broadcast_utc = compute_broadcast_utc(day_index, broadcast_time, broadcast_timezone)
+        broadcast_utc = compute_broadcast_utc(day_index, broadcast_time, broadcast_timezone, now=now_utc)
     except Exception:
         logging.warning(
             "is_simulcast_candidate: could not compute broadcast UTC "

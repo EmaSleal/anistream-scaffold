@@ -19,7 +19,7 @@ import storage
 import db.progress as db_progress
 import db.simulcast as db_simulcast
 from fetcher import fetch_jikan_episodes
-from scraper_animeflv import scrape_episode_list
+from scraper_animeav1 import scrape_animeav1_episodes
 
 logger = logging.getLogger(__name__)
 
@@ -145,7 +145,7 @@ def run_simulcast_check(
     mal_id = _get_series_mal_id(series_id)
 
     try:
-        scraped_episodes = scrape_episode_list(animeflv_slug)
+        scraped_episodes = scrape_animeav1_episodes(animeflv_slug)
     except Exception as exc:
         logger.warning(
             "simulcast_check: scrape_episode_list failed for series=%r slug=%r: %s",
@@ -190,7 +190,7 @@ def run_simulcast_update(
     mal_id = _get_series_mal_id(series_id)
 
     try:
-        scraped_episodes = scrape_episode_list(animeflv_slug)
+        scraped_episodes = scrape_animeav1_episodes(animeflv_slug)
     except Exception as exc:
         logger.warning(
             "simulcast_check: scrape_episode_list failed for series=%r slug=%r: %s",
