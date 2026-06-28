@@ -20,11 +20,36 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Invalid NAS URL" }, { status: 400 });
   }
 
-  // Redirect to NAS directly — browser fetches the file without going through
-  // the Next.js server, avoiding large-file streaming issues in Route Handlers.
-  // The NAS accepts the API key as ?key= for browser-direct requests.
-  const redirectUrl = new URL(targetUrl);
-  redirectUrl.searchParams.set("key", NAS_API_KEY);
+  const range = request.headers.get("Range");
 
-  return NextResponse.redirect(redirectUrl.toString(), { status: 302 });
+  let upstream: Response;
+  try {
+    upstream = await fetch(targetUrl, {
+      headers: {
+        "X-API-Key": NAS_API_KEY,
+        ...(range ? { Range: range } : {}),
+      },
+    });
+  } catch {
+    return NextResponse.json({ error: "NAS unreachable" }, { status: 502 });
+  }
+
+  if (!upstream.ok && upstream.status !== 206) {
+    return NextResponse.json({ error: "NAS error" }, { status: upstream.status });
+  }
+
+  const headers = new Headers();
+  headers.set("Content-Type", upstream.headers.get("Content-Type") ?? "video/mp4");
+  headers.set("Accept-Ranges", "bytes");
+
+  const contentLength = upstream.headers.get("Content-Length");
+  if (contentLength) headers.set("Content-Length", contentLength);
+
+  const contentRange = upstream.headers.get("Content-Range");
+  if (contentRange) headers.set("Content-Range", contentRange);
+
+  return new NextResponse(upstream.body, {
+    status: upstream.status,
+    headers,
+  });
 }
