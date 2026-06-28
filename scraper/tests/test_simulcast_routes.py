@@ -142,11 +142,12 @@ class TestCooldownSkip:
         mock_client = MagicMock()
         mock_client.table.return_value = mock_table
 
+        # Phase 1 moved Jikan/Kitsu calls into domain.jikan_refresh — patch there.
         with patch("routes.simulcast_routes.get_series_simulcast_data", return_value=row), \
              patch("routes.simulcast_routes.update_simulcast_fields"), \
              patch("storage.get_client", return_value=mock_client), \
-             patch("routes.simulcast_routes.fetch_anime_by_id", return_value=jikan_data), \
-             patch("routes.simulcast_routes.fetch_kitsu_series_status", return_value="current"):
+             patch("domain.jikan_refresh.fetch_anime_by_id", return_value=jikan_data), \
+             patch("domain.jikan_refresh.fetch_kitsu_series_status", return_value="current"):
             res = client.post(
                 "/api/simulcast/refresh/my-series",
                 headers=_SERVICE_HEADER,
@@ -177,11 +178,12 @@ class TestSimulcastTrue:
         mock_client = MagicMock()
         mock_client.table.return_value = mock_table
 
+        # Phase 1 moved Jikan/Kitsu calls into domain.jikan_refresh — patch there.
         with patch("routes.simulcast_routes.get_series_simulcast_data", return_value=row), \
              patch("routes.simulcast_routes.update_simulcast_fields"), \
              patch("storage.get_client", return_value=mock_client), \
-             patch("routes.simulcast_routes.fetch_anime_by_id", return_value=jikan_data), \
-             patch("routes.simulcast_routes.fetch_kitsu_series_status", return_value="current"):
+             patch("domain.jikan_refresh.fetch_anime_by_id", return_value=jikan_data), \
+             patch("domain.jikan_refresh.fetch_kitsu_series_status", return_value="current"):
             res = client.post(
                 "/api/simulcast/refresh/my-series",
                 headers=_SERVICE_HEADER,
@@ -198,9 +200,15 @@ class TestSimulcastTrue:
 # ---------------------------------------------------------------------------
 
 class TestSimulcastFalseKitsuFinished:
-    def test_kitsu_finished_returns_is_simulcast_false(self, client):
+    def test_jikan_not_airing_returns_is_simulcast_false(self, client):
+        """is_simulcast is False when Jikan reports airing=False (Kitsu excluded per ADR).
+
+        Note: resolve_simulcast_status now uses Jikan's `airing` field only.
+        Kitsu status is stored but no longer drives the simulcast decision.
+        """
         row = _series_simulcast_row()
-        jikan_data = _jikan_data(airing=True)
+        # Use airing=False so resolve_simulcast_status returns False.
+        jikan_data = _jikan_data(airing=False)
 
         mock_mal_result = MagicMock()
         mock_mal_result.data = {"mal_id": 99}
@@ -213,11 +221,12 @@ class TestSimulcastFalseKitsuFinished:
         mock_client = MagicMock()
         mock_client.table.return_value = mock_table
 
+        # Phase 1 moved Jikan/Kitsu calls into domain.jikan_refresh — patch there.
         with patch("routes.simulcast_routes.get_series_simulcast_data", return_value=row), \
              patch("routes.simulcast_routes.update_simulcast_fields"), \
              patch("storage.get_client", return_value=mock_client), \
-             patch("routes.simulcast_routes.fetch_anime_by_id", return_value=jikan_data), \
-             patch("routes.simulcast_routes.fetch_kitsu_series_status", return_value="finished"):
+             patch("domain.jikan_refresh.fetch_anime_by_id", return_value=jikan_data), \
+             patch("domain.jikan_refresh.fetch_kitsu_series_status", return_value="finished"):
             res = client.post(
                 "/api/simulcast/refresh/my-series",
                 headers=_SERVICE_HEADER,
@@ -251,11 +260,14 @@ class TestAutoIngest:
         # Build fake new episodes list (2 new)
         fake_episodes = [{"id": f"ep{i}"} for i in range(10)]
 
+        # Phase 1 moved Jikan/Kitsu calls into domain.jikan_refresh — patch there.
+        # fetch_kitsu_episodes, fetch_jikan_episodes, _build_episodes, and upsert_episodes
+        # are still called directly from simulcast_routes so those patches stay unchanged.
         with patch("routes.simulcast_routes.get_series_simulcast_data", return_value=row), \
              patch("routes.simulcast_routes.update_simulcast_fields"), \
              patch("storage.get_client", return_value=mock_client), \
-             patch("routes.simulcast_routes.fetch_anime_by_id", return_value=jikan_data), \
-             patch("routes.simulcast_routes.fetch_kitsu_series_status", return_value="current"), \
+             patch("domain.jikan_refresh.fetch_anime_by_id", return_value=jikan_data), \
+             patch("domain.jikan_refresh.fetch_kitsu_series_status", return_value="current"), \
              patch("routes.simulcast_routes.fetch_kitsu_episodes", return_value={}), \
              patch("routes.simulcast_routes.fetch_jikan_episodes", return_value={}), \
              patch("routes.simulcast_routes._build_episodes", return_value=fake_episodes), \
@@ -290,19 +302,22 @@ class TestNoKitsuId:
         mock_client = MagicMock()
         mock_client.table.return_value = mock_table
 
+        # Phase 1 moved Jikan/Kitsu calls into domain.jikan_refresh — patch there.
+        # The Kitsu-skip assertion uses the domain-level mock (the route delegates
+        # to refresh_series_from_jikan when mal_id is available).
         with patch("routes.simulcast_routes.get_series_simulcast_data", return_value=row), \
              patch("routes.simulcast_routes.update_simulcast_fields"), \
              patch("storage.get_client", return_value=mock_client), \
-             patch("routes.simulcast_routes.fetch_anime_by_id", return_value=jikan_data), \
-             patch("routes.simulcast_routes.fetch_kitsu_series_status") as mock_kitsu_fetch:
+             patch("domain.jikan_refresh.fetch_anime_by_id", return_value=jikan_data), \
+             patch("domain.jikan_refresh.fetch_kitsu_series_status") as mock_kitsu_fetch:
             res = client.post(
                 "/api/simulcast/refresh/my-series",
                 headers=_SERVICE_HEADER,
             )
 
-        # Kitsu status fetch must NOT have been called
+        # Kitsu status fetch must NOT have been called (kitsu_id=None)
         mock_kitsu_fetch.assert_not_called()
         assert res.status_code == 200
         data = json.loads(res.data)
-        # is_simulcast derived from jikan.airing only (True because jikan says airing)
+        # is_simulcast is True because Jikan reports airing=True (sole signal per ADR)
         assert data["is_simulcast"] is True
