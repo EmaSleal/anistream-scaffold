@@ -11,16 +11,12 @@ CRITICAL: Literal-string routes MUST be registered before <episode_id>
 or Flask will match them as an episode_id parameter.
 """
 import logging
-import threading
-from datetime import datetime, timezone
 
 from flask import Blueprint, g, jsonify, request
 from auth import require_auth
 from db import progress as db_progress
 from domain.progress import build_continue_watching, build_watch_history
-from domain.series import map_series_row
-from domain.simulcast import cooldown_elapsed, is_simulcast_candidate
-from simulcast_check import run_simulcast_check
+from domain.series import map_episode_row, map_series_row
 
 progress_bp = Blueprint("progress", __name__, url_prefix="/api")
 
@@ -97,10 +93,6 @@ def continue_watching():
     if not progress_rows:
         return jsonify([]), 200
 
-    # Capture user_id into a local variable BEFORE any thread spawn.
-    # Flask g is request-scoped and MUST NOT be accessed from inside a thread.
-    user_id = g.user_id
-
     # Resolve franchise IDs for deduplication
     unique_series_ids = list({r["series_id"] for r in progress_rows if r.get("series_id")})
     franchise_map = db_progress.get_series_franchise_map(unique_series_ids)
@@ -112,72 +104,73 @@ def continue_watching():
     # Fetch simulcast metadata for all series in a single batched query.
     series_meta = db_progress.get_series_simulcast_meta(unique_series_ids)
 
-    # Evaluate each progress row (pre-filter) for simulcast candidate conditions.
-    # CRITICAL: Must run over raw progress_rows, NOT build_continue_watching()'s
-    # output — that function filters out >=95% completed episodes, removing exactly
-    # the caught-up-on-last-episode rows we want to detect here.
-    now_utc = datetime.now(timezone.utc)
-    seen_series_spawned: set[str] = set()
-
-    for row in progress_rows:
-        sid = row.get("series_id")
-        if not sid or sid not in series_meta:
-            continue
-        if sid in seen_series_spawned:
-            continue
-
-        meta = series_meta[sid]
-
-        if not meta.get("animeflv_slug"):
-            logging.debug("simulcast skip [%s]: no animeflv_slug", sid)
-            continue
-
-        if not cooldown_elapsed(meta.get("last_simulcast_check")):
-            logging.debug("simulcast skip [%s]: cooldown active (last=%s)", sid, meta.get("last_simulcast_check"))
-            continue
-
-        ep_id = row.get("episode_id")
-        ep_data = next((e for e in episode_rows if e.get("id") == ep_id), None)
-        last_aired_at = ep_data.get("aired_at") if ep_data else None
-
-        ep_num = ep_data.get("episode_number") if ep_data else None
-        series_max_ep = meta.get("max_episode_number")
-        if ep_num is None or series_max_ep is None or ep_num < series_max_ep:
-            logging.debug("simulcast skip [%s]: ep_num=%s series_max=%s (not last ep)", sid, ep_num, series_max_ep)
-            continue
-
-        progress_sec = float(row.get("progress_sec") or 0)
-        duration_sec = float(row.get("duration_sec") or 0)
-        logging.debug(
-            "simulcast candidate check [%s]: ep=%s is_simulcast=%s progress=%.0f duration=%.0f aired_at=%s",
-            sid, ep_num, meta.get("is_simulcast"), progress_sec, duration_sec, last_aired_at,
-        )
-
-        if not is_simulcast_candidate(
-            is_simulcast=meta.get("is_simulcast", False),
-            progress_sec=progress_sec,
-            duration_sec=duration_sec,
-            last_aired_at=last_aired_at,
-            broadcast_day=meta.get("broadcast_day"),
-            broadcast_time=meta.get("broadcast_time"),
-            broadcast_timezone=meta.get("broadcast_timezone"),
-            now_utc=now_utc,
-        ):
-            logging.debug("simulcast skip [%s]: is_simulcast_candidate=False", sid)
-            continue
-
-        current_max_ep = series_max_ep
-        slug = meta["animeflv_slug"]
-
-        threading.Thread(
-            target=run_simulcast_check,
-            args=(user_id, sid, slug, current_max_ep),
-            daemon=True,
-        ).start()
-
-        seen_series_spawned.add(sid)
-
     result = build_continue_watching(progress_rows, franchise_map, episode_rows)
+
+    # Simulcast look-ahead: for each simulcast series, check if the next episode
+    # (current_ep + 1) is already in the DB. If yes, synthesize a CW entry with
+    # progressSeconds=0. Purely additive — never removes or modifies existing
+    # entries. All DB access is synchronous; no external HTTP calls.
+    simulcast_ids = [
+        sid for sid in unique_series_ids
+        if series_meta.get(sid, {}).get("is_simulcast")
+    ]
+    if simulcast_ids:
+        episode_id_set = set(episode_ids)
+        episode_by_id = {ep["id"]: ep for ep in episode_rows}
+
+        # Find the user's most-recent episode number per simulcast series.
+        # progress_rows are ordered updated_at DESC, so first match = most recent.
+        series_current_ep: dict[str, int] = {}
+        for row in progress_rows:
+            sid = row.get("series_id")
+            if sid not in simulcast_ids or sid in series_current_ep:
+                continue
+            ep_data = episode_by_id.get(row.get("episode_id"))
+            if ep_data is None:
+                continue
+            ep_num = ep_data.get("episode_number")
+            if ep_num is not None:
+                series_current_ep[sid] = ep_num
+
+        if series_current_ep:
+            # Single batched query for all simulcast series episodes.
+            try:
+                from storage import get_client
+                eps_result = (
+                    get_client()
+                    .table("episodes")
+                    .select("id, series_id, episode_number, aired_at, title, thumbnail_url, animeflv_slug")
+                    .in_("series_id", list(series_current_ep.keys()))
+                    .execute()
+                )
+                lookahead_eps = eps_result.data or []
+            except Exception:
+                logging.warning("simulcast look-ahead query failed; skipping", exc_info=True)
+                lookahead_eps = []
+
+            # Build lookup: {series_id: {episode_number: episode_row}}
+            eps_by_series: dict[str, dict[int, dict]] = {}
+            for ep in lookahead_eps:
+                sid = ep.get("series_id")
+                ep_num = ep.get("episode_number")
+                if sid is not None and ep_num is not None:
+                    eps_by_series.setdefault(sid, {})[ep_num] = ep
+
+            # Synthesize a CW entry for each simulcast series where the next
+            # episode is available but not yet in the user's progress.
+            for sid, current_num in series_current_ep.items():
+                next_ep = eps_by_series.get(sid, {}).get(current_num + 1)
+                if next_ep is None:
+                    continue
+                if next_ep["id"] in episode_id_set:
+                    # User already has progress on the next episode; skip.
+                    continue
+                result.append({
+                    "episode": map_episode_row(next_ep),
+                    "progressSeconds": 0,
+                    "seriesId": sid,
+                })
+
     return jsonify(result), 200
 
 
