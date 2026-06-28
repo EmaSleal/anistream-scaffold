@@ -365,10 +365,11 @@ class TestRunSimulcastCheck:
         scraped = [{"episode_number": 6, "title": "Episode 6", "thumbnail_url": None}]
 
         with (
-            patch("simulcast_check.scrape_episode_list", return_value=scraped) as mock_scrape,
+            patch("simulcast_check.scrape_animeav1_episodes", return_value=scraped) as mock_scrape,
             patch("simulcast_check.storage.upsert_episode") as mock_upsert_ep,
             patch("simulcast_check.db_progress.upsert_progress") as mock_upsert_prog,
             patch("simulcast_check.db_simulcast.update_simulcast_fields") as mock_stamp,
+            patch("simulcast_check._resolve_aired_at", return_value="2026-06-03"),
         ):
             run_simulcast_check("user-1", "series-x", "series-x-slug", current_max_ep=5)
 
@@ -380,6 +381,7 @@ class TestRunSimulcastCheck:
             "title": "Episode 6",
             "thumbnail_url": None,
             "animeflv_slug": "series-x-slug-6",
+            "aired_at": "2026-06-03",
         })
         mock_upsert_prog.assert_called_once_with(
             user_id="user-1",
@@ -395,7 +397,7 @@ class TestRunSimulcastCheck:
         scraped = [{"episode_number": 5, "title": None, "thumbnail_url": None}]
 
         with (
-            patch("simulcast_check.scrape_episode_list", return_value=scraped),
+            patch("simulcast_check.scrape_animeav1_episodes", return_value=scraped),
             patch("simulcast_check.storage.upsert_episode") as mock_upsert_ep,
             patch("simulcast_check.db_progress.upsert_progress") as mock_upsert_prog,
             patch("simulcast_check.db_simulcast.update_simulcast_fields") as mock_stamp,
@@ -407,9 +409,9 @@ class TestRunSimulcastCheck:
         mock_stamp.assert_called_once_with("series-x", {})
 
     def test_scrape_raises_runtime_error_fail_silent_attempts_stamp(self):
-        """scrape_episode_list raises → no crash, attempt cooldown stamp."""
+        """scrape_animeav1_episodes returns [] (error) → no upserts, stamps cooldown."""
         with (
-            patch("simulcast_check.scrape_episode_list", side_effect=RuntimeError("timeout")),
+            patch("simulcast_check.scrape_animeav1_episodes", return_value=[]),
             patch("simulcast_check.storage.upsert_episode") as mock_upsert_ep,
             patch("simulcast_check.db_progress.upsert_progress") as mock_upsert_prog,
             patch("simulcast_check.db_simulcast.update_simulcast_fields") as mock_stamp,
@@ -429,7 +431,7 @@ class TestRunSimulcastCheck:
         ]
 
         with (
-            patch("simulcast_check.scrape_episode_list", return_value=scraped),
+            patch("simulcast_check.scrape_animeav1_episodes", return_value=scraped),
             patch("simulcast_check.storage.upsert_episode") as mock_upsert_ep,
             patch("simulcast_check.db_progress.upsert_progress") as mock_upsert_prog,
             patch("simulcast_check.db_simulcast.update_simulcast_fields") as mock_stamp,
@@ -691,7 +693,7 @@ class TestRunSimulcastCheckIdempotency:
         scraped = [{"episode_number": 6, "title": "Ep 6", "thumbnail_url": None}]
 
         with (
-            patch("simulcast_check.scrape_episode_list", return_value=scraped),
+            patch("simulcast_check.scrape_animeav1_episodes", return_value=scraped),
             patch("simulcast_check.storage.upsert_episode") as mock_upsert_ep,
             patch("simulcast_check.db_progress.upsert_progress") as mock_upsert_prog,
             patch("simulcast_check.db_simulcast.update_simulcast_fields"),
@@ -712,7 +714,7 @@ class TestRunSimulcastCheckIdempotency:
             captured_ids.append(episode_dict["id"])
 
         with (
-            patch("simulcast_check.scrape_episode_list", return_value=scraped),
+            patch("simulcast_check.scrape_animeav1_episodes", return_value=scraped),
             patch("simulcast_check.storage.upsert_episode", side_effect=capture_upsert),
             patch("simulcast_check.db_progress.upsert_progress"),
             patch("simulcast_check.db_simulcast.update_simulcast_fields"),
