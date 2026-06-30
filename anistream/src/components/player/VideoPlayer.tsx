@@ -37,6 +37,7 @@ export function VideoPlayer({
   const hasTriggered = useRef<boolean>(false);
   const [countdown, setCountdown] = useState<number | null>(null);
   const [showAddToHomeHint, setShowAddToHomeHint] = useState(false);
+  const [videoAspectRatio, setVideoAspectRatio] = useState<string | undefined>(undefined);
   const {
     playerState,
     videoRef,
@@ -51,6 +52,18 @@ export function VideoPlayer({
     revealControls,
     isFakeFullscreen,
   } = usePlayerControls(episode.duration, initialProgress);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    const onMetadata = () => {
+      if (video.videoWidth > 0 && video.videoHeight > 0) {
+        setVideoAspectRatio(`${video.videoWidth} / ${video.videoHeight}`);
+      }
+    };
+    video.addEventListener("loadedmetadata", onMetadata);
+    return () => video.removeEventListener("loadedmetadata", onMetadata);
+  }, [videoRef]);
 
   // Lock body scroll when iPhone fake fullscreen is active
   useEffect(() => {
@@ -274,6 +287,7 @@ export function VideoPlayer({
       <div
         ref={containerRef}
         className={cn(styles.videoWrap, isFakeFullscreen && styles.fakeFullscreen)}
+        style={videoAspectRatio && !isFakeFullscreen ? { aspectRatio: videoAspectRatio } : undefined}
         onMouseMove={handleMouseMove}
         onClick={togglePlay}
       >
