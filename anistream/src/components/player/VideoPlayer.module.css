@@ -17,10 +17,11 @@
 }
 
 /* iPad: native fullscreen — remove aspect-ratio/max-height so the container fills the screen */
+/* !important needed to override the dynamic inline aspect-ratio set by JS */
 .videoWrap:fullscreen,
 .videoWrap:-webkit-full-screen {
-  max-height: 100vh;
-  aspect-ratio: unset;
+  max-height: 100vh !important;
+  aspect-ratio: unset !important;
 }
 
 /* iPhone: fake fullscreen — fixed overlay that keeps custom controls visible */
