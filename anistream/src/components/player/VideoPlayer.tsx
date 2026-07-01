@@ -220,7 +220,7 @@ export function VideoPlayer({
     const handleTimeUpdate = () => {
       if (
         video.duration > 0 &&
-        video.currentTime >= video.duration - 120
+        video.currentTime >= video.duration - 105
       ) {
         startCountdown();
       }
