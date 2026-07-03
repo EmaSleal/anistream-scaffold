@@ -11,14 +11,30 @@ os.environ.setdefault("INTERNAL_JWT_SECRET", "test-internal-secret-for-tests-onl
 os.environ.setdefault("SERVICE_SECRET", "test-service-secret")
 
 import json
+import time
 from datetime import datetime, timezone, timedelta
 from unittest.mock import patch, MagicMock
 
+import jwt as pyjwt
 import pytest
 
 
 _SERVICE_KEY = "test-service-secret"
 _SERVICE_HEADER = {"X-Service-Key": _SERVICE_KEY}
+_INTERNAL_SECRET = "test-internal-secret-for-tests-only"
+
+
+def _make_token(role: str = "ADMIN") -> str:
+    payload = {"sub": "user-1", "role": role, "exp": int(time.time()) + 60}
+    return pyjwt.encode(payload, _INTERNAL_SECRET, algorithm="HS256")
+
+
+def _admin_header() -> dict:
+    return {"Authorization": f"Bearer {_make_token('ADMIN')}"}
+
+
+def _user_header() -> dict:
+    return {"Authorization": f"Bearer {_make_token('USER')}"}
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -63,6 +79,9 @@ def _jikan_data(airing=True, episodes=8, broadcast_day="Wednesdays"):
 @pytest.fixture
 def client():
     """Flask test client with Supabase fully mocked."""
+    import auth as auth_module
+    auth_module._INTERNAL_JWT_SECRET = _INTERNAL_SECRET
+
     with patch("storage.get_client"):
         from app import create_app
         app = create_app()
@@ -321,3 +340,115 @@ class TestNoKitsuId:
         data = json.loads(res.data)
         # is_simulcast is True because Jikan reports airing=True (sole signal per ADR)
         assert data["is_simulcast"] is True
+
+
+# ---------------------------------------------------------------------------
+# POST /api/simulcast/sync-jikan
+# ---------------------------------------------------------------------------
+
+class TestSyncJikanAuthGuard:
+    def test_no_token_returns_401(self, client):
+        res = client.post("/api/simulcast/sync-jikan")
+        assert res.status_code == 401
+
+    def test_non_admin_token_returns_403(self, client):
+        res = client.post("/api/simulcast/sync-jikan", headers=_user_header())
+        assert res.status_code == 403
+
+
+class TestSyncJikanFetchFailure:
+    def test_jikan_fetch_error_returns_502(self, client):
+        with patch("routes.simulcast_routes.fetch_simulcasts", side_effect=RuntimeError("boom")):
+            res = client.post("/api/simulcast/sync-jikan", headers=_admin_header())
+        assert res.status_code == 502
+        assert json.loads(res.data)["error"] == "Jikan fetch failed"
+
+
+class TestSyncJikanReconciliation:
+    """Covers added / updated / skipped / finished in a single sync pass.
+
+    mal_id 1 -> new series, not yet in DB -> added
+    mal_id 2 -> in DB with is_simulcast=False -> updated
+    mal_id 3 -> in DB with is_simulcast=True, still airing -> skipped
+    mal_id 4 -> airing but Hentai genre -> excluded from add/update loop,
+                still counts as "airing" so it must NOT be marked finished
+    mal_id 5 -> airing but score <= 0 -> excluded from add/update loop,
+                still counts as "airing" so it must NOT be marked finished
+    mal_id 6 -> airing=False in the Jikan payload -> excluded entirely
+    mal_id 999 -> flagged is_simulcast=True in DB but absent from the
+                  Jikan airing set entirely -> finished
+    """
+
+    def _entries(self):
+        return [
+            {"mal_id": 1, "airing": True, "genres": [{"name": "Action"}], "score": 7.5},
+            {"mal_id": 2, "airing": True, "genres": [{"name": "Action"}], "score": 7.5},
+            {"mal_id": 3, "airing": True, "genres": [{"name": "Action"}], "score": 7.5},
+            {"mal_id": 4, "airing": True, "genres": [{"name": "Hentai"}], "score": 7.5},
+            {"mal_id": 5, "airing": True, "genres": [{"name": "Action"}], "score": 0},
+            {"mal_id": 6, "airing": False, "genres": [{"name": "Action"}], "score": 8.0},
+        ]
+
+    def test_reconciles_added_updated_skipped_and_finished(self, client):
+        calls = {"mal1": 0}
+
+        def get_series_by_mal_id_side_effect(mal_id):
+            if mal_id == 1:
+                calls["mal1"] += 1
+                return None if calls["mal1"] == 1 else {"id": "added-id"}
+            if mal_id == 2:
+                return {"id": "updated-id"}
+            if mal_id == 3:
+                return {"id": "skipped-id"}
+            return None
+
+        def get_series_by_id_side_effect(series_id):
+            if series_id == "updated-id":
+                return {"is_simulcast": False}
+            if series_id == "skipped-id":
+                return {"is_simulcast": True}
+            return None
+
+        currently_flagged_data = [
+            {"id": "skipped-id", "mal_id": 3},
+            {"id": "hentai-still-airing-id", "mal_id": 4},
+            {"id": "finished-id", "mal_id": 999},
+            {"id": "no-mal-id", "mal_id": None},
+        ]
+
+        select_chain = MagicMock()
+        select_chain.eq.return_value = select_chain
+        select_chain.execute.return_value = MagicMock(data=currently_flagged_data)
+
+        update_chain = MagicMock()
+        update_chain.eq.return_value = update_chain
+        update_chain.execute.return_value = MagicMock()
+
+        mock_table = MagicMock()
+        mock_table.select.return_value = select_chain
+        mock_table.update.return_value = update_chain
+
+        mock_client = MagicMock()
+        mock_client.table.return_value = mock_table
+
+        with patch("routes.simulcast_routes.fetch_simulcasts", return_value=self._entries()), \
+             patch("routes.simulcast_routes.get_series_by_mal_id", side_effect=get_series_by_mal_id_side_effect), \
+             patch("routes.simulcast_routes.get_series_by_id", side_effect=get_series_by_id_side_effect), \
+             patch("routes.simulcast_routes.upsert_series_stub"), \
+             patch("routes.simulcast_routes.get_client", return_value=mock_client):
+            res = client.post("/api/simulcast/sync-jikan", headers=_admin_header())
+
+        assert res.status_code == 200
+        data = json.loads(res.data)
+        assert data == {"added": 1, "updated": 1, "skipped": 1, "finished": 1}
+
+        updates_by_id = {}
+        for upd_call, eq_call in zip(mock_table.update.call_args_list, update_chain.eq.call_args_list):
+            updates_by_id[eq_call.args[1]] = upd_call.args[0]
+
+        assert updates_by_id["added-id"] == {"is_simulcast": True}
+        assert updates_by_id["updated-id"] == {"is_simulcast": True}
+        assert updates_by_id["finished-id"] == {"is_simulcast": False}
+        assert "skipped-id" not in updates_by_id
+        assert "hentai-still-airing-id" not in updates_by_id
+        assert "no-mal-id" not in updates_by_id

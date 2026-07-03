@@ -104,7 +104,7 @@ def search_series():
         limit = 8
 
     rows = db_series.search_series(q, limit=limit)
-    # Return minimal projection: malId, title, slug
+    # Return minimal projection: id, malId, title, slug
     result = [
         {
             "id": r.get("id"),

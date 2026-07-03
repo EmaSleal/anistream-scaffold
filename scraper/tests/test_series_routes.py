@@ -195,7 +195,7 @@ class TestSeriesSearch:
             res = client.get("/api/series/search?q=naruto")
         data = json.loads(res.data)
         keys = set(data[0].keys())
-        assert keys == {"malId", "title", "slug"}
+        assert keys == {"id", "malId", "title", "slug"}
 
 
 # ---------------------------------------------------------------------------
@@ -223,13 +223,118 @@ class TestSeriesDetail:
 class TestSeriesEpisodes:
     def test_episodes_returned_in_order(self, client):
         rows = [_episode_row(id=f"ep{i}", episode_number=i) for i in range(1, 5)]
-        with patch("db.episodes.get_episodes_by_series", return_value=rows):
+        with patch("db.episodes.get_episodes_by_series", return_value=rows), \
+             patch("routes.series_routes.db_series.get_series_by_id", return_value=None):
             res = client.get("/api/series/s1/episodes")
         assert res.status_code == 200
         data = json.loads(res.data)
         assert len(data) == 4
         episodes = [d["episode"] for d in data]
         assert episodes == sorted(episodes)
+
+
+# ---------------------------------------------------------------------------
+# GET /api/series/<id>/episodes — background simulcast-refresh trigger
+#
+# When the series is a simulcast with an animeflv_slug and its cooldown has
+# elapsed, fetching the episode list spawns a daemon thread that calls
+# simulcast_check.run_simulcast_update to discover new episodes. This is the
+# feature's current trigger point (moved here from the old continue-watching
+# thread-spawn path, which was replaced by a synchronous look-ahead — see
+# TestContinueWatchingLookahead in test_progress_routes.py).
+# ---------------------------------------------------------------------------
+
+from simulcast_check import run_simulcast_update
+
+
+def _simulcast_series_row(
+    is_simulcast=True,
+    animeflv_slug="naruto",
+    last_simulcast_check=None,
+):
+    return {
+        "id": "s1",
+        "is_simulcast": is_simulcast,
+        "animeflv_slug": animeflv_slug,
+        "last_simulcast_check": last_simulcast_check,
+    }
+
+
+class TestSeriesEpisodesSimulcastTrigger:
+    def test_simulcast_series_cooldown_elapsed_spawns_thread(self, client):
+        """is_simulcast + animeflv_slug + cooldown elapsed → thread spawned with correct args."""
+        rows = [_episode_row(id="ep1", episode_number=1), _episode_row(id="ep2", episode_number=2)]
+        series_row = _simulcast_series_row(last_simulcast_check=None)  # None → cooldown elapsed
+
+        with patch("db.episodes.get_episodes_by_series", return_value=rows), \
+             patch("routes.series_routes.db_series.get_series_by_id", return_value=series_row), \
+             patch("routes.series_routes.threading.Thread") as mock_thread_cls:
+            mock_thread_instance = MagicMock()
+            mock_thread_cls.return_value = mock_thread_instance
+
+            res = client.get("/api/series/s1/episodes")
+
+        assert res.status_code == 200
+        mock_thread_cls.assert_called_once_with(
+            target=run_simulcast_update,
+            args=("s1", "naruto", 2),
+            daemon=True,
+        )
+        mock_thread_instance.start.assert_called_once()
+
+    def test_non_simulcast_series_no_thread(self, client):
+        rows = [_episode_row(id="ep1", episode_number=1)]
+        series_row = _simulcast_series_row(is_simulcast=False)
+
+        with patch("db.episodes.get_episodes_by_series", return_value=rows), \
+             patch("routes.series_routes.db_series.get_series_by_id", return_value=series_row), \
+             patch("routes.series_routes.threading.Thread") as mock_thread_cls:
+            res = client.get("/api/series/s1/episodes")
+
+        assert res.status_code == 200
+        mock_thread_cls.assert_not_called()
+
+    def test_missing_animeflv_slug_no_thread(self, client):
+        rows = [_episode_row(id="ep1", episode_number=1)]
+        series_row = _simulcast_series_row(animeflv_slug=None)
+
+        with patch("db.episodes.get_episodes_by_series", return_value=rows), \
+             patch("routes.series_routes.db_series.get_series_by_id", return_value=series_row), \
+             patch("routes.series_routes.threading.Thread") as mock_thread_cls:
+            res = client.get("/api/series/s1/episodes")
+
+        assert res.status_code == 200
+        mock_thread_cls.assert_not_called()
+
+    def test_cooldown_active_no_thread(self, client):
+        from datetime import datetime, timedelta, timezone
+        recent_check = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+        rows = [_episode_row(id="ep1", episode_number=1)]
+        series_row = _simulcast_series_row(last_simulcast_check=recent_check)
+
+        with patch("db.episodes.get_episodes_by_series", return_value=rows), \
+             patch("routes.series_routes.db_series.get_series_by_id", return_value=series_row), \
+             patch("routes.series_routes.threading.Thread") as mock_thread_cls:
+            res = client.get("/api/series/s1/episodes")
+
+        assert res.status_code == 200
+        mock_thread_cls.assert_not_called()
+
+    def test_no_episodes_yet_uses_zero_as_current_max_ep(self, client):
+        """No rows in DB yet → current_max_ep defaults to 0, thread still spawned."""
+        series_row = _simulcast_series_row()
+
+        with patch("db.episodes.get_episodes_by_series", return_value=[]), \
+             patch("routes.series_routes.db_series.get_series_by_id", return_value=series_row), \
+             patch("routes.series_routes.threading.Thread") as mock_thread_cls:
+            res = client.get("/api/series/s1/episodes")
+
+        assert res.status_code == 200
+        mock_thread_cls.assert_called_once_with(
+            target=run_simulcast_update,
+            args=("s1", "naruto", 0),
+            daemon=True,
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -319,8 +424,25 @@ class TestPatchStreamSource:
 # Unit tests for db.series.update_stream_source
 # ---------------------------------------------------------------------------
 
+from db import series as db_series
+
+
 class TestRecommendationsEndpoint:
-    """Integration tests for GET /api/series/recommendations."""
+    """Integration tests for GET /api/series/recommendations.
+
+    The route caches its result per user_id in a module-level TTLCache
+    (10 min TTL) that outlives any single test. Every test here authenticates
+    as the same user_id ("admin-1"), so a cache hit from an earlier test would
+    silently skip the mocked code path in a later one. Reset it before each
+    test to keep them independent of run order.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _reset_recommendations_cache(self):
+        from routes.series_routes import _recommendations_cache
+        _recommendations_cache._store.clear()
+        yield
+        _recommendations_cache._store.clear()
 
     def _rec_entry(self, mal_id: int) -> dict:
         """Build a Jikan recommendations data entry."""
@@ -460,6 +582,8 @@ class TestRecommendationsEndpoint:
                 {"s1": 10},
                 {"s1": 10},
             ]),
+            patch("routes.series_routes.db_series.get_recommended_mal_ids", return_value=None),
+            patch("routes.series_routes.db_series.save_recommended_mal_ids"),
             patch("routes.series_routes.fetch_recommendations", return_value=rec_entries),
             patch("routes.series_routes.db_series.get_series_by_mal_ids", return_value=[]),
             patch("routes.series_routes.threading") as mock_threading,
@@ -470,9 +594,10 @@ class TestRecommendationsEndpoint:
             res = client.get("/api/series/recommendations", headers=_auth_header())
 
         assert res.status_code == 200
-        # Thread must have been created with daemon=True and started
+        # Thread must have been created with daemon=True and started, targeting
+        # the stub-ingest function for the unmatched mal_id (200)
         mock_threading.Thread.assert_called_once_with(
-            target=mock_threading.Thread.call_args[1]["target"],
+            target=db_series.upsert_series_stub,
             args=(200,),
             daemon=True,
         )

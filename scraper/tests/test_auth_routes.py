@@ -9,18 +9,16 @@ import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 # Set required env vars BEFORE importing auth.py (which fails-fast at import).
-TEST_SERVICE_SECRET = "test-service-secret-for-tests-only"
+# NOTE: "test-service-secret" matches the value tests/conftest.py's autouse
+# patch_service_secret fixture forces onto auth._SERVICE_SECRET for every test
+# in the suite. Using any other value here is silently overridden per-test.
+TEST_SERVICE_SECRET = "test-service-secret"
 os.environ.setdefault("INTERNAL_JWT_SECRET", "test-internal-secret-for-tests-only")
 os.environ.setdefault("SERVICE_SECRET", TEST_SERVICE_SECRET)
 
 import json
 import pytest
 from unittest.mock import patch
-
-import auth as auth_module
-auth_module._SERVICE_SECRET = TEST_SERVICE_SECRET
-
-from app import create_app
 
 
 # ---------------------------------------------------------------------------
@@ -29,7 +27,16 @@ from app import create_app
 
 @pytest.fixture
 def client():
-    app = create_app()
+    # storage.get_client must be patched before create_app()'s first call in
+    # the process — blueprints are only imported once, and routes/simulcast_routes.py
+    # binds its own `get_client` name via `from storage import get_client` at
+    # that import time. Doing this unpatched here would permanently bind that
+    # blueprint's get_client to the real client for the rest of the test
+    # session, breaking storage.get_client patches in unrelated test files
+    # (e.g. test_simulcast_routes.py) that run afterward.
+    with patch("storage.get_client"):
+        from app import create_app
+        app = create_app()
     app.config["TESTING"] = True
     with app.test_client() as c:
         yield c

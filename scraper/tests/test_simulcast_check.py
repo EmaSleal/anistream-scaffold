@@ -14,36 +14,13 @@ from __future__ import annotations
 
 import sys
 import os
-import json
-import time
-import threading
 from datetime import datetime, timedelta, timezone
-from unittest.mock import MagicMock, call, patch
-
-import pytest
+from unittest.mock import MagicMock, patch
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-TEST_SECRET = "test-internal-secret-for-tests-only"
-os.environ.setdefault("INTERNAL_JWT_SECRET", TEST_SECRET)
-os.environ.setdefault("SERVICE_SECRET", "test-service-secret-for-tests-only")
-
-import auth as auth_module
-auth_module._INTERNAL_JWT_SECRET = TEST_SECRET
-
-import jwt as pyjwt
-
-
-def _token(user_id: str = "u-1", role: str = "USER") -> str:
-    return pyjwt.encode(
-        {"sub": user_id, "role": role, "exp": int(time.time()) + 60},
-        TEST_SECRET,
-        algorithm="HS256",
-    )
-
-
-def _auth_header(user_id: str = "u-1") -> dict:
-    return {"Authorization": f"Bearer {_token(user_id)}"}
+os.environ.setdefault("INTERNAL_JWT_SECRET", "test-internal-secret-for-tests-only")
+os.environ.setdefault("SERVICE_SECRET", "test-service-secret")
 
 
 # ---------------------------------------------------------------------------
@@ -444,239 +421,18 @@ class TestRunSimulcastCheck:
 
 
 # ---------------------------------------------------------------------------
-# 4.5 — continue_watching route: thread spawning guard
+# 4.5 — continue_watching route: superseded, see below
+#
+# The old thread-spawning trigger tested here (progress-based, per-row
+# candidate check via routes.progress_routes.threading.Thread) no longer
+# exists — continue_watching was redesigned into a synchronous simulcast
+# look-ahead (covered by TestContinueWatchingLookahead in
+# test_progress_routes.py). The actual background-refresh trigger now lives
+# in routes/series_routes.py::series_episodes, using
+# simulcast_check.run_simulcast_update gated by cooldown_elapsed on the
+# series row (covered by TestSeriesEpisodesSimulcastTrigger in
+# test_series_routes.py).
 # ---------------------------------------------------------------------------
-
-@pytest.fixture
-def client():
-    with patch("storage.get_client"):
-        from app import create_app
-        app = create_app()
-        app.config["TESTING"] = True
-        with app.test_client() as c:
-            yield c
-
-
-def _progress_row(episode_id="ep1", series_id="s1", progress_sec=1400.0, duration_sec=1440.0):
-    return {
-        "episode_id": episode_id,
-        "series_id": series_id,
-        "progress_sec": progress_sec,
-        "duration_sec": duration_sec,
-        "updated_at": "2026-06-01T00:00:00Z",
-    }
-
-
-def _episode_row(id="ep1", series_id="s1", episode_number=5, aired_at=None):
-    return {
-        "id": id,
-        "series_id": series_id,
-        "episode_number": episode_number,
-        "title": "Episode",
-        "animeflv_slug": f"{series_id}-{episode_number}",
-        "thumbnail_url": None,
-        "aired_at": aired_at,
-        "series": {"title": "Test Anime"},
-    }
-
-
-def _simulcast_meta(series_id="s1", is_simulcast=True, slug="test-slug", max_ep=5,
-                    last_check=None):
-    return {
-        series_id: {
-            "id": series_id,
-            "is_simulcast": is_simulcast,
-            "animeflv_slug": slug,
-            "broadcast_day": None,
-            "broadcast_time": None,
-            "broadcast_timezone": None,
-            "last_simulcast_check": last_check,
-            "max_episode_number": max_ep,
-        }
-    }
-
-
-class TestContinueWatchingSimulcastThreads:
-    def test_qualifying_row_spawns_one_thread(self, client):
-        """One qualifying progress row → exactly one daemon thread spawned."""
-        # aired_at 8 days ago → next_expected already passed → qualifies
-        aired_8_days_ago = (datetime.now(timezone.utc) - timedelta(days=8)).isoformat()
-        rows = [_progress_row("ep1", "s1", progress_sec=1400.0, duration_sec=1440.0)]
-        eps = [_episode_row("ep1", "s1", episode_number=5, aired_at=aired_8_days_ago)]
-        meta = _simulcast_meta("s1", is_simulcast=True, slug="s1-slug", max_ep=5)
-
-        with (
-            patch("db.progress.get_recent_progress", return_value=rows),
-            patch("db.progress.get_series_franchise_map", return_value={"s1": "s1"}),
-            patch("db.progress.get_episodes_by_ids", return_value=eps),
-            patch("db.progress.get_series_simulcast_meta", return_value=meta),
-            patch("routes.progress_routes.threading.Thread") as mock_thread_cls,
-        ):
-            mock_thread_instance = MagicMock()
-            mock_thread_cls.return_value = mock_thread_instance
-
-            res = client.get("/api/progress/continue-watching", headers=_auth_header())
-
-        assert res.status_code == 200
-        assert mock_thread_cls.call_count == 1
-        # Verify daemon=True was passed
-        _, kwargs = mock_thread_cls.call_args
-        assert kwargs.get("daemon") is True
-        mock_thread_instance.start.assert_called_once()
-
-    def test_non_qualifying_row_no_thread(self, client):
-        """Row where is_simulcast=False → no thread spawned."""
-        aired_8_days_ago = (datetime.now(timezone.utc) - timedelta(days=8)).isoformat()
-        rows = [_progress_row("ep1", "s1", progress_sec=1400.0, duration_sec=1440.0)]
-        eps = [_episode_row("ep1", "s1", episode_number=5, aired_at=aired_8_days_ago)]
-        meta = _simulcast_meta("s1", is_simulcast=False, slug="s1-slug")
-
-        with (
-            patch("db.progress.get_recent_progress", return_value=rows),
-            patch("db.progress.get_series_franchise_map", return_value={"s1": "s1"}),
-            patch("db.progress.get_episodes_by_ids", return_value=eps),
-            patch("db.progress.get_series_simulcast_meta", return_value=meta),
-            patch("routes.progress_routes.threading.Thread") as mock_thread_cls,
-        ):
-            res = client.get("/api/progress/continue-watching", headers=_auth_header())
-
-        assert res.status_code == 200
-        mock_thread_cls.assert_not_called()
-
-    def test_one_qualifying_one_not_exactly_one_thread(self, client):
-        """Two rows: one qualifies (simulcast), one does not → exactly one thread."""
-        aired_8_days_ago = (datetime.now(timezone.utc) - timedelta(days=8)).isoformat()
-        rows = [
-            _progress_row("ep1", "s1", progress_sec=1400.0, duration_sec=1440.0),
-            _progress_row("ep2", "s2", progress_sec=100.0, duration_sec=1440.0),  # not caught-up
-        ]
-        eps = [
-            _episode_row("ep1", "s1", episode_number=5, aired_at=aired_8_days_ago),
-            _episode_row("ep2", "s2", episode_number=3, aired_at=aired_8_days_ago),
-        ]
-        meta_combined = {
-            "s1": {
-                "id": "s1", "is_simulcast": True, "animeflv_slug": "s1-slug",
-                "broadcast_day": None, "broadcast_time": None,
-                "broadcast_timezone": None, "last_simulcast_check": None,
-                "max_episode_number": 5,
-            },
-            "s2": {
-                "id": "s2", "is_simulcast": True, "animeflv_slug": "s2-slug",
-                "broadcast_day": None, "broadcast_time": None,
-                "broadcast_timezone": None, "last_simulcast_check": None,
-                "max_episode_number": 3,
-            },
-        }
-
-        with (
-            patch("db.progress.get_recent_progress", return_value=rows),
-            patch("db.progress.get_series_franchise_map",
-                  return_value={"s1": "s1", "s2": "s2"}),
-            patch("db.progress.get_episodes_by_ids", return_value=eps),
-            patch("db.progress.get_series_simulcast_meta", return_value=meta_combined),
-            patch("routes.progress_routes.threading.Thread") as mock_thread_cls,
-        ):
-            mock_thread_instance = MagicMock()
-            mock_thread_cls.return_value = mock_thread_instance
-            res = client.get("/api/progress/continue-watching", headers=_auth_header())
-
-        assert res.status_code == 200
-        # s1 qualifies (caught-up), s2 does not (not caught-up: 100/1440 ≈ 0.069)
-        assert mock_thread_cls.call_count == 1
-
-    def test_user_id_passed_as_explicit_arg_not_via_g(self, client):
-        """user_id is passed as a positional arg to Thread, not accessed via g."""
-        aired_8_days_ago = (datetime.now(timezone.utc) - timedelta(days=8)).isoformat()
-        rows = [_progress_row("ep1", "s1", progress_sec=1400.0, duration_sec=1440.0)]
-        eps = [_episode_row("ep1", "s1", episode_number=5, aired_at=aired_8_days_ago)]
-        meta = _simulcast_meta("s1", is_simulcast=True, slug="s1-slug", max_ep=5)
-
-        captured_args = {}
-
-        def capture_thread(*args, **kwargs):
-            captured_args.update(kwargs)
-            m = MagicMock()
-            return m
-
-        with (
-            patch("db.progress.get_recent_progress", return_value=rows),
-            patch("db.progress.get_series_franchise_map", return_value={"s1": "s1"}),
-            patch("db.progress.get_episodes_by_ids", return_value=eps),
-            patch("db.progress.get_series_simulcast_meta", return_value=meta),
-            patch("routes.progress_routes.threading.Thread", side_effect=capture_thread),
-        ):
-            res = client.get("/api/progress/continue-watching", headers=_auth_header())
-
-        assert res.status_code == 200
-        # The thread args tuple must contain user_id as first element.
-        thread_args = captured_args.get("args", ())
-        assert thread_args[0] == "u-1", (
-            f"Expected user_id='u-1' as first thread arg, got {thread_args}"
-        )
-
-    def test_cooldown_active_no_thread(self, client):
-        """last_simulcast_check within 6h → cooldown active → no thread."""
-        aired_8_days_ago = (datetime.now(timezone.utc) - timedelta(days=8)).isoformat()
-        recent_check = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
-        rows = [_progress_row("ep1", "s1", progress_sec=1400.0, duration_sec=1440.0)]
-        eps = [_episode_row("ep1", "s1", episode_number=5, aired_at=aired_8_days_ago)]
-        meta = _simulcast_meta("s1", is_simulcast=True, slug="s1-slug",
-                               last_check=recent_check)
-
-        with (
-            patch("db.progress.get_recent_progress", return_value=rows),
-            patch("db.progress.get_series_franchise_map", return_value={"s1": "s1"}),
-            patch("db.progress.get_episodes_by_ids", return_value=eps),
-            patch("db.progress.get_series_simulcast_meta", return_value=meta),
-            patch("routes.progress_routes.threading.Thread") as mock_thread_cls,
-        ):
-            res = client.get("/api/progress/continue-watching", headers=_auth_header())
-
-        assert res.status_code == 200
-        mock_thread_cls.assert_not_called()
-
-    def test_mid_series_episode_no_thread(self, client):
-        """User on ep 3 of a 5-episode series → condition 2 fails → no thread."""
-        aired_8_days_ago = (datetime.now(timezone.utc) - timedelta(days=8)).isoformat()
-        rows = [_progress_row("ep3", "s1", progress_sec=1400.0, duration_sec=1440.0)]
-        # episode_number=3, but series max is 5 → not the last episode
-        eps = [_episode_row("ep3", "s1", episode_number=3, aired_at=aired_8_days_ago)]
-        meta = _simulcast_meta("s1", is_simulcast=True, slug="s1-slug", max_ep=5)
-
-        with (
-            patch("db.progress.get_recent_progress", return_value=rows),
-            patch("db.progress.get_series_franchise_map", return_value={"s1": "s1"}),
-            patch("db.progress.get_episodes_by_ids", return_value=eps),
-            patch("db.progress.get_series_simulcast_meta", return_value=meta),
-            patch("routes.progress_routes.threading.Thread") as mock_thread_cls,
-        ):
-            res = client.get("/api/progress/continue-watching", headers=_auth_header())
-
-        assert res.status_code == 200
-        mock_thread_cls.assert_not_called()
-
-    def test_response_does_not_block_on_thread(self, client):
-        """Route returns a response without calling thread.join()."""
-        aired_8_days_ago = (datetime.now(timezone.utc) - timedelta(days=8)).isoformat()
-        rows = [_progress_row("ep1", "s1", progress_sec=1400.0, duration_sec=1440.0)]
-        eps = [_episode_row("ep1", "s1", episode_number=5, aired_at=aired_8_days_ago)]
-        meta = _simulcast_meta("s1", is_simulcast=True, slug="s1-slug", max_ep=5)
-
-        with (
-            patch("db.progress.get_recent_progress", return_value=rows),
-            patch("db.progress.get_series_franchise_map", return_value={"s1": "s1"}),
-            patch("db.progress.get_episodes_by_ids", return_value=eps),
-            patch("db.progress.get_series_simulcast_meta", return_value=meta),
-            patch("routes.progress_routes.threading.Thread") as mock_thread_cls,
-        ):
-            mock_thread_instance = MagicMock()
-            mock_thread_cls.return_value = mock_thread_instance
-            res = client.get("/api/progress/continue-watching", headers=_auth_header())
-
-        assert res.status_code == 200
-        # join() must NEVER be called on the spawned thread.
-        mock_thread_instance.join.assert_not_called()
 
 
 # ---------------------------------------------------------------------------

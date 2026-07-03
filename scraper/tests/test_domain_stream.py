@@ -13,7 +13,6 @@ from unittest.mock import patch
 
 from domain.stream import (
     orchestrate_stream,
-    resolve_animeflv_stream,
     resolve_jkanime_stream,
     NoSourceError,
     UpstreamError,
@@ -46,107 +45,13 @@ def _stream_config(animeflv_disabled=False, fallback_slug=None, principal_slug=N
 
 # ---------------------------------------------------------------------------
 # orchestrate_stream — unit tests (all scrapers mocked)
+#
+# NOTE: orchestrate_stream's primary source is AnimeAV1 (gated by
+# principal_slug), with JKAnime as the fallback (gated by fallback_slug).
+# resolve_animeflv_stream still exists in domain/stream.py but orchestrate_stream
+# never calls it — it's unreachable dead code, not part of any branch here.
+# See TestOrchestrateStreamAnimeAV1 below for primary/fallback/error coverage.
 # ---------------------------------------------------------------------------
-
-class TestOrchestrateStream:
-
-    # 5.1 — Primary success: animeflv enabled, scraper returns URL
-    def test_primary_success_returns_animeflv_source(self):
-        ep = _episode()
-        cfg = _stream_config(animeflv_disabled=False, fallback_slug="naruto-jk")
-
-        with patch(
-            "domain.stream.resolve_animeflv_stream",
-            return_value={"url": "https://streamtape.com/v/abc", "error_type": None},
-        ):
-            result = orchestrate_stream(ep, cfg)
-
-        assert result["url"] == "https://streamtape.com/v/abc"
-        assert result["source"] == "animeflv"
-
-    # 5.2 — Primary fails, fallback_slug present → fallback resolves
-    def test_primary_fails_fallback_resolves(self):
-        ep = _episode()
-        cfg = _stream_config(animeflv_disabled=False, fallback_slug="naruto-jk")
-
-        with patch(
-            "domain.stream.resolve_animeflv_stream",
-            return_value={"url": None, "error_type": "no_source"},
-        ), patch(
-            "domain.stream.resolve_jkanime_stream",
-            return_value={"url": "https://jkanime.net/m3u8/abc123.m3u8", "error_type": None},
-        ):
-            result = orchestrate_stream(ep, cfg)
-
-        assert result["url"] == "https://jkanime.net/m3u8/abc123.m3u8"
-        assert result["source"] == "jkanime"
-
-    # 5.3 — animeflv_disabled=True → skips primary entirely, resolves via jkanime
-    def test_animeflv_disabled_skips_primary(self):
-        ep = _episode()
-        cfg = _stream_config(animeflv_disabled=True, fallback_slug="naruto-jk")
-
-        with patch(
-            "domain.stream.resolve_animeflv_stream"
-        ) as mock_primary, patch(
-            "domain.stream.resolve_jkanime_stream",
-            return_value={"url": "https://jkanime.net/m3u8/xyz.m3u8", "error_type": None},
-        ):
-            result = orchestrate_stream(ep, cfg)
-
-        mock_primary.assert_not_called()
-        assert result["source"] == "jkanime"
-        assert result["url"] == "https://jkanime.net/m3u8/xyz.m3u8"
-
-    # 5.4 — animeflv_disabled=True, fallback_slug=None → NoSourceError
-    def test_animeflv_disabled_no_fallback_raises_no_source(self):
-        ep = _episode()
-        cfg = _stream_config(animeflv_disabled=True, fallback_slug=None)
-
-        with pytest.raises(NoSourceError):
-            orchestrate_stream(ep, cfg)
-
-    # 5.5 — Both sources fail to return a URL → NoSourceError
-    def test_both_sources_fail_raises_no_source(self):
-        ep = _episode()
-        cfg = _stream_config(animeflv_disabled=False, fallback_slug="naruto-jk")
-
-        with patch(
-            "domain.stream.resolve_animeflv_stream",
-            return_value={"url": None, "error_type": "no_source"},
-        ), patch(
-            "domain.stream.resolve_jkanime_stream",
-            return_value={"url": None, "error_type": "no_source"},
-        ):
-            with pytest.raises(NoSourceError):
-                orchestrate_stream(ep, cfg)
-
-    # 5.6 — Scraper raises a network/parse exception → UpstreamError
-    def test_primary_network_error_raises_upstream_error(self):
-        ep = _episode()
-        cfg = _stream_config(animeflv_disabled=False, fallback_slug=None)
-
-        with patch(
-            "domain.stream.resolve_animeflv_stream",
-            return_value={"url": None, "error_type": "network_error"},
-        ):
-            with pytest.raises(UpstreamError):
-                orchestrate_stream(ep, cfg)
-
-    def test_fallback_network_error_raises_upstream_error(self):
-        ep = _episode()
-        cfg = _stream_config(animeflv_disabled=False, fallback_slug="naruto-jk")
-
-        with patch(
-            "domain.stream.resolve_animeflv_stream",
-            return_value={"url": None, "error_type": "no_source"},
-        ), patch(
-            "domain.stream.resolve_jkanime_stream",
-            return_value={"url": None, "error_type": "network_error"},
-        ):
-            with pytest.raises(UpstreamError):
-                orchestrate_stream(ep, cfg)
-
 
 # ---------------------------------------------------------------------------
 # AnimeAV1 + hint matrix tests (TDD — verifies the new branch order)
@@ -404,18 +309,18 @@ class TestWatchEpisodeStreamUrl:
 
     def test_200_when_stream_resolves(self, client):
         row = _episode_row()
-        stream_cfg = {"animeflv_disabled": False, "fallback_slug": None}
+        stream_cfg = {"fallback_slug": None, "principal_slug": "naruto"}
 
         with patch("db.episodes.get_episode_for_watch", return_value=row), \
              patch("db.series.get_stream_config", return_value=stream_cfg), \
-             patch("domain.stream.resolve_animeflv_stream",
-                   return_value={"url": "https://streamtape.com/v/abc", "error_type": None}):
+             patch("domain.stream.resolve_animeav1_stream",
+                   return_value={"url": "https://player.zilla-networks.com/m3u8/abc", "error_type": None}):
             res = client.get("/api/episodes/watch/naruto-1/stream-url")
 
         assert res.status_code == 200
         data = json.loads(res.data)
-        assert data["url"] == "https://streamtape.com/v/abc"
-        assert data["source"] == "animeflv"
+        assert data["url"] == "https://player.zilla-networks.com/m3u8/abc"
+        assert data["source"] == "animeav1"
 
     def test_404_when_episode_not_found(self, client):
         with patch("db.episodes.get_episode_for_watch", return_value=None):
@@ -435,11 +340,11 @@ class TestWatchEpisodeStreamUrl:
 
     def test_503_when_upstream_error(self, client):
         row = _episode_row()
-        stream_cfg = {"animeflv_disabled": False, "fallback_slug": None}
+        stream_cfg = {"fallback_slug": None, "principal_slug": "naruto"}
 
         with patch("db.episodes.get_episode_for_watch", return_value=row), \
              patch("db.series.get_stream_config", return_value=stream_cfg), \
-             patch("domain.stream.resolve_animeflv_stream",
+             patch("domain.stream.resolve_animeav1_stream",
                    return_value={"url": None, "error_type": "network_error"}):
             res = client.get("/api/episodes/watch/naruto-1/stream-url")
 

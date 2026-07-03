@@ -229,7 +229,7 @@ export default function SimulcastTable({ series }: Props) {
           }}
         >
           Sync complete — Added {syncResult.added}, Updated {syncResult.updated}, Skipped{" "}
-          {syncResult.skipped}
+          {syncResult.skipped}, Finished {syncResult.finished}
         </div>
       )}
 

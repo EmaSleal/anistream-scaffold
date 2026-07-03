@@ -249,9 +249,11 @@ def sync_jikan():
       - mal_id not in DB → upsert_series_stub + set is_simulcast=True → added
       - mal_id in DB, is_simulcast=False → set is_simulcast=True → updated
       - mal_id in DB, is_simulcast=True → skipped
+      - mal_id in DB marked is_simulcast=True but absent from the current
+        Jikan airing set (series finished) → set is_simulcast=False → finished
 
     Returns:
-        200  {added, updated, skipped}
+        200  {added, updated, skipped, finished}
         502  {"error": "Jikan fetch failed"}  — if Jikan is unreachable
         401/403  via @require_admin
     """
@@ -260,9 +262,19 @@ def sync_jikan():
     except Exception:
         return jsonify({"error": "Jikan fetch failed"}), 502
 
+    # Full set of mal_ids Jikan currently reports as airing, unfiltered by the
+    # hentai/score gates below — those gates only decide whether a *new* stub
+    # gets added, not whether an already-tracked series is still airing.
+    airing_mal_ids = {
+        entry.get("mal_id")
+        for entry in entries
+        if entry.get("airing") and entry.get("mal_id") is not None
+    }
+
     added = 0
     updated = 0
     skipped = 0
+    finished = 0
 
     for entry in entries:
         # Only process currently airing entries
@@ -308,4 +320,24 @@ def sync_jikan():
             else:
                 skipped += 1
 
-    return jsonify({"added": added, "updated": updated, "skipped": skipped}), 200
+    # Reconcile the opposite direction: series still flagged is_simulcast=True
+    # in the DB but no longer present in Jikan's currently-airing set have
+    # finished — clear the flag so they drop out of the simulcast listing.
+    currently_flagged = (
+        get_client()
+        .table("series")
+        .select("id, mal_id")
+        .eq("is_simulcast", True)
+        .execute()
+    )
+    for row in currently_flagged.data or []:
+        mal_id = row.get("mal_id")
+        if mal_id is not None and mal_id not in airing_mal_ids:
+            get_client().table("series").update({"is_simulcast": False}).eq(
+                "id", row["id"]
+            ).execute()
+            finished += 1
+
+    return jsonify(
+        {"added": added, "updated": updated, "skipped": skipped, "finished": finished}
+    ), 200

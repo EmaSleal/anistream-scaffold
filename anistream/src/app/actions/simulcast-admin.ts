@@ -16,6 +16,7 @@ export interface SyncResult {
   added: number;
   updated: number;
   skipped: number;
+  finished: number;
 }
 
 function getAppUrl(): string {
