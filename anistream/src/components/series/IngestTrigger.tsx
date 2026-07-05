@@ -9,10 +9,11 @@ import styles from "./ingest-trigger.module.css";
 type Phase = "loading" | "success" | "failed";
 
 interface Props {
+  seriesId: string;
   malId: number;
 }
 
-export default function IngestTrigger({ malId }: Props) {
+export default function IngestTrigger({ seriesId, malId }: Props) {
   const router = useRouter();
   const [phase, setPhase] = useState<Phase>("loading");
   const [animeav1Custom, setAnimeav1Custom] = useState("");
@@ -22,9 +23,15 @@ export default function IngestTrigger({ malId }: Props) {
 
   async function tryIngest(fallbackSlug?: string, animeav1Slug?: string) {
     try {
-      await ingestSeries(malId, fallbackSlug, animeav1Slug);
-      setPhase("success");
-      router.refresh();
+      const result = await ingestSeries(malId, fallbackSlug, animeav1Slug);
+      if (result.episodes_ingested > 0) {
+        setPhase("success");
+        router.refresh();
+      } else {
+        // No real video source resolved (e.g. the AnimeAV1 slug guess didn't
+        // match) — surface the retry form instead of masking it as success.
+        setPhase("failed");
+      }
     } catch (err) {
       setErrorMsg(err instanceof Error ? err.message : "Ingest failed");
       setPhase("failed");
@@ -32,10 +39,10 @@ export default function IngestTrigger({ malId }: Props) {
   }
 
   useEffect(() => {
-    // No slug is known yet for a freshly-ingested series — do not guess one.
-    // Sending the series' own id as fallback_slug (jkanime) or principal_slug
-    // (animeav1) would silently point stream resolution at the wrong site.
-    tryIngest(undefined, undefined);
+    // Guess: the series' own canonical slug is often also its AnimeAV1 slug.
+    // If AnimeAV1 doesn't have it, ingest returns 0 real episodes and the
+    // retry form below lets an admin supply the correct slug.
+    tryIngest(undefined, seriesId);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -76,7 +83,7 @@ export default function IngestTrigger({ malId }: Props) {
           <div className={styles.statusRow}>
             <span className={`${styles.statusDot} ${styles.statusFailed}`} />
             <span className={styles.statusLabel}>
-              Sin fuente de video configurada (principal_slug / fallback_slug vacíos)
+              AnimeAV1: <code className={styles.code}>{seriesId}</code> — no encontrado
             </span>
           </div>
 

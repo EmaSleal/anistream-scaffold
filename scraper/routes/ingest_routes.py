@@ -84,14 +84,19 @@ def _build_episodes_from_metadata(
     jikan_titles: dict[int, dict] | None = None,
     media_type: str = "",
 ) -> list[dict]:
-    """Build episode rows from Kitsu/Jikan when AnimeFlv is unavailable.
+    """Build episode rows from Kitsu/Jikan when AnimeAV1 is unavailable.
 
     animeflv_slug is left NULL — the watch route falls back to episode id lookup.
     For movies and other single-entry types, synthesizes ep 1 when both APIs
-    return no episode list.
+    return no episode list. TV series with no data yet return [] instead —
+    they have no real video source, and a synthesized placeholder would mask
+    that from the admin ingest-retry flow (IngestTrigger), which relies on
+    episodes_ingested == 0 to prompt for the real AnimeAV1 slug.
     """
     ep_numbers = sorted(set(kitsu_eps) | set(jikan_titles or {}))
     if not ep_numbers:
+        if (media_type or "tv").lower() == "tv":
+            return []
         # Jikan/Kitsu don't enumerate episodes for movies — create a single ep
         ep_numbers = [1]
     episodes = []
@@ -247,7 +252,7 @@ def _ingest_related(entry: dict, franchise_id: str) -> dict:
         if av1_slug:
             episodes = _build_episodes_from_animeav1(canonical_id, av1_slug, kitsu_eps, jikan_titles)
         else:
-            episodes = _build_episodes_from_metadata(canonical_id, kitsu_eps, jikan_titles)
+            episodes = _build_episodes_from_metadata(canonical_id, kitsu_eps, jikan_titles, series.get("media_type"))
         count = upsert_episodes(episodes)
 
         return {"status": "ok", "episodes_ingested": count}

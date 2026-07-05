@@ -95,7 +95,7 @@ export default async function SeriesPage({ params }: SeriesPageProps) {
       {!noEpisodes ? (
         <EpisodesSection seasons={seasons} initialSeasonIdx={initialSeasonIdx} />
       ) : isAdmin && series.malId ? (
-        <IngestTrigger malId={series.malId} />
+        <IngestTrigger seriesId={series.id} malId={series.malId} />
       ) : (
         <p style={{ padding: "48px 24px", textAlign: "center", color: "rgba(255,255,255,0.4)", fontSize: "0.9rem" }}>
           No episodes available yet.
