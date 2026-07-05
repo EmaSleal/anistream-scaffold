@@ -329,6 +329,12 @@ def series_seasons(series_id: str):
         ).start()
 
     payload = build_seasons(members, episodes_by_series, requested_series_id=series_id)
+    # Franchise members with zero episodes are dropped from `seasons` (see
+    # build_seasons), so `seasons.length` alone can't tell the caller whether
+    # THIS series has episodes — a sibling season merging into the list is
+    # enough to make it non-empty. Expose the requested series' own episode
+    # presence explicitly so the frontend can trigger ingest correctly.
+    payload["hasOwnEpisodes"] = bool(episodes_by_series.get(series_id))
     return jsonify(payload)
 
 

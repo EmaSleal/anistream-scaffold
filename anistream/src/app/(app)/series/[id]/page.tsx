@@ -37,7 +37,7 @@ export default async function SeriesPage({ params }: SeriesPageProps) {
 
   const userId = session?.user?.id;
 
-  const [{ seasons: rawSeasons, initialSeasonIdx }, franchiseMembers, progressMap] =
+  const [{ seasons: rawSeasons, initialSeasonIdx, hasOwnEpisodes }, franchiseMembers, progressMap] =
     await Promise.all([
       getSeriesSeasons(id),
       series.franchiseId ? getSeriesByFranchiseId(series.franchiseId) : Promise.resolve([]),
@@ -62,7 +62,11 @@ export default async function SeriesPage({ params }: SeriesPageProps) {
     }),
   }));
 
-  const noEpisodes = seasons.length === 0;
+  // Franchise members with zero episodes are filtered out of `seasons`, so a
+  // sibling season (e.g. an already-ingested S1) keeps seasons.length > 0
+  // even when THIS series has none. Use hasOwnEpisodes, not seasons.length,
+  // to decide whether to show this series' episodes or trigger ingest.
+  const noEpisodes = !hasOwnEpisodes;
 
   const showFranchise = franchiseMembers.length > 1;
   const lastWatchedInFranchise = showFranchise

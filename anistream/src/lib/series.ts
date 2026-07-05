@@ -171,22 +171,23 @@ interface RawSeasonEntry {
 
 export async function getSeriesSeasons(
   seriesId: string,
-): Promise<{ seasons: SeasonEntry[]; initialSeasonIdx: number }> {
+): Promise<{ seasons: SeasonEntry[]; initialSeasonIdx: number; hasOwnEpisodes: boolean }> {
   try {
     const res = await fetch(`${BASE_URL}/api/series/${seriesId}/seasons`, { cache: "no-store" });
-    if (!res.ok) return { seasons: [], initialSeasonIdx: 0 };
+    if (!res.ok) return { seasons: [], initialSeasonIdx: 0, hasOwnEpisodes: false };
     const data = (await res.json()) as {
       seasons: RawSeasonEntry[];
       initialSeasonIdx: number;
+      hasOwnEpisodes: boolean;
     };
     const seasons: SeasonEntry[] = data.seasons.map((s) => ({
       label: s.label,
       seriesId: s.seriesId,
       episodes: s.episodes.map(mapEpisodeRow),
     }));
-    return { seasons, initialSeasonIdx: data.initialSeasonIdx };
+    return { seasons, initialSeasonIdx: data.initialSeasonIdx, hasOwnEpisodes: data.hasOwnEpisodes };
   } catch {
-    return { seasons: [], initialSeasonIdx: 0 };
+    return { seasons: [], initialSeasonIdx: 0, hasOwnEpisodes: false };
   }
 }
 
