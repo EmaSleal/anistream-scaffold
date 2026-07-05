@@ -6,6 +6,7 @@ export interface SimulcastSeries {
   id: string;
   title: string;
   animeflvSlug: string | null;
+  principalSlug: string | null;
   malId: number | null;
   isSimulcast: boolean;
   lastSimulcastCheck: string | null;
@@ -79,6 +80,38 @@ export async function updateSimulcastSlug(
   }
 
   return res.json() as Promise<{ id: string; animeflvSlug: string | null }>;
+}
+
+/**
+ * Update the principal_slug (AnimeAV1 integration marker) for a simulcast series.
+ * Required for the series to be picked up by the background discovery job.
+ * Pass null or empty string to clear the field.
+ */
+export async function updateSimulcastPrincipalSlug(
+  seriesId: string,
+  slug: string | null,
+): Promise<{ id: string; principalSlug: string | null }> {
+  const cookieStore = await cookies();
+  const appUrl = getAppUrl();
+
+  const res = await fetch(`${appUrl}/api/admin/simulcast/${seriesId}/principal-slug`, {
+    method: "PATCH",
+    headers: {
+      "Content-Type": "application/json",
+      Cookie: cookieStore.toString(),
+    },
+    body: JSON.stringify({ slug }),
+    cache: "no-store",
+  });
+
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(
+      (data as { error?: string }).error ?? `Request failed with status ${res.status}`,
+    );
+  }
+
+  return res.json() as Promise<{ id: string; principalSlug: string | null }>;
 }
 
 /**

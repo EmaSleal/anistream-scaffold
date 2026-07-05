@@ -9,22 +9,20 @@ import styles from "./ingest-trigger.module.css";
 type Phase = "loading" | "success" | "failed";
 
 interface Props {
-  seriesId: string;
   malId: number;
-  animeflvSlug: string | null;
 }
 
-export default function IngestTrigger({ seriesId, malId, animeflvSlug }: Props) {
+export default function IngestTrigger({ malId }: Props) {
   const router = useRouter();
   const [phase, setPhase] = useState<Phase>("loading");
-  const [animeflvCustom, setAnimeflvCustom] = useState("");
+  const [animeav1Custom, setAnimeav1Custom] = useState("");
   const [fallbackCustom, setFallbackCustom] = useState("");
   const [retrying, setRetrying] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  async function tryIngest(fallbackSlug?: string, av1Slug?: string) {
+  async function tryIngest(fallbackSlug?: string, animeav1Slug?: string) {
     try {
-      await ingestSeries(malId, fallbackSlug, av1Slug);
+      await ingestSeries(malId, fallbackSlug, animeav1Slug);
       setPhase("success");
       router.refresh();
     } catch (err) {
@@ -34,7 +32,10 @@ export default function IngestTrigger({ seriesId, malId, animeflvSlug }: Props) 
   }
 
   useEffect(() => {
-    tryIngest(animeflvSlug ?? seriesId, undefined);
+    // No slug is known yet for a freshly-ingested series — do not guess one.
+    // Sending the series' own id as fallback_slug (jkanime) or principal_slug
+    // (animeav1) would silently point stream resolution at the wrong site.
+    tryIngest(undefined, undefined);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -42,7 +43,7 @@ export default function IngestTrigger({ seriesId, malId, animeflvSlug }: Props) 
     e.preventDefault();
     setRetrying(true);
     setErrorMsg(null);
-    await tryIngest(animeflvCustom.trim() || undefined, fallbackCustom.trim() || undefined);
+    await tryIngest(fallbackCustom.trim() || undefined, animeav1Custom.trim() || undefined);
     setRetrying(false);
   }
 
@@ -75,7 +76,7 @@ export default function IngestTrigger({ seriesId, malId, animeflvSlug }: Props) 
           <div className={styles.statusRow}>
             <span className={`${styles.statusDot} ${styles.statusFailed}`} />
             <span className={styles.statusLabel}>
-              AnimeFlv: <code className={styles.code}>{animeflvSlug ?? seriesId}</code> — no encontrado
+              Sin fuente de video configurada (principal_slug / fallback_slug vacíos)
             </span>
           </div>
 
@@ -84,18 +85,18 @@ export default function IngestTrigger({ seriesId, malId, animeflvSlug }: Props) 
           <form onSubmit={handleRetry} className={styles.modalForm}>
             <div className={styles.modalFieldGroup}>
               <label className="label-caps">
-                AnimeFlv slug <span className={styles.optional}>(opcional — fuente de episodios)</span>
+                AnimeAV1 slug <span className={styles.optional}>(opcional — fuente principal de video)</span>
               </label>
               <AnimeFlvSlugSearch
-                onSelect={(slug) => setAnimeflvCustom(slug)}
+                onSelect={(slug) => setAnimeav1Custom(slug)}
                 disabled={retrying}
               />
               <input
                 className="input-field"
                 type="text"
                 placeholder="ej: jujutsu-kaisen-tv"
-                value={animeflvCustom}
-                onChange={(e) => setAnimeflvCustom(e.target.value)}
+                value={animeav1Custom}
+                onChange={(e) => setAnimeav1Custom(e.target.value)}
                 disabled={retrying}
                 autoFocus
               />
@@ -118,7 +119,7 @@ export default function IngestTrigger({ seriesId, malId, animeflvSlug }: Props) 
             <button
               className="btn-primary"
               type="submit"
-              disabled={retrying || (!animeflvCustom.trim() && !fallbackCustom.trim())}
+              disabled={retrying || (!animeav1Custom.trim() && !fallbackCustom.trim())}
             >
               {retrying ? "Reintentando…" : "Reintentar ingest"}
             </button>

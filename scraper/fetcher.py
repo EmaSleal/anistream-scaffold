@@ -225,15 +225,18 @@ def fetch_simulcasts() -> list[dict]:
     """Fetch currently airing anime (current season).
 
     Handles pagination (25 items per page). Returns all airing anime.
+
+    Raises:
+        requests.RequestException: if any page fails to fetch. Callers that
+        treat the result as the complete airing set (e.g. sync_jikan's
+        finished-series reconciliation) must not silently proceed on a
+        partial list — that would misclassify still-airing series as finished.
     """
     print("  Fetching simulcasts...")
     results = []
     page = 1
     while True:
-        try:
-            data = _get("seasons/now", {"page": page})
-        except Exception:
-            break
+        data = _get("seasons/now", {"page": page})
         results.extend(data.get("data", []))
         pagination = data.get("pagination", {})
         if not pagination.get("has_next_page"):

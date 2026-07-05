@@ -6,6 +6,7 @@ import {
   type SimulcastSeries,
   type SyncResult,
   updateSimulcastSlug,
+  updateSimulcastPrincipalSlug,
   syncFromJikan,
 } from "@/app/actions/simulcast-admin";
 import AnimeFlvSlugSearch from "@/components/admin/AnimeFlvSlugSearch";
@@ -34,6 +35,12 @@ export default function SimulcastTable({ series }: Props) {
   const slugInputRef = useRef<HTMLInputElement>(null);
   const [editValue, setEditValue] = useState<string>("");
   const [slugError, setSlugError] = useState<string | null>(null);
+
+  const [editingPrincipalId, setEditingPrincipalId] = useState<string | null>(null);
+  const principalCancelledRef = useRef(false);
+  const principalSlugInputRef = useRef<HTMLInputElement>(null);
+  const [editPrincipalValue, setEditPrincipalValue] = useState<string>("");
+  const [principalSlugError, setPrincipalSlugError] = useState<string | null>(null);
 
   const [sortKey, setSortKey] = useState<SortKey>("title");
   const [sortDir, setSortDir] = useState<SortDirection>("asc");
@@ -90,6 +97,55 @@ export default function SimulcastTable({ series }: Props) {
       e.currentTarget.blur(); // onBlur → handleSave (single code path, avoids double-save)
     } else if (e.key === "Escape") {
       cancelEdit();
+    }
+  }
+
+  function startPrincipalEdit(row: SimulcastSeries) {
+    setEditingPrincipalId(row.id);
+    setEditPrincipalValue(row.principalSlug ?? "");
+    setPrincipalSlugError(null);
+  }
+
+  function cancelPrincipalEdit() {
+    principalCancelledRef.current = true;
+    setEditingPrincipalId(null);
+    setEditPrincipalValue("");
+    setPrincipalSlugError(null);
+  }
+
+  async function handlePrincipalSave(row: SimulcastSeries) {
+    if (principalCancelledRef.current) {
+      principalCancelledRef.current = false;
+      return;
+    }
+    const trimmed = editPrincipalValue.trim() || null;
+    setEditingPrincipalId(null);
+
+    // Optimistic update
+    const previous = rows;
+    setRows((prev) =>
+      prev.map((r) => (r.id === row.id ? { ...r, principalSlug: trimmed } : r)),
+    );
+
+    try {
+      await updateSimulcastPrincipalSlug(row.id, trimmed);
+    } catch (err) {
+      // Revert on failure
+      setRows(previous);
+      setPrincipalSlugError(
+        err instanceof Error ? err.message : "Failed to save principal slug",
+      );
+    }
+  }
+
+  function handlePrincipalKeyDown(
+    e: React.KeyboardEvent<HTMLInputElement>,
+  ) {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      e.currentTarget.blur(); // onBlur → handlePrincipalSave (single code path, avoids double-save)
+    } else if (e.key === "Escape") {
+      cancelPrincipalEdit();
     }
   }
 
@@ -216,6 +272,22 @@ export default function SimulcastTable({ series }: Props) {
         </div>
       )}
 
+      {principalSlugError && (
+        <div
+          style={{
+            marginBottom: "1rem",
+            padding: "0.75rem",
+            background: "color-mix(in srgb, #ef4444 15%, transparent)",
+            border: "1px solid color-mix(in srgb, #ef4444 40%, transparent)",
+            borderRadius: "var(--radius-md)",
+            fontSize: "0.875rem",
+            color: "#fca5a5",
+          }}
+        >
+          {principalSlugError}
+        </div>
+      )}
+
       {syncResult && (
         <div
           style={{
@@ -266,6 +338,7 @@ export default function SimulcastTable({ series }: Props) {
             >
               <SortableHeader label="Title" sortKeyVal="title" />
               <th style={{ padding: "0.5rem 0.75rem", fontWeight: 600 }}>AnimeFlv Slug</th>
+              <th style={{ padding: "0.5rem 0.75rem", fontWeight: 600 }}>Principal Slug (AnimeAV1)</th>
               <th style={{ padding: "0.5rem 0.75rem", fontWeight: 600 }}>MAL ID</th>
               <SortableHeader label="Score" sortKeyVal="score" />
               <SortableHeader label="Last Check" sortKeyVal="lastSimulcastCheck" />
@@ -326,6 +399,54 @@ export default function SimulcastTable({ series }: Props) {
                     </span>
                   )}
                 </td>
+                <td style={{ padding: "0.5rem 0.75rem" }}>
+                  {editingPrincipalId === row.id ? (
+                    <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+                      <AnimeFlvSlugSearch
+                        onSelect={(slug) => {
+                          setEditPrincipalValue(slug);
+                          setTimeout(() => principalSlugInputRef.current?.focus(), 0);
+                        }}
+                        disabled={false}
+                      />
+                      <input
+                        ref={principalSlugInputRef}
+                        value={editPrincipalValue}
+                        onChange={(e) => setEditPrincipalValue(e.target.value)}
+                        onKeyDown={(e) => handlePrincipalKeyDown(e)}
+                        onBlur={() => void handlePrincipalSave(row)}
+                        style={{
+                          padding: "0.25rem 0.5rem",
+                          background: "var(--color-bg-surface)",
+                          border: "1px solid var(--color-brand)",
+                          borderRadius: "var(--radius-md)",
+                          color: "var(--color-text-primary)",
+                          fontSize: "0.875rem",
+                          fontFamily: "inherit",
+                          width: "100%",
+                          outline: "none",
+                        }}
+                      />
+                    </div>
+                  ) : (
+                    <span
+                      onClick={() => startPrincipalEdit(row)}
+                      style={{
+                        cursor: "pointer",
+                        color: row.principalSlug
+                          ? "var(--color-text-primary)"
+                          : "var(--color-text-secondary)",
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: "0.4rem",
+                      }}
+                      title="Click to edit"
+                    >
+                      {row.principalSlug ?? "—"}
+                      <span style={{ fontSize: "0.75rem", opacity: 0.6 }}>✎</span>
+                    </span>
+                  )}
+                </td>
                 <td style={{ padding: "0.5rem 0.75rem", color: "var(--color-text-secondary)" }}>
                   {row.malId ?? "—"}
                 </td>
@@ -340,7 +461,7 @@ export default function SimulcastTable({ series }: Props) {
             {rows.length === 0 && (
               <tr>
                 <td
-                  colSpan={5}
+                  colSpan={6}
                   style={{
                     padding: "2rem",
                     textAlign: "center",
