@@ -68,6 +68,7 @@ interface IngestResult {
   series_id: string;
   series_title: string;
   episodes_ingested: number;
+  principal_slug: string | null;
   kitsu_id: string | null;
   kitsu_episodes_matched: number;
 }

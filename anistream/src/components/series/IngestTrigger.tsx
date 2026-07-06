@@ -24,12 +24,16 @@ export default function IngestTrigger({ seriesId, malId }: Props) {
   async function tryIngest(fallbackSlug?: string, animeav1Slug?: string) {
     try {
       const result = await ingestSeries(malId, fallbackSlug, animeav1Slug);
-      if (result.episodes_ingested > 0) {
+      // episodes_ingested alone isn't enough — Jikan/Kitsu metadata produces
+      // placeholder episodes even when no video source resolved. Only treat
+      // this as success once AnimeAV1 confirmed a slug or a jkanime fallback
+      // was supplied; otherwise surface the retry form instead of masking
+      // a source-less ingest as success.
+      const hasVideoSource = Boolean(result.principal_slug) || Boolean(fallbackSlug);
+      if (result.episodes_ingested > 0 && hasVideoSource) {
         setPhase("success");
         router.refresh();
       } else {
-        // No real video source resolved (e.g. the AnimeAV1 slug guess didn't
-        // match) — surface the retry form instead of masking it as success.
         setPhase("failed");
       }
     } catch (err) {

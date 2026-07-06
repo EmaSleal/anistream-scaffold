@@ -191,8 +191,10 @@ def _ingest_related(entry: dict, franchise_id: str) -> dict:
     """Ingest a single franchise member discovered via Jikan relations BFS.
 
     Uses fetch_anime_by_id(mal_id) directly — more accurate than searching by title.
-    Sets principal_slug=None (to be filled manually via search-animeav1 admin endpoint).
-    Returns a status dict with keys: status, episodes_ingested.
+    principal_slug is only persisted once AnimeAV1 actually resolves episodes for
+    it — a title-search hit that scrapes empty is not a working video source and
+    must not be saved, or stream resolution will 404 on it later.
+    Returns a status dict with keys: status, episodes_ingested, principal_slug.
     """
     mal_id = entry["mal_id"]
     title = entry.get("title", "")
@@ -226,7 +228,6 @@ def _ingest_related(entry: dict, franchise_id: str) -> dict:
         series["franchise_id"] = franchise_id
         series["season_order"] = order
         series["franchise_relation"] = relation
-        series["principal_slug"] = av1_slug
 
         kitsu_result = search_kitsu_anime(series_title)
         kitsu_id = kitsu_result["id"] if kitsu_result else None
@@ -241,21 +242,26 @@ def _ingest_related(entry: dict, franchise_id: str) -> dict:
                           "kitsu_id", "kitsu_status", "is_simulcast"):
                 series[field] = normalized_with_kitsu.get(field)
 
-        upsert_series(series)
-
         if existing:
             ep_count = get_episode_count(canonical_id)
             if ep_count > 0:
+                # principal_slug intentionally omitted from this write — episodes
+                # already exist, so a fresh title-search guess must not clobber
+                # whatever slug was previously confirmed to work.
+                upsert_series(series)
                 return {"status": "already_scraped", "episodes_ingested": ep_count}
 
         jikan_titles = fetch_jikan_episodes(mal_id)
-        if av1_slug:
-            episodes = _build_episodes_from_animeav1(canonical_id, av1_slug, kitsu_eps, jikan_titles)
+        episodes = _build_episodes_from_animeav1(canonical_id, av1_slug, kitsu_eps, jikan_titles) if av1_slug else []
+        if episodes:
+            series["principal_slug"] = av1_slug
         else:
             episodes = _build_episodes_from_metadata(canonical_id, kitsu_eps, jikan_titles, series.get("media_type"))
+
+        upsert_series(series)
         count = upsert_episodes(episodes)
 
-        return {"status": "ok", "episodes_ingested": count}
+        return {"status": "ok", "episodes_ingested": count, "principal_slug": series.get("principal_slug")}
 
     except Exception as exc:
         return {"status": f"error: {exc}", "episodes_ingested": 0}
@@ -295,8 +301,6 @@ def ingest():
     series["slug"] = canonical_id
     if fallback_slug:
         series["fallback_slug"] = fallback_slug
-    if animeav1_slug:
-        series["principal_slug"] = animeav1_slug
 
     # Discover full franchise (BFS) via Jikan relations
     print(f"  Discovering franchise via Jikan for mal_id={mal_id_int}...")
@@ -323,19 +327,23 @@ def ingest():
                       "kitsu_id", "kitsu_status", "is_simulcast"):
             series[field] = normalized_with_kitsu.get(field)
 
-    upsert_series(series)
-
     # Fetch episode titles from Jikan
     print(f"  Fetching episode titles from Jikan for mal_id={mal_id_int}...")
     jikan_titles = fetch_jikan_episodes(mal_id_int)
 
-    # Build episodes for main series — priority: animeav1 > metadata
-    main_episodes = []
-    if animeav1_slug:
-        main_episodes = _build_episodes_from_animeav1(canonical_id, animeav1_slug, kitsu_eps, jikan_titles)
-    if not main_episodes:
+    # Build episodes for main series — priority: animeav1 > metadata.
+    # principal_slug is only persisted once AnimeAV1 actually resolves episodes —
+    # an unverified guess (e.g. the series' own canonical slug, as IngestTrigger
+    # sends on first load) that scrapes empty must not be saved, or stream
+    # resolution will silently 404 on it later.
+    main_episodes = _build_episodes_from_animeav1(canonical_id, animeav1_slug, kitsu_eps, jikan_titles) if animeav1_slug else []
+    if main_episodes:
+        series["principal_slug"] = animeav1_slug
+    else:
         media_type = raw.get("type", "")
         main_episodes = _build_episodes_from_metadata(canonical_id, kitsu_eps, jikan_titles, media_type)
+
+    upsert_series(series)
     main_count = upsert_episodes(main_episodes)
 
     # Ingest each related franchise member (skip the root entry)
@@ -358,6 +366,7 @@ def ingest():
         "series_id": canonical_id,
         "series_title": series.get("title", ""),
         "episodes_ingested": main_count,
+        "principal_slug": series.get("principal_slug"),
         "kitsu_id": kitsu_id,
         "kitsu_episodes_matched": len(kitsu_eps),
         "franchise_id": franchise_id,
