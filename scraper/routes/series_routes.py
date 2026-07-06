@@ -19,6 +19,31 @@ series_bp = Blueprint("series", __name__, url_prefix="/api/series")
 
 _recommendations_cache = TTLCache(ttl_seconds=600)
 
+# In-process guard against spawning duplicate concurrent backfill threads for
+# the same series when several requests land before the first one finishes.
+# No DB cooldown needed — once thumbnails are filled the trigger condition
+# (first episode missing thumbnail_url) stops firing on its own.
+_thumbnail_backfill_inflight: set[str] = set()
+
+
+def _trigger_thumbnail_backfill(series_id: str) -> None:
+    """Spawn a daemon thread that backfills missing episode metadata via AnimeAV1.
+
+    See routes.ingest_routes.backfill_episode_metadata for the actual work.
+    """
+    if series_id in _thumbnail_backfill_inflight:
+        return
+    _thumbnail_backfill_inflight.add(series_id)
+
+    def _run():
+        from routes.ingest_routes import backfill_episode_metadata
+        try:
+            backfill_episode_metadata(series_id)
+        finally:
+            _thumbnail_backfill_inflight.discard(series_id)
+
+    threading.Thread(target=_run, daemon=True).start()
+
 _SEASON_MONTHS: dict[str, tuple[int, int]] = {
     "winter": (1, 3),
     "spring": (4, 6),
@@ -328,6 +353,17 @@ def series_seasons(series_id: str):
             daemon=True,
         ).start()
 
+    # If a member's first episode has no thumbnail, its initial ingest likely
+    # fell back to Jikan-only metadata — silently re-scrape AnimeAV1 to backfill.
+    for member in members:
+        sid = member["id"]
+        if not member.get("principalSlug"):
+            continue
+        eps = episodes_by_series.get(sid, [])
+        if not eps or eps[0].get("thumbnailUrl"):
+            continue
+        _trigger_thumbnail_backfill(sid)
+
     payload = build_seasons(members, episodes_by_series, requested_series_id=series_id)
     # Franchise members with zero episodes are dropped from `seasons` (see
     # build_seasons), so `seasons.length` alone can't tell the caller whether
@@ -358,6 +394,11 @@ def series_episodes(series_id: str):
                 args=(series_id, series_row["principal_slug"], current_max_ep),
                 daemon=True,
             ).start()
+
+    # If the first episode has no thumbnail, this series' initial ingest likely
+    # fell back to Jikan-only metadata — silently re-scrape AnimeAV1 to backfill.
+    if series_row and series_row.get("principal_slug") and rows and not rows[0].get("thumbnail_url"):
+        _trigger_thumbnail_backfill(series_id)
 
     return jsonify([map_episode_row(r) for r in rows])
 

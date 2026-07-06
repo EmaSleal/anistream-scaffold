@@ -153,6 +153,40 @@ def _build_episodes_from_animeav1(
     return episodes
 
 
+def backfill_episode_metadata(series_id: str) -> int:
+    """Re-scrape AnimeAV1 (+ Kitsu/Jikan) to fill in missing episode metadata.
+
+    Triggered lazily from a series page visit when its first episode has no
+    thumbnail_url — this happens when a franchise member's initial ingest fell
+    back to Jikan-only metadata (AnimeAV1 title-search miss at ingest time, or
+    a principal_slug that was only set afterwards via the admin editor, which
+    never rebuilds episodes). Reuses the same Kitsu > AnimeAV1 merge priority
+    as ingest and upserts on the existing episode ids — refreshes titles/dates
+    too, but never creates or removes episodes.
+
+    Returns the number of episodes upserted, or 0 if nothing could be resolved
+    (no principal_slug, or the AnimeAV1 scrape came back empty).
+    """
+    from db.series import get_series_by_id
+
+    row = get_series_by_id(series_id)
+    if not row:
+        return 0
+    principal_slug = row.get("principal_slug")
+    if not principal_slug:
+        return 0
+
+    kitsu_id = row.get("kitsu_id")
+    mal_id = row.get("mal_id")
+    kitsu_eps = fetch_kitsu_episodes(kitsu_id) if kitsu_id else {}
+    jikan_titles = fetch_jikan_episodes(mal_id) if mal_id else {}
+
+    episodes = _build_episodes_from_animeav1(series_id, principal_slug, kitsu_eps, jikan_titles)
+    if not episodes:
+        return 0
+    return upsert_episodes(episodes)
+
+
 def _build_episodes(
     canonical_id: str,
     animeflv_slug: str,

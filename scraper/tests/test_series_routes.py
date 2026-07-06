@@ -74,14 +74,14 @@ def _series_row(
     }
 
 
-def _episode_row(id="ep1", series_id="s1", episode_number=1):
+def _episode_row(id="ep1", series_id="s1", episode_number=1, thumbnail_url="http://img.com/thumb.jpg"):
     return {
         "id": id,
         "series_id": series_id,
         "episode_number": episode_number,
         "title": f"Episode {episode_number}",
         "animeflv_slug": f"naruto-{episode_number}",
-        "thumbnail_url": None,
+        "thumbnail_url": thumbnail_url,
         "aired_at": None,
         "series": {"title": "Naruto"},
     }
@@ -335,6 +335,75 @@ class TestSeriesEpisodesSimulcastTrigger:
             args=("s1", "naruto", 0),
             daemon=True,
         )
+
+
+# ---------------------------------------------------------------------------
+# GET /api/series/<id>/episodes — background thumbnail-backfill trigger
+#
+# When the first episode has no thumbnail_url and the series has a
+# principal_slug, fetching the episode list spawns a daemon thread that calls
+# routes.ingest_routes.backfill_episode_metadata to re-scrape AnimeAV1.
+# ---------------------------------------------------------------------------
+
+
+class TestSeriesEpisodesThumbnailBackfillTrigger:
+    @pytest.fixture(autouse=True)
+    def _clear_inflight_guard(self):
+        """The in-process inflight set persists across tests when Thread is
+        mocked (the real thread body — which discards the guard — never runs).
+        Reset it before each test so guard state doesn't leak between tests."""
+        from routes.series_routes import _thumbnail_backfill_inflight
+        _thumbnail_backfill_inflight.clear()
+        yield
+        _thumbnail_backfill_inflight.clear()
+
+    def test_missing_thumbnail_spawns_backfill_thread(self, client):
+        rows = [_episode_row(id="ep1", episode_number=1, thumbnail_url=None)]
+        series_row = _simulcast_series_row(is_simulcast=False)
+
+        with patch("db.episodes.get_episodes_by_series", return_value=rows), \
+             patch("routes.series_routes.db_series.get_series_by_id", return_value=series_row), \
+             patch("routes.series_routes.threading.Thread") as mock_thread_cls:
+            res = client.get("/api/series/s1/episodes")
+
+        assert res.status_code == 200
+        mock_thread_cls.assert_called_once()
+        assert mock_thread_cls.call_args.kwargs["daemon"] is True
+
+    def test_thumbnail_present_no_backfill_thread(self, client):
+        rows = [_episode_row(id="ep1", episode_number=1, thumbnail_url="http://img.com/thumb.jpg")]
+        series_row = _simulcast_series_row(is_simulcast=False)
+
+        with patch("db.episodes.get_episodes_by_series", return_value=rows), \
+             patch("routes.series_routes.db_series.get_series_by_id", return_value=series_row), \
+             patch("routes.series_routes.threading.Thread") as mock_thread_cls:
+            res = client.get("/api/series/s1/episodes")
+
+        assert res.status_code == 200
+        mock_thread_cls.assert_not_called()
+
+    def test_no_principal_slug_no_backfill_thread(self, client):
+        rows = [_episode_row(id="ep1", episode_number=1, thumbnail_url=None)]
+        series_row = _simulcast_series_row(is_simulcast=False, principal_slug=None)
+
+        with patch("db.episodes.get_episodes_by_series", return_value=rows), \
+             patch("routes.series_routes.db_series.get_series_by_id", return_value=series_row), \
+             patch("routes.series_routes.threading.Thread") as mock_thread_cls:
+            res = client.get("/api/series/s1/episodes")
+
+        assert res.status_code == 200
+        mock_thread_cls.assert_not_called()
+
+    def test_no_episodes_no_backfill_thread(self, client):
+        series_row = _simulcast_series_row(is_simulcast=False)
+
+        with patch("db.episodes.get_episodes_by_series", return_value=[]), \
+             patch("routes.series_routes.db_series.get_series_by_id", return_value=series_row), \
+             patch("routes.series_routes.threading.Thread") as mock_thread_cls:
+            res = client.get("/api/series/s1/episodes")
+
+        assert res.status_code == 200
+        mock_thread_cls.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
