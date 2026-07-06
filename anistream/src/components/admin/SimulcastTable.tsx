@@ -5,7 +5,6 @@ import { useRouter } from "next/navigation";
 import {
   type SimulcastSeries,
   type SyncResult,
-  updateSimulcastSlug,
   updateSimulcastPrincipalSlug,
   syncFromJikan,
 } from "@/app/actions/simulcast-admin";
@@ -30,11 +29,6 @@ type SortDirection = "asc" | "desc";
 export default function SimulcastTable({ series }: Props) {
   const router = useRouter();
   const [rows, setRows] = useState<SimulcastSeries[]>(series);
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const cancelledRef = useRef(false);
-  const slugInputRef = useRef<HTMLInputElement>(null);
-  const [editValue, setEditValue] = useState<string>("");
-  const [slugError, setSlugError] = useState<string | null>(null);
 
   const [editingPrincipalId, setEditingPrincipalId] = useState<string | null>(null);
   const principalCancelledRef = useRef(false);
@@ -50,55 +44,6 @@ export default function SimulcastTable({ series }: Props) {
   const [syncing, startSync] = useTransition();
   const [syncResult, setSyncResult] = useState<SyncResult | null>(null);
   const [syncError, setSyncError] = useState<string | null>(null);
-
-  function startEdit(row: SimulcastSeries) {
-    setEditingId(row.id);
-    setEditValue(row.animeflvSlug ?? "");
-    setSlugError(null);
-  }
-
-  function cancelEdit() {
-    cancelledRef.current = true;
-    setEditingId(null);
-    setEditValue("");
-    setSlugError(null);
-  }
-
-  async function handleSave(row: SimulcastSeries) {
-    if (cancelledRef.current) {
-      cancelledRef.current = false;
-      return;
-    }
-    const trimmed = editValue.trim() || null;
-    setEditingId(null);
-
-    // Optimistic update
-    const previous = rows;
-    setRows((prev) =>
-      prev.map((r) => (r.id === row.id ? { ...r, animeflvSlug: trimmed } : r)),
-    );
-
-    try {
-      await updateSimulcastSlug(row.id, trimmed);
-    } catch (err) {
-      // Revert on failure
-      setRows(previous);
-      setSlugError(
-        err instanceof Error ? err.message : "Failed to save slug",
-      );
-    }
-  }
-
-  function handleKeyDown(
-    e: React.KeyboardEvent<HTMLInputElement>,
-  ) {
-    if (e.key === "Enter") {
-      e.preventDefault();
-      e.currentTarget.blur(); // onBlur → handleSave (single code path, avoids double-save)
-    } else if (e.key === "Escape") {
-      cancelEdit();
-    }
-  }
 
   function startPrincipalEdit(row: SimulcastSeries) {
     setEditingPrincipalId(row.id);
@@ -256,22 +201,6 @@ export default function SimulcastTable({ series }: Props) {
         </button>
       </div>
 
-      {slugError && (
-        <div
-          style={{
-            marginBottom: "1rem",
-            padding: "0.75rem",
-            background: "color-mix(in srgb, #ef4444 15%, transparent)",
-            border: "1px solid color-mix(in srgb, #ef4444 40%, transparent)",
-            borderRadius: "var(--radius-md)",
-            fontSize: "0.875rem",
-            color: "#fca5a5",
-          }}
-        >
-          {slugError}
-        </div>
-      )}
-
       {principalSlugError && (
         <div
           style={{
@@ -337,7 +266,6 @@ export default function SimulcastTable({ series }: Props) {
               }}
             >
               <SortableHeader label="Title" sortKeyVal="title" />
-              <th style={{ padding: "0.5rem 0.75rem", fontWeight: 600 }}>AnimeFlv Slug</th>
               <th style={{ padding: "0.5rem 0.75rem", fontWeight: 600 }}>Principal Slug (AnimeAV1)</th>
               <th style={{ padding: "0.5rem 0.75rem", fontWeight: 600 }}>MAL ID</th>
               <SortableHeader label="Score" sortKeyVal="score" />
@@ -351,54 +279,6 @@ export default function SimulcastTable({ series }: Props) {
                 style={{ borderBottom: "1px solid var(--color-border)" }}
               >
                 <td style={{ padding: "0.5rem 0.75rem" }}>{row.title}</td>
-                <td style={{ padding: "0.5rem 0.75rem" }}>
-                  {editingId === row.id ? (
-                    <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
-                      <AnimeFlvSlugSearch
-                        onSelect={(slug) => {
-                          setEditValue(slug);
-                          setTimeout(() => slugInputRef.current?.focus(), 0);
-                        }}
-                        disabled={false}
-                      />
-                      <input
-                        ref={slugInputRef}
-                        value={editValue}
-                        onChange={(e) => setEditValue(e.target.value)}
-                        onKeyDown={(e) => handleKeyDown(e)}
-                        onBlur={() => void handleSave(row)}
-                        style={{
-                          padding: "0.25rem 0.5rem",
-                          background: "var(--color-bg-surface)",
-                          border: "1px solid var(--color-brand)",
-                          borderRadius: "var(--radius-md)",
-                          color: "var(--color-text-primary)",
-                          fontSize: "0.875rem",
-                          fontFamily: "inherit",
-                          width: "100%",
-                          outline: "none",
-                        }}
-                      />
-                    </div>
-                  ) : (
-                    <span
-                      onClick={() => startEdit(row)}
-                      style={{
-                        cursor: "pointer",
-                        color: row.animeflvSlug
-                          ? "var(--color-text-primary)"
-                          : "var(--color-text-secondary)",
-                        display: "inline-flex",
-                        alignItems: "center",
-                        gap: "0.4rem",
-                      }}
-                      title="Click to edit"
-                    >
-                      {row.animeflvSlug ?? "—"}
-                      <span style={{ fontSize: "0.75rem", opacity: 0.6 }}>✎</span>
-                    </span>
-                  )}
-                </td>
                 <td style={{ padding: "0.5rem 0.75rem" }}>
                   {editingPrincipalId === row.id ? (
                     <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
@@ -461,7 +341,7 @@ export default function SimulcastTable({ series }: Props) {
             {rows.length === 0 && (
               <tr>
                 <td
-                  colSpan={6}
+                  colSpan={5}
                   style={{
                     padding: "2rem",
                     textAlign: "center",

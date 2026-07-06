@@ -16,7 +16,7 @@ def get_series_simulcast_data(series_id: str) -> dict | None:
     """Return the simulcast-relevant columns for a series row.
 
     Fetches: id, kitsu_id, broadcast_day, broadcast_time, broadcast_timezone,
-             episode_count, last_simulcast_check, animeflv_slug.
+             episode_count, last_simulcast_check, principal_slug.
 
     Args:
         series_id: The series ``id`` (slug-based primary key).
@@ -29,7 +29,7 @@ def get_series_simulcast_data(series_id: str) -> dict | None:
         client.table("series")
         .select(
             "id, kitsu_id, broadcast_day, broadcast_time, broadcast_timezone, "
-            "episode_count, last_simulcast_check, animeflv_slug"
+            "episode_count, last_simulcast_check, principal_slug"
         )
         .eq("id", series_id)
         .maybe_single()
@@ -91,7 +91,7 @@ def get_due_simulcast_series() -> list[dict]:
     surviving candidates (same technique as ``db.progress.get_series_simulcast_meta``).
 
     Returns:
-        A list of dicts with keys: ``id``, ``animeflv_slug``, ``mal_id``,
+        A list of dicts with keys: ``id``, ``principal_slug``, ``mal_id``,
         ``kitsu_id``, ``max_episode_number`` (int or None).
     """
     client = storage.get_client()
@@ -99,7 +99,7 @@ def get_due_simulcast_series() -> list[dict]:
     # Fetch all simulcast series that have a principal_slug (AnimeAV1-integrated).
     result = (
         client.table("series")
-        .select("id, animeflv_slug, mal_id, kitsu_id, last_simulcast_check")
+        .select("id, principal_slug, mal_id, kitsu_id, last_simulcast_check")
         .eq("is_simulcast", True)
         .not_.is_("principal_slug", "null")
         .execute()
@@ -141,7 +141,7 @@ def get_due_simulcast_series() -> list[dict]:
     return [
         {
             "id": row["id"],
-            "animeflv_slug": row["animeflv_slug"],
+            "principal_slug": row["principal_slug"],
             "mal_id": row.get("mal_id"),
             "kitsu_id": row.get("kitsu_id"),
             "max_episode_number": max_ep_map.get(row["id"]),

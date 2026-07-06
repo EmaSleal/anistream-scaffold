@@ -54,7 +54,7 @@ def run_simulcast_daily_check() -> None:
            a. If a MAL ID is available, call ``refresh_series_from_jikan()``
               to update ``is_simulcast``, broadcast fields, and
               ``last_simulcast_check``.
-           b. Call ``run_simulcast_update()`` to scrape AnimeFlv, upsert any
+           b. Call ``run_simulcast_update()`` to scrape AnimeAV1, upsert any
               new episodes, and stamp the cooldown unconditionally.
       4. Log a summary line (processed / errors).
     """
@@ -79,7 +79,7 @@ def run_simulcast_daily_check() -> None:
 
     for series in candidates:
         series_id: str = series["id"]
-        animeflv_slug: str = series["animeflv_slug"]
+        principal_slug: str = series["principal_slug"]
         mal_id: int | None = series.get("mal_id")
         kitsu_id: str | None = series.get("kitsu_id")
         max_ep: int = series.get("max_episode_number") or 0
@@ -87,14 +87,14 @@ def run_simulcast_daily_check() -> None:
         try:
             # Refresh Jikan metadata (is_simulcast, broadcast fields) and stamp
             # last_simulcast_check.  Skip when no MAL ID is stored — the series
-            # can still get episode-upserts via the AnimeFlv scrape below.
+            # can still get episode-upserts via the AnimeAV1 scrape below.
             if mal_id is not None:
                 refresh_series_from_jikan(series_id, mal_id, kitsu_id)
 
-            # Scrape AnimeFlv, upsert new episodes, stamp cooldown.
+            # Scrape AnimeAV1, upsert new episodes, stamp cooldown.
             # run_simulcast_update handles its own internal try/finally cooldown
             # stamp, so even on failure the series won't be re-checked immediately.
-            run_simulcast_update(series_id, animeflv_slug, max_ep)
+            run_simulcast_update(series_id, principal_slug, max_ep)
 
             processed += 1
         except Exception as exc:

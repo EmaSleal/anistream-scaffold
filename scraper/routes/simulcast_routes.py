@@ -9,7 +9,6 @@ POST /api/simulcast/refresh/<series_id>
 
 Admin endpoints (require @require_admin):
   GET  /api/simulcast/list                  — list all simulcast series (camelCase DTO)
-  PATCH /api/simulcast/<id>/slug            — update animeflv_slug for a series
   PATCH /api/simulcast/<id>/principal-slug  — update principal_slug for a series
   POST /api/simulcast/sync-jikan            — sync DB with Jikan seasons/now
 """
@@ -24,7 +23,7 @@ from db.series import get_series_list, get_series_by_id, upsert_series_stub
 from db.simulcast import get_series_simulcast_data, update_simulcast_fields
 from domain.jikan_refresh import refresh_series_from_jikan
 from fetcher import fetch_kitsu_series_status, fetch_kitsu_episodes, fetch_jikan_episodes, fetch_simulcasts
-from routes.ingest_routes import _build_episodes
+from routes.ingest_routes import _build_episodes_from_animeav1
 from storage import get_series_by_mal_id, get_client, upsert_episodes
 
 simulcast_bp = Blueprint("simulcast", __name__, url_prefix="/api/simulcast")
@@ -117,7 +116,7 @@ def refresh_simulcast(series_id: str):
     # 3. Extract stored DB values
     kitsu_id = row.get("kitsu_id")
     db_episode_count = row.get("episode_count") or 0
-    animeflv_slug = row.get("animeflv_slug")
+    principal_slug = row.get("principal_slug")
 
     # 4. Resolve mal_id — stored on the series row (previously done inline inside
     #    the Jikan fetch block; lifted here so it can be passed to the domain helper).
@@ -157,11 +156,11 @@ def refresh_simulcast(series_id: str):
 
     # 6. Auto-ingest new episodes when Jikan reports more than what is stored
     episodes_ingested = 0
-    if jikan_episode_count > db_episode_count and animeflv_slug and mal_id is not None:
+    if jikan_episode_count > db_episode_count and principal_slug and mal_id is not None:
         try:
             kitsu_eps = fetch_kitsu_episodes(kitsu_id) if kitsu_id else {}
             jikan_titles = fetch_jikan_episodes(mal_id)
-            new_episodes = _build_episodes(series_id, animeflv_slug, kitsu_eps, jikan_titles)
+            new_episodes = _build_episodes_from_animeav1(series_id, principal_slug, kitsu_eps, jikan_titles)
             _fill_aired_at_from_cadence(new_episodes)
             if new_episodes:
                 episodes_ingested = upsert_episodes(new_episodes)
@@ -194,7 +193,7 @@ def list_simulcast():
     mapped to a camelCase DTO.
 
     Returns:
-        200  [{id, title, animeflvSlug, principalSlug, malId, isSimulcast, lastSimulcastCheck}]
+        200  [{id, title, principalSlug, malId, isSimulcast, lastSimulcastCheck}]
         401/403  via @require_admin
     """
     rows = get_series_list(simulcast=True, sort="title", limit=200)
@@ -202,7 +201,6 @@ def list_simulcast():
         {
             "id": r["id"],
             "title": r["title"],
-            "animeflvSlug": r.get("animeflv_slug"),
             "principalSlug": r.get("principal_slug"),
             "malId": r.get("mal_id"),
             "isSimulcast": r.get("is_simulcast"),
@@ -211,34 +209,6 @@ def list_simulcast():
         }
         for r in rows
     ]), 200
-
-
-@simulcast_bp.patch("/<series_id>/slug")
-@require_admin
-def update_slug(series_id: str):
-    """PATCH /api/simulcast/<series_id>/slug
-
-    Updates animeflv_slug for the given series.
-
-    Request body: {"slug": "<value>"}  — value may be "" or null to clear the field.
-
-    Returns:
-        200  {id, animeflvSlug}
-        400  {"error": "Missing 'slug' field"}  — if body lacks the key entirely
-        404  {"error": "Series not found"}
-        401/403  via @require_admin
-    """
-    body = request.get_json(silent=True) or {}
-    if "slug" not in body:
-        return jsonify({"error": "Missing 'slug' field"}), 400
-
-    if get_series_by_id(series_id) is None:
-        return jsonify({"error": "Series not found"}), 404
-
-    # Allow empty string or None to clear the field
-    slug = body.get("slug") or None
-    get_client().table("series").update({"animeflv_slug": slug}).eq("id", series_id).execute()
-    return jsonify({"id": series_id, "animeflvSlug": slug}), 200
 
 
 @simulcast_bp.patch("/<series_id>/principal-slug")

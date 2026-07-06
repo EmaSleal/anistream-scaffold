@@ -315,7 +315,7 @@ def series_seasons(series_id: str):
     from simulcast_check import run_simulcast_update
 
     for member in members:
-        if not member.get("isSimulcast") or not member.get("animeflvSlug"):
+        if not member.get("isSimulcast") or not member.get("principalSlug"):
             continue
         if not cooldown_elapsed(member.get("lastSimulcastCheck")):
             continue
@@ -324,7 +324,7 @@ def series_seasons(series_id: str):
         current_max_ep = max((e.get("episode", 0) for e in eps), default=0)
         threading.Thread(
             target=run_simulcast_update,
-            args=(sid, member["animeflvSlug"], current_max_ep),
+            args=(sid, member["principalSlug"], current_max_ep),
             daemon=True,
         ).start()
 
@@ -350,12 +350,12 @@ def series_episodes(series_id: str):
     # If this is a simulcast series and conditions are met, discover new episodes
     # in the background — works even when the user has no watch_progress.
     series_row = db_series.get_series_by_id(series_id)
-    if series_row and series_row.get("is_simulcast") and series_row.get("animeflv_slug"):
+    if series_row and series_row.get("is_simulcast") and series_row.get("principal_slug"):
         if cooldown_elapsed(series_row.get("last_simulcast_check")):
             current_max_ep = max((r["episode_number"] for r in rows), default=0)
             threading.Thread(
                 target=run_simulcast_update,
-                args=(series_id, series_row["animeflv_slug"], current_max_ep),
+                args=(series_id, series_row["principal_slug"], current_max_ep),
                 daemon=True,
             ).start()
 

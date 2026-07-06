@@ -177,7 +177,7 @@ def upsert_series_stub(mal_id: int, entry: dict | None = None) -> None:
     """Fetch full Jikan data for mal_id and upsert a metadata-only stub series.
 
     If entry is provided (from seasons/now), use it as a fallback when individual
-    fetch fails. The stub will have animeflv_slug=None (no playable source yet).
+    fetch fails. The stub will have principal_slug=None (no playable source yet).
     Errors are caught and logged; this function never raises.
     """
     import logging

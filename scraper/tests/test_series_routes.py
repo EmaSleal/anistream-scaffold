@@ -68,7 +68,7 @@ def _series_row(
         "franchise_id": franchise_id,
         "season_order": season_order,
         "franchise_relation": None,
-        "animeflv_slug": "naruto",
+        "principal_slug": "naruto",
         "fallback_slug": None,
         "animeflv_disabled": False,
     }
@@ -236,7 +236,7 @@ class TestSeriesEpisodes:
 # ---------------------------------------------------------------------------
 # GET /api/series/<id>/episodes — background simulcast-refresh trigger
 #
-# When the series is a simulcast with an animeflv_slug and its cooldown has
+# When the series is a simulcast with a principal_slug and its cooldown has
 # elapsed, fetching the episode list spawns a daemon thread that calls
 # simulcast_check.run_simulcast_update to discover new episodes. This is the
 # feature's current trigger point (moved here from the old continue-watching
@@ -249,20 +249,20 @@ from simulcast_check import run_simulcast_update
 
 def _simulcast_series_row(
     is_simulcast=True,
-    animeflv_slug="naruto",
+    principal_slug="naruto",
     last_simulcast_check=None,
 ):
     return {
         "id": "s1",
         "is_simulcast": is_simulcast,
-        "animeflv_slug": animeflv_slug,
+        "principal_slug": principal_slug,
         "last_simulcast_check": last_simulcast_check,
     }
 
 
 class TestSeriesEpisodesSimulcastTrigger:
     def test_simulcast_series_cooldown_elapsed_spawns_thread(self, client):
-        """is_simulcast + animeflv_slug + cooldown elapsed → thread spawned with correct args."""
+        """is_simulcast + principal_slug + cooldown elapsed → thread spawned with correct args."""
         rows = [_episode_row(id="ep1", episode_number=1), _episode_row(id="ep2", episode_number=2)]
         series_row = _simulcast_series_row(last_simulcast_check=None)  # None → cooldown elapsed
 
@@ -294,9 +294,9 @@ class TestSeriesEpisodesSimulcastTrigger:
         assert res.status_code == 200
         mock_thread_cls.assert_not_called()
 
-    def test_missing_animeflv_slug_no_thread(self, client):
+    def test_missing_principal_slug_no_thread(self, client):
         rows = [_episode_row(id="ep1", episode_number=1)]
-        series_row = _simulcast_series_row(animeflv_slug=None)
+        series_row = _simulcast_series_row(principal_slug=None)
 
         with patch("db.episodes.get_episodes_by_series", return_value=rows), \
              patch("routes.series_routes.db_series.get_series_by_id", return_value=series_row), \
@@ -477,7 +477,7 @@ class TestRecommendationsEndpoint:
             "franchise_id": None,
             "season_order": 1,
             "franchise_relation": None,
-            "animeflv_slug": "naruto",
+            "principal_slug": "naruto",
             "fallback_slug": None,
             "animeflv_disabled": False,
         }

@@ -32,7 +32,7 @@ def make_series(
     score=7.5,
     thumbnail_url="http://example.com/thumb.jpg",
     is_featured=False,
-    animeflv_slug=None,
+    principal_slug=None,
 ):
     return {
         "id": id,
@@ -55,7 +55,7 @@ def make_series(
         "franchise_id": franchise_id,
         "season_order": season_order,
         "franchise_relation": None,
-        "animeflv_slug": animeflv_slug,
+        "principal_slug": principal_slug,
         "fallback_slug": None,
         "animeflv_disabled": False,
     }

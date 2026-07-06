@@ -24,7 +24,7 @@ function makeSeries(id: string, genres: string[]): Series {
     isFeatured: false,
     score: undefined,
     malId: undefined,
-    animeflvSlug: undefined,
+    principalSlug: undefined,
     franchiseId: undefined,
     seasonOrder: undefined,
     franchiseRelation: undefined,

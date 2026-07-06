@@ -48,7 +48,7 @@ def _series_simulcast_row(
     broadcast_timezone="Asia/Tokyo",
     episode_count=8,
     last_simulcast_check=None,
-    animeflv_slug="my-series",
+    principal_slug="my-series",
 ):
     return {
         "id": series_id,
@@ -58,7 +58,7 @@ def _series_simulcast_row(
         "broadcast_timezone": broadcast_timezone,
         "episode_count": episode_count,
         "last_simulcast_check": last_simulcast_check,
-        "animeflv_slug": animeflv_slug,
+        "principal_slug": principal_slug,
     }
 
 
@@ -280,8 +280,8 @@ class TestAutoIngest:
         fake_episodes = [{"id": f"ep{i}"} for i in range(10)]
 
         # Phase 1 moved Jikan/Kitsu calls into domain.jikan_refresh — patch there.
-        # fetch_kitsu_episodes, fetch_jikan_episodes, _build_episodes, and upsert_episodes
-        # are still called directly from simulcast_routes so those patches stay unchanged.
+        # fetch_kitsu_episodes, fetch_jikan_episodes, _build_episodes_from_animeav1, and
+        # upsert_episodes are still called directly from simulcast_routes so those patches stay unchanged.
         with patch("routes.simulcast_routes.get_series_simulcast_data", return_value=row), \
              patch("routes.simulcast_routes.update_simulcast_fields"), \
              patch("storage.get_client", return_value=mock_client), \
@@ -289,7 +289,7 @@ class TestAutoIngest:
              patch("domain.jikan_refresh.fetch_kitsu_series_status", return_value="current"), \
              patch("routes.simulcast_routes.fetch_kitsu_episodes", return_value={}), \
              patch("routes.simulcast_routes.fetch_jikan_episodes", return_value={}), \
-             patch("routes.simulcast_routes._build_episodes", return_value=fake_episodes), \
+             patch("routes.simulcast_routes._build_episodes_from_animeav1", return_value=fake_episodes), \
              patch("routes.simulcast_routes.upsert_episodes", return_value=2):
             res = client.post(
                 "/api/simulcast/refresh/my-series",

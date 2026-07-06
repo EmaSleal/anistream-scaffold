@@ -182,7 +182,7 @@ def get_series_simulcast_meta(series_ids: list[str]) -> dict[str, dict]:
 
     Returns:
         A dict keyed by series_id. Each value contains:
-          ``id``, ``is_simulcast``, ``animeflv_slug``, ``broadcast_day``,
+          ``id``, ``is_simulcast``, ``principal_slug``, ``broadcast_day``,
           ``broadcast_time``, ``broadcast_timezone``, ``last_simulcast_check``,
           ``max_episode_number`` (int | None — the highest episode_number in DB
           for that series, or None if no episodes exist).
@@ -197,7 +197,7 @@ def get_series_simulcast_meta(series_ids: list[str]) -> dict[str, dict]:
     series_result = (
         client.table("series")
         .select(
-            "id, is_simulcast, animeflv_slug, broadcast_day, broadcast_time, "
+            "id, is_simulcast, principal_slug, broadcast_day, broadcast_time, "
             "broadcast_timezone, last_simulcast_check"
         )
         .in_("id", series_ids)
@@ -210,7 +210,7 @@ def get_series_simulcast_meta(series_ids: list[str]) -> dict[str, dict]:
         meta[sid] = {
             "id": sid,
             "is_simulcast": row.get("is_simulcast") or False,
-            "animeflv_slug": row.get("animeflv_slug"),
+            "principal_slug": row.get("principal_slug"),
             "broadcast_day": row.get("broadcast_day"),
             "broadcast_time": row.get("broadcast_time"),
             "broadcast_timezone": row.get("broadcast_timezone"),

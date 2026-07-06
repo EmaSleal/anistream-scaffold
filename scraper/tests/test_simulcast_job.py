@@ -183,7 +183,7 @@ class TestGetDueSimulcastSeries:
 
         row = {
             "id": "s1",
-            "animeflv_slug": "slug1",
+            "principal_slug": "slug1",
             "mal_id": 42,
             "kitsu_id": None,
             "last_simulcast_check": None,
@@ -205,7 +205,7 @@ class TestGetDueSimulcastSeries:
         today_noon_cr = today_cr.replace(hour=12, minute=0, second=0, microsecond=0)
         row = {
             "id": "s1",
-            "animeflv_slug": "slug1",
+            "principal_slug": "slug1",
             "mal_id": 42,
             "kitsu_id": None,
             "last_simulcast_check": today_noon_cr.isoformat(),
@@ -217,12 +217,12 @@ class TestGetDueSimulcastSeries:
         assert result == []
 
     def test_return_shape_has_required_keys(self):
-        """Result dicts include id, animeflv_slug, mal_id, kitsu_id, max_episode_number."""
+        """Result dicts include id, principal_slug, mal_id, kitsu_id, max_episode_number."""
         from db.simulcast import get_due_simulcast_series
 
         row = {
             "id": "s1",
-            "animeflv_slug": "slug1",
+            "principal_slug": "slug1",
             "mal_id": 42,
             "kitsu_id": "k1",
             "last_simulcast_check": None,
@@ -233,7 +233,7 @@ class TestGetDueSimulcastSeries:
 
         assert len(result) == 1
         item = result[0]
-        for key in ("id", "animeflv_slug", "mal_id", "kitsu_id", "max_episode_number"):
+        for key in ("id", "principal_slug", "mal_id", "kitsu_id", "max_episode_number"):
             assert key in item, f"Result dict is missing key '{key}'"
 
     def test_max_episode_number_from_batched_episodes_query(self):
@@ -242,7 +242,7 @@ class TestGetDueSimulcastSeries:
 
         row = {
             "id": "s1",
-            "animeflv_slug": "slug1",
+            "principal_slug": "slug1",
             "mal_id": None,
             "kitsu_id": None,
             "last_simulcast_check": None,
@@ -292,8 +292,8 @@ class TestRunSimulcastDailyCheck:
         from jobs.simulcast_job import run_simulcast_daily_check
 
         candidates = [
-            {"id": "s1", "animeflv_slug": "a", "mal_id": 1, "kitsu_id": None, "max_episode_number": 3},
-            {"id": "s2", "animeflv_slug": "b", "mal_id": 2, "kitsu_id": None, "max_episode_number": 5},
+            {"id": "s1", "principal_slug": "a", "mal_id": 1, "kitsu_id": None, "max_episode_number": 3},
+            {"id": "s2", "principal_slug": "b", "mal_id": 2, "kitsu_id": None, "max_episode_number": 5},
         ]
         with patch("jobs.simulcast_job._within_cr_window", return_value=True), \
              patch("db.simulcast.get_due_simulcast_series", return_value=candidates), \
@@ -311,7 +311,7 @@ class TestRunSimulcastDailyCheck:
         from jobs.simulcast_job import run_simulcast_daily_check
 
         candidates = [
-            {"id": "s1", "animeflv_slug": "a-slug", "mal_id": 10, "kitsu_id": "k1", "max_episode_number": 5},
+            {"id": "s1", "principal_slug": "a-slug", "mal_id": 10, "kitsu_id": "k1", "max_episode_number": 5},
         ]
         with patch("jobs.simulcast_job._within_cr_window", return_value=True), \
              patch("db.simulcast.get_due_simulcast_series", return_value=candidates), \
@@ -327,7 +327,7 @@ class TestRunSimulcastDailyCheck:
         from jobs.simulcast_job import run_simulcast_daily_check
 
         candidates = [
-            {"id": "s1", "animeflv_slug": "a-slug", "mal_id": None, "kitsu_id": None, "max_episode_number": None},
+            {"id": "s1", "principal_slug": "a-slug", "mal_id": None, "kitsu_id": None, "max_episode_number": None},
         ]
         with patch("jobs.simulcast_job._within_cr_window", return_value=True), \
              patch("db.simulcast.get_due_simulcast_series", return_value=candidates), \
@@ -337,7 +337,7 @@ class TestRunSimulcastDailyCheck:
 
         # No MAL ID → Jikan refresh skipped
         mock_refresh.assert_not_called()
-        # AnimeFlv scrape still runs; max_episode_number=None resolves to 0
+        # AnimeAV1 scrape still runs; max_episode_number=None resolves to 0
         mock_update.assert_called_once_with("s1", "a-slug", 0)
 
 

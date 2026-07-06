@@ -6,7 +6,7 @@ isolation without a running Flask app.
 
 Public API
 ----------
-run_simulcast_check(user_id, series_id, animeflv_slug, current_max_ep)
+run_simulcast_check(user_id, series_id, principal_slug, current_max_ep)
     Call from a daemon thread spawned inside the continue_watching route.
     Never call thread.join() on it — the route must return immediately.
 """
@@ -114,17 +114,17 @@ def _resolve_aired_at(
 def run_simulcast_check(
     user_id: str,
     series_id: str,
-    animeflv_slug: str,
+    principal_slug: str,
     current_max_ep: int,
 ) -> None:
-    """Scrape AnimeFlv for the series, upsert any new episode, and seed progress.
+    """Scrape AnimeAV1 for the series, upsert any new episode, and seed progress.
 
     This function is designed to run in a daemon thread spawned from the
     continue_watching route. It MUST NOT access Flask ``g`` — ``user_id``
     is passed explicitly as an argument.
 
     Steps (executed unconditionally — cooldown stamp always happens):
-      1. Scrape episode list from AnimeFlv.
+      1. Scrape episode list from AnimeAV1.
       2. Compare the maximum scraped episode number against ``current_max_ep``.
       3. If new episodes exist:
            a. Upsert each new episode row via ``storage.upsert_episode``.
@@ -139,17 +139,17 @@ def run_simulcast_check(
     Args:
         user_id:         Authenticated user's ID captured in request scope.
         series_id:       Series primary key (slug-based).
-        animeflv_slug:   AnimeFlv URL slug for the series page.
+        principal_slug:  AnimeAV1 slug for the series.
         current_max_ep:  Highest episode_number currently in the DB for this series.
     """
     mal_id = _get_series_mal_id(series_id)
 
     try:
-        scraped_episodes = scrape_animeav1_episodes(animeflv_slug)
+        scraped_episodes = scrape_animeav1_episodes(principal_slug)
     except Exception as exc:
         logger.warning(
             "simulcast_check: scrape_episode_list failed for series=%r slug=%r: %s",
-            series_id, animeflv_slug, exc,
+            series_id, principal_slug, exc,
         )
         _stamp_cooldown(series_id)
         return
@@ -158,7 +158,6 @@ def run_simulcast_check(
         _process_scraped_episodes(
             scraped_episodes=scraped_episodes,
             series_id=series_id,
-            animeflv_slug=animeflv_slug,
             user_id=user_id,
             current_max_ep=current_max_ep,
             mal_id=mal_id,
@@ -179,7 +178,7 @@ def run_simulcast_check(
 
 def run_simulcast_update(
     series_id: str,
-    animeflv_slug: str,
+    principal_slug: str,
     current_max_ep: int,
 ) -> None:
     """Like run_simulcast_check but without seeding watch_progress.
@@ -190,11 +189,11 @@ def run_simulcast_update(
     mal_id = _get_series_mal_id(series_id)
 
     try:
-        scraped_episodes = scrape_animeav1_episodes(animeflv_slug)
+        scraped_episodes = scrape_animeav1_episodes(principal_slug)
     except Exception as exc:
         logger.warning(
             "simulcast_check: scrape_episode_list failed for series=%r slug=%r: %s",
-            series_id, animeflv_slug, exc,
+            series_id, principal_slug, exc,
         )
         _stamp_cooldown(series_id)
         return
@@ -203,7 +202,6 @@ def run_simulcast_update(
         _process_scraped_episodes(
             scraped_episodes=scraped_episodes,
             series_id=series_id,
-            animeflv_slug=animeflv_slug,
             user_id=None,
             current_max_ep=current_max_ep,
             mal_id=mal_id,
@@ -221,7 +219,6 @@ def _process_scraped_episodes(
     *,
     scraped_episodes: list[dict],
     series_id: str,
-    animeflv_slug: str,
     user_id: str | None,
     current_max_ep: int,
     mal_id: int | None,
@@ -257,7 +254,9 @@ def _process_scraped_episodes(
             "episode_number": ep_num,
             "title": ep.get("title"),
             "thumbnail_url": ep.get("thumbnail_url"),
-            "animeflv_slug": f"{animeflv_slug}-{ep_num}",
+            # AnimeAV1-sourced episodes have no AnimeFlv slug — matches the
+            # convention in _build_episodes_from_animeav1 (ingest_routes.py).
+            "animeflv_slug": None,
             "aired_at": _resolve_aired_at(mal_id, ep_num, series_id, current_max_ep),
         })
 

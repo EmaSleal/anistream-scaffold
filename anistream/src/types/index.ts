@@ -41,7 +41,7 @@ export interface Series {
   isFeatured: boolean;
   score?: number;
   malId?: number;
-  animeflvSlug?: string;
+  principalSlug?: string;
   franchiseId?: string;
   seasonOrder?: number;
   franchiseRelation?: string;

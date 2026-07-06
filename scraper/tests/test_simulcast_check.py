@@ -259,7 +259,7 @@ class TestGetSeriesSimulcastMeta:
             {
                 "id": "attack-on-titan",
                 "is_simulcast": True,
-                "animeflv_slug": "shingeki-no-kyojin",
+                "principal_slug": "shingeki-no-kyojin",
                 "broadcast_day": "Saturdays",
                 "broadcast_time": "00:10",
                 "broadcast_timezone": "Asia/Tokyo",
@@ -279,7 +279,7 @@ class TestGetSeriesSimulcastMeta:
         assert "attack-on-titan" in result
         row = result["attack-on-titan"]
         assert row["is_simulcast"] is True
-        assert row["animeflv_slug"] == "shingeki-no-kyojin"
+        assert row["principal_slug"] == "shingeki-no-kyojin"
         assert row["broadcast_day"] == "Saturdays"
         assert row["max_episode_number"] == 7
 
@@ -290,7 +290,7 @@ class TestGetSeriesSimulcastMeta:
             {
                 "id": "new-series",
                 "is_simulcast": True,
-                "animeflv_slug": "new-slug",
+                "principal_slug": "new-slug",
                 "broadcast_day": None,
                 "broadcast_time": None,
                 "broadcast_timezone": None,
@@ -308,10 +308,10 @@ class TestGetSeriesSimulcastMeta:
         from db.progress import get_series_simulcast_meta
 
         series_rows = [
-            {"id": "s1", "is_simulcast": True, "animeflv_slug": "slug1",
+            {"id": "s1", "is_simulcast": True, "principal_slug": "slug1",
              "broadcast_day": None, "broadcast_time": None,
              "broadcast_timezone": None, "last_simulcast_check": None},
-            {"id": "s2", "is_simulcast": False, "animeflv_slug": None,
+            {"id": "s2", "is_simulcast": False, "principal_slug": None,
              "broadcast_day": None, "broadcast_time": None,
              "broadcast_timezone": None, "last_simulcast_check": None},
         ]
@@ -357,7 +357,7 @@ class TestRunSimulcastCheck:
             "episode_number": 6,
             "title": "Episode 6",
             "thumbnail_url": None,
-            "animeflv_slug": "series-x-slug-6",
+            "animeflv_slug": None,
             "aired_at": "2026-06-03",
         })
         mock_upsert_prog.assert_called_once_with(

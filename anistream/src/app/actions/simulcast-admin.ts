@@ -5,7 +5,6 @@ import { cookies } from "next/headers";
 export interface SimulcastSeries {
   id: string;
   title: string;
-  animeflvSlug: string | null;
   principalSlug: string | null;
   malId: number | null;
   isSimulcast: boolean;
@@ -49,37 +48,6 @@ export async function getSimulcastSeries(): Promise<SimulcastSeries[]> {
   }
 
   return res.json() as Promise<SimulcastSeries[]>;
-}
-
-/**
- * Update the animeflv_slug for a simulcast series.
- * Pass null or empty string to clear the field.
- */
-export async function updateSimulcastSlug(
-  seriesId: string,
-  slug: string | null,
-): Promise<{ id: string; animeflvSlug: string | null }> {
-  const cookieStore = await cookies();
-  const appUrl = getAppUrl();
-
-  const res = await fetch(`${appUrl}/api/admin/simulcast/${seriesId}/slug`, {
-    method: "PATCH",
-    headers: {
-      "Content-Type": "application/json",
-      Cookie: cookieStore.toString(),
-    },
-    body: JSON.stringify({ slug }),
-    cache: "no-store",
-  });
-
-  if (!res.ok) {
-    const data = await res.json().catch(() => ({}));
-    throw new Error(
-      (data as { error?: string }).error ?? `Request failed with status ${res.status}`,
-    );
-  }
-
-  return res.json() as Promise<{ id: string; animeflvSlug: string | null }>;
 }
 
 /**

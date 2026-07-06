@@ -22,7 +22,7 @@ function mapRow(row: Record<string, unknown>): Series {
     isFeatured: (row.isFeatured as boolean) ?? false,
     score: row.score as number | undefined,
     malId: row.malId as number | undefined,
-    animeflvSlug: row.animeflvSlug as string | undefined,
+    principalSlug: row.principalSlug as string | undefined,
     franchiseId: row.franchiseId as string | undefined,
     seasonOrder: row.seasonOrder as number | undefined,
     franchiseRelation: row.franchiseRelation as string | undefined,

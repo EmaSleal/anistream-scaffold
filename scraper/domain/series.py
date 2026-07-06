@@ -67,7 +67,7 @@ def map_series_row(row: dict) -> dict:
         "seasonOrder": row.get("season_order"),
         "franchiseRelation": row.get("franchise_relation"),
         "mediaType": row.get("media_type"),
-        "animeflvSlug": row.get("animeflv_slug"),
+        "principalSlug": row.get("principal_slug"),
         "fallbackSlug": row.get("fallback_slug"),
         "animeflvDisabled": bool(row.get("animeflv_disabled") or False),
         "broadcastDay": row.get("broadcast_day"),
