@@ -35,6 +35,13 @@
   z-index: 9999 !important;
 }
 
+/* Fullscreen + idle mouse: hide the cursor along with the controls */
+.videoWrap.cursorHidden:fullscreen,
+.videoWrap.cursorHidden:-webkit-full-screen,
+.fakeFullscreen.cursorHidden {
+  cursor: none;
+}
+
 .video {
   width: 100%;
   height: 100%;

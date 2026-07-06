@@ -286,7 +286,11 @@ export function VideoPlayer({
       {/* ── Video zone ──────────────────────────────────── */}
       <div
         ref={containerRef}
-        className={cn(styles.videoWrap, isFakeFullscreen && styles.fakeFullscreen)}
+        className={cn(
+          styles.videoWrap,
+          isFakeFullscreen && styles.fakeFullscreen,
+          playerState.isFullscreen && !playerState.showControls && styles.cursorHidden
+        )}
         style={videoAspectRatio && !isFakeFullscreen ? { aspectRatio: videoAspectRatio } : undefined}
         onMouseMove={handleMouseMove}
         onClick={togglePlay}
