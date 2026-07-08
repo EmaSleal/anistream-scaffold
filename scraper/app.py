@@ -1,3 +1,10 @@
+import logging
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+)
+
 from flask import Flask
 from routes.health_routes import health_bp
 from routes.ingest_routes import bp
