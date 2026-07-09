@@ -4,7 +4,7 @@ Covers:
   4.1  jobs.simulcast_job._within_cr_window()
   4.2  db.simulcast.get_due_simulcast_series()
   4.3  jobs.simulcast_job.run_simulcast_daily_check()
-  4.4  scheduler.init_scheduler()
+  4.4  scheduler.run_scheduler_forever()
 
 All external I/O (Supabase, APScheduler, Jikan) is mocked.
 """
@@ -342,69 +342,44 @@ class TestRunSimulcastDailyCheck:
 
 
 # ---------------------------------------------------------------------------
-# Task 4.4 — init_scheduler()
+# Task 4.4 — run_scheduler_forever()
 # ---------------------------------------------------------------------------
 
 
-class TestInitScheduler:
-    """Unit tests for scheduler.init_scheduler().
+class TestRunSchedulerForever:
+    """Unit tests for scheduler.run_scheduler_forever().
 
-    Guards (tested in order):
-      1. app.config["TESTING"] = True  → returns None
-      2. SIMULCAST_JOB_ENABLED != "1"  → returns None
-      3. debug=True + WERKZEUG_RUN_MAIN != "true" → returns None
-      4. All guards pass → BackgroundScheduler created, started, returned
+    This runs in its own dedicated process (see scheduler_worker.py), so the
+    old Flask-coupled guards (TESTING, Werkzeug reloader) no longer apply.
+    Only the SIMULCAST_JOB_ENABLED opt-in guard remains.
     """
 
-    def _make_flask_app(self, testing: bool = False, debug: bool = False):
-        from flask import Flask
+    def test_job_disabled_does_not_start_scheduler(self):
+        """SIMULCAST_JOB_ENABLED != '1' → no BlockingScheduler created/started; blocks via Event.wait()."""
+        from scheduler import run_scheduler_forever
 
-        app = Flask(__name__)
-        app.config["TESTING"] = testing
-        app.debug = debug
-        return app
+        env = {"SIMULCAST_JOB_ENABLED": "0"}
+        with patch.dict(os.environ, env, clear=False), \
+             patch("apscheduler.schedulers.blocking.BlockingScheduler") as mock_cls, \
+             patch("threading.Event") as mock_event_cls:
+            mock_event = MagicMock()
+            mock_event_cls.return_value = mock_event
+            run_scheduler_forever()
 
-    def test_testing_flag_returns_none(self):
-        """Guard 1: TESTING=True → None returned immediately."""
-        from scheduler import init_scheduler
+        mock_cls.assert_not_called()
+        mock_event.wait.assert_called_once()
 
-        app = self._make_flask_app(testing=True)
-        result = init_scheduler(app)
-        assert result is None
+    def test_job_enabled_starts_blocking_scheduler(self):
+        """SIMULCAST_JOB_ENABLED=1 → BlockingScheduler created, job added, .start() called."""
+        from scheduler import run_scheduler_forever
 
-    def test_job_env_disabled_returns_none(self):
-        """Guard 2: SIMULCAST_JOB_ENABLED != '1' → None returned."""
-        from scheduler import init_scheduler
-
-        app = self._make_flask_app(testing=False)
-        with patch.dict(os.environ, {"SIMULCAST_JOB_ENABLED": "0"}, clear=False):
-            result = init_scheduler(app)
-
-        assert result is None
-
-    def test_werkzeug_reloader_parent_process_returns_none(self):
-        """Guard 3: debug=True and WERKZEUG_RUN_MAIN != 'true' → None returned."""
-        from scheduler import init_scheduler
-
-        app = self._make_flask_app(testing=False, debug=True)
-        env = {"SIMULCAST_JOB_ENABLED": "1", "WERKZEUG_RUN_MAIN": "false"}
-        with patch.dict(os.environ, env, clear=False):
-            result = init_scheduler(app)
-
-        assert result is None
-
-    def test_all_guards_pass_returns_started_scheduler(self):
-        """TESTING=False, SIMULCAST_JOB_ENABLED=1, not debug → BackgroundScheduler started."""
-        from scheduler import init_scheduler
-
-        app = self._make_flask_app(testing=False, debug=False)
         mock_sched = MagicMock()
         env = {"SIMULCAST_JOB_ENABLED": "1"}
         with patch.dict(os.environ, env, clear=False), \
-             patch("apscheduler.schedulers.background.BackgroundScheduler", return_value=mock_sched), \
-             patch("apscheduler.triggers.interval.IntervalTrigger"):
-            result = init_scheduler(app)
+             patch("apscheduler.schedulers.blocking.BlockingScheduler", return_value=mock_sched), \
+             patch("apscheduler.triggers.interval.IntervalTrigger"), \
+             patch("signal.signal"):
+            run_scheduler_forever()
 
-        assert result is mock_sched
         mock_sched.add_job.assert_called_once()
         mock_sched.start.assert_called_once()

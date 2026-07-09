@@ -1,61 +1,43 @@
-"""Scheduler bootstrap for the simulcast background job.
+"""Scheduler entrypoint for the simulcast background job.
 
-Provides ``init_scheduler(app)`` which registers and starts an APScheduler
-``BackgroundScheduler`` inside the Flask process.  The function returns None
-(no-op) under any of three guards:
+Runs in its own dedicated process (see ``scheduler_worker.py``), decoupled
+from the gunicorn/Flask process. This avoids the multi-worker duplication
+bug where each gunicorn worker forked its own APScheduler instance.
 
-  1. ``app.config['TESTING']`` is True — never schedule under pytest.
-  2. ``SIMULCAST_JOB_ENABLED`` env var is not ``'1'`` — opt-in, off by default.
-  3. Flask debug reloader is active — avoids duplicate scheduling in the parent
-     process that the Werkzeug reloader spawns before the real child.
+Provides ``run_scheduler_forever()``, which blocks for the lifetime of the
+process. The only guard that still applies here (the Flask-specific TESTING
+and Werkzeug-reloader guards are gone, since this process has neither):
 
-Usage in ``create_app()``::
-
-    from scheduler import init_scheduler
-    scheduler = init_scheduler(app)
-    if scheduler is not None:
-        app.extensions["scheduler"] = scheduler
+  1. ``SIMULCAST_JOB_ENABLED`` env var is not ``'1'`` — opt-in, off by default.
+     When disabled, the process blocks forever without busy-looping so the
+     container stays up cleanly under ``restart: unless-stopped``.
 """
 from __future__ import annotations
 
-import atexit
 import logging
 import os
-
-from flask import Flask
+import signal
+import threading
 
 logger = logging.getLogger(__name__)
 
 
-def init_scheduler(app: Flask):
-    """Register and start the simulcast discovery scheduler.
+def run_scheduler_forever() -> None:
+    """Start the simulcast discovery scheduler and block until shutdown.
 
-    Args:
-        app: The Flask application instance.
-
-    Returns:
-        The started ``BackgroundScheduler`` instance, or ``None`` when
-        scheduling is disabled or guarded out.
+    When ``SIMULCAST_JOB_ENABLED`` is not "1", logs and blocks forever
+    without starting a scheduler, so the container stays up idle.
     """
-    # Guard 1: never schedule under pytest or any test harness.
-    if app.config.get("TESTING"):
-        return None
-
-    # Guard 2: opt-in flag keeps the scheduler off in dev/CI by default.
     if os.getenv("SIMULCAST_JOB_ENABLED", "0") != "1":
-        return None
+        logger.info("simulcast_job: scheduler disabled (SIMULCAST_JOB_ENABLED != '1'); idling")
+        threading.Event().wait()
+        return
 
-    # Guard 3: Werkzeug debug reloader spawns a parent process before the
-    # real child (WERKZEUG_RUN_MAIN=true).  Only start the scheduler in the
-    # child to avoid registering the job twice.
-    if app.debug and os.getenv("WERKZEUG_RUN_MAIN") != "true":
-        return None
-
-    from apscheduler.schedulers.background import BackgroundScheduler
+    from apscheduler.schedulers.blocking import BlockingScheduler
     from apscheduler.triggers.interval import IntervalTrigger
     from jobs.simulcast_job import run_simulcast_daily_check
 
-    scheduler = BackgroundScheduler()
+    scheduler = BlockingScheduler()
     scheduler.add_job(
         run_simulcast_daily_check,
         trigger=IntervalTrigger(hours=2),
@@ -64,8 +46,13 @@ def init_scheduler(app: Flask):
         coalesce=True,
         max_instances=1,
     )
-    scheduler.start()
-    atexit.register(lambda: scheduler.shutdown(wait=False))
 
-    logger.info("simulcast_job: scheduler started (interval=2h, id=simulcast_discovery)")
-    return scheduler
+    def _handle_shutdown(signum, frame):
+        logger.info("simulcast_job: received signal %s, shutting down scheduler", signum)
+        scheduler.shutdown(wait=False)
+
+    signal.signal(signal.SIGTERM, _handle_shutdown)
+    signal.signal(signal.SIGINT, _handle_shutdown)
+
+    logger.info("simulcast_job: scheduler starting (interval=2h, id=simulcast_discovery)")
+    scheduler.start()  # blocks until shutdown() is called
