@@ -4,9 +4,95 @@ The watch_progress table schema:
   (id, user_id, episode_id, series_id, progress_sec, duration_sec, updated_at)
   UNIQUE constraint on (user_id, episode_id).
 """
+import logging
 from datetime import datetime, timezone
 
 import storage
+from domain.series import map_episode_row
+
+logger = logging.getLogger(__name__)
+
+
+def _resolve_franchise_key(series_id: str) -> str:
+    """Return franchise_id for series_id, or series_id as fallback. Never raises."""
+    try:
+        client = storage.get_client()
+        result = (
+            client.table("series")
+            .select("franchise_id")
+            .eq("id", series_id)
+            .maybe_single()
+            .execute()
+        )
+        if result and result.data and result.data.get("franchise_id"):
+            return result.data["franchise_id"]
+        return series_id
+    except Exception:
+        return series_id
+
+
+def _resolve_next_episode_id(episode_id: str, series_id: str) -> str | None:
+    """Return the ID of the next episode after episode_id in series_id, or None."""
+    try:
+        # Parse episode number from "{series_id}-ep-{N}" convention
+        parts = episode_id.split("-ep-")
+        if len(parts) >= 2:
+            ep_num = int(parts[-1])
+        else:
+            # Fallback: query current episode's episode_number
+            client = storage.get_client()
+            cur_result = (
+                client.table("episodes")
+                .select("episode_number")
+                .eq("id", episode_id)
+                .maybe_single()
+                .execute()
+            )
+            if not cur_result or not cur_result.data:
+                return None
+            ep_num = cur_result.data["episode_number"]
+
+        client = storage.get_client()
+        next_result = (
+            client.table("episodes")
+            .select("id")
+            .eq("series_id", series_id)
+            .eq("episode_number", ep_num + 1)
+            .maybe_single()
+            .execute()
+        )
+        if next_result and next_result.data:
+            return next_result.data["id"]
+        return None
+    except Exception:
+        return None
+
+
+def _upsert_continue_watching(
+    user_id: str,
+    franchise_key: str,
+    series_id: str,
+    episode_id: str,
+    progress_sec: int,
+    next_episode_id: str | None,
+) -> None:
+    """Best-effort upsert into user_continue_watching. Never raises."""
+    try:
+        client = storage.get_client()
+        payload = {
+            "user_id": user_id,
+            "franchise_key": franchise_key,
+            "series_id": series_id,
+            "episode_id": episode_id,
+            "progress_sec": int(progress_sec),
+            "next_episode_id": next_episode_id,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }
+        client.table("user_continue_watching").upsert(
+            payload, on_conflict="user_id,franchise_key"
+        ).execute()
+    except Exception:
+        logger.warning("_upsert_continue_watching failed", exc_info=True)
 
 
 def upsert_progress(
@@ -30,6 +116,10 @@ def upsert_progress(
         on_conflict="user_id,episode_id",
     ).execute()
 
+    franchise_key = _resolve_franchise_key(series_id)
+    next_ep_id = _resolve_next_episode_id(episode_id, series_id)
+    _upsert_continue_watching(user_id, franchise_key, series_id, episode_id, int(progress_sec), next_ep_id)
+
 
 def advance_episode(
     user_id: str,
@@ -52,20 +142,24 @@ def advance_episode(
         progress_sec=float(duration_sec),
         duration_sec=float(duration_sec),
     )
-    # Seed next episode at progress_sec=1 (not 0) so get_recent_progress
-    # (.gt("progress_sec", 0)) picks it up for the Continue Watching row.
-    client = storage.get_client()
-    client.table("watch_progress").upsert(
-        {
-            "user_id": user_id,
-            "episode_id": next_ep_id,
-            "series_id": next_series_id,
-            "progress_sec": 1,
-            "duration_sec": 0,
-            "updated_at": datetime.now(timezone.utc).isoformat(),
-        },
-        on_conflict="user_id,episode_id",
-    ).execute()
+    if next_ep_id is not None:
+        # Seed next episode at progress_sec=1 (not 0) so get_recent_progress
+        # (.gt("progress_sec", 0)) picks it up for the Continue Watching row.
+        client = storage.get_client()
+        client.table("watch_progress").upsert(
+            {
+                "user_id": user_id,
+                "episode_id": next_ep_id,
+                "series_id": next_series_id,
+                "progress_sec": 1,
+                "duration_sec": 0,
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            },
+            on_conflict="user_id,episode_id",
+        ).execute()
+        franchise_key = _resolve_franchise_key(next_series_id or current_series_id)
+        next_next_ep_id = _resolve_next_episode_id(next_ep_id, next_series_id or current_series_id)
+        _upsert_continue_watching(user_id, franchise_key, next_series_id or current_series_id, next_ep_id, 0, next_next_ep_id)
 
 
 def get_episode_progress(user_id: str, episode_id: str) -> float:
@@ -238,3 +332,80 @@ def get_series_simulcast_meta(series_ids: list[str]) -> dict[str, dict]:
                 meta[sid]["max_episode_number"] = ep_num
 
     return meta
+
+
+def get_continue_watching(user_id: str, limit: int = 10) -> list[dict]:
+    """Return a continue-watching list for the user from user_continue_watching.
+
+    Fetches up to limit*2 rows (pre-filter budget), batch-fetches episode details,
+    applies the 0.95 completion filter in Python, and returns at most limit items
+    ordered by updated_at DESC.
+
+    Returns [] on any error or when no rows exist.
+    """
+    try:
+        client = storage.get_client()
+        ucw_result = (
+            client.table("user_continue_watching")
+            .select("*")
+            .eq("user_id", user_id)
+            .order("updated_at", desc=True)
+            .limit(limit * 2)
+            .execute()
+        )
+        ucw_rows = ucw_result.data or []
+    except Exception:
+        logger.warning("get_continue_watching: failed to fetch UCW rows", exc_info=True)
+        return []
+
+    if not ucw_rows:
+        return []
+
+    episode_ids = [row["episode_id"] for row in ucw_rows if row.get("episode_id")]
+    episode_rows = get_episodes_by_ids(episode_ids)
+    episode_by_id = {ep["id"]: ep for ep in episode_rows}
+
+    result: list[dict] = []
+    for row in ucw_rows:
+        ep = episode_by_id.get(row.get("episode_id"))
+        if ep is None:
+            continue
+        # Exclude completed episodes (>= 0.95 of duration)
+        duration_sec = ep.get("duration_sec") or 0
+        progress_sec = row.get("progress_sec", 0)
+        if duration_sec > 0 and progress_sec / duration_sec >= 0.95:
+            continue
+        result.append({
+            "episode": map_episode_row(ep),
+            "progressSeconds": progress_sec,
+            "seriesId": row["series_id"],
+        })
+        if len(result) >= limit:
+            break
+
+    return result
+
+
+def refresh_simulcast_next_episodes(
+    series_id: str,
+    prev_episode_id: str,
+    new_episode_id: str,
+) -> None:
+    """Update next_episode_id for UCW rows where episode_id=prev and next_episode_id IS NULL.
+
+    Called after a new simulcast episode is upserted so that users sitting on the
+    previous last episode get their look-ahead pointer filled in. Never raises.
+    """
+    try:
+        client = storage.get_client()
+        client.table("user_continue_watching").update(
+            {"next_episode_id": new_episode_id}
+        ).eq("series_id", series_id).eq(
+            "episode_id", prev_episode_id
+        ).is_("next_episode_id", "null").execute()
+    except Exception:
+        logger.warning(
+            "refresh_simulcast_next_episodes failed for series=%r prev=%r new=%r",
+            series_id, prev_episode_id, new_episode_id,
+            exc_info=True,
+        )

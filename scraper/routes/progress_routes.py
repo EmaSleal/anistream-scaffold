@@ -15,8 +15,8 @@ import logging
 from flask import Blueprint, g, jsonify, request
 from auth import require_auth
 from db import progress as db_progress
-from domain.progress import build_continue_watching, build_watch_history
-from domain.series import map_episode_row, map_series_row
+from domain.progress import build_watch_history
+from domain.series import map_series_row
 
 progress_bp = Blueprint("progress", __name__, url_prefix="/api")
 
@@ -89,88 +89,7 @@ def advance_episode():
 @require_auth
 def continue_watching():
     """GET /api/progress/continue-watching — enriched continue-watching list."""
-    progress_rows = db_progress.get_recent_progress(g.user_id, limit=30)
-    if not progress_rows:
-        return jsonify([]), 200
-
-    # Resolve franchise IDs for deduplication
-    unique_series_ids = list({r["series_id"] for r in progress_rows if r.get("series_id")})
-    franchise_map = db_progress.get_series_franchise_map(unique_series_ids)
-
-    # Fetch episode details for all episodes in the progress window
-    episode_ids = [r["episode_id"] for r in progress_rows if r.get("episode_id")]
-    episode_rows = db_progress.get_episodes_by_ids(episode_ids)
-
-    # Fetch simulcast metadata for all series in a single batched query.
-    series_meta = db_progress.get_series_simulcast_meta(unique_series_ids)
-
-    result = build_continue_watching(progress_rows, franchise_map, episode_rows)
-
-    # Simulcast look-ahead: for each simulcast series, check if the next episode
-    # (current_ep + 1) is already in the DB. If yes, synthesize a CW entry with
-    # progressSeconds=0. Purely additive — never removes or modifies existing
-    # entries. All DB access is synchronous; no external HTTP calls.
-    simulcast_ids = [
-        sid for sid in unique_series_ids
-        if series_meta.get(sid, {}).get("is_simulcast")
-    ]
-    if simulcast_ids:
-        episode_id_set = set(episode_ids)
-        episode_by_id = {ep["id"]: ep for ep in episode_rows}
-
-        # Find the user's most-recent episode number per simulcast series.
-        # progress_rows are ordered updated_at DESC, so first match = most recent.
-        series_current_ep: dict[str, int] = {}
-        for row in progress_rows:
-            sid = row.get("series_id")
-            if sid not in simulcast_ids or sid in series_current_ep:
-                continue
-            ep_data = episode_by_id.get(row.get("episode_id"))
-            if ep_data is None:
-                continue
-            ep_num = ep_data.get("episode_number")
-            if ep_num is not None:
-                series_current_ep[sid] = ep_num
-
-        if series_current_ep:
-            # Single batched query for all simulcast series episodes.
-            try:
-                from storage import get_client
-                eps_result = (
-                    get_client()
-                    .table("episodes")
-                    .select("id, series_id, episode_number, aired_at, title, thumbnail_url, animeflv_slug")
-                    .in_("series_id", list(series_current_ep.keys()))
-                    .execute()
-                )
-                lookahead_eps = eps_result.data or []
-            except Exception:
-                logging.warning("simulcast look-ahead query failed; skipping", exc_info=True)
-                lookahead_eps = []
-
-            # Build lookup: {series_id: {episode_number: episode_row}}
-            eps_by_series: dict[str, dict[int, dict]] = {}
-            for ep in lookahead_eps:
-                sid = ep.get("series_id")
-                ep_num = ep.get("episode_number")
-                if sid is not None and ep_num is not None:
-                    eps_by_series.setdefault(sid, {})[ep_num] = ep
-
-            # Synthesize a CW entry for each simulcast series where the next
-            # episode is available but not yet in the user's progress.
-            for sid, current_num in series_current_ep.items():
-                next_ep = eps_by_series.get(sid, {}).get(current_num + 1)
-                if next_ep is None:
-                    continue
-                if next_ep["id"] in episode_id_set:
-                    # User already has progress on the next episode; skip.
-                    continue
-                result.append({
-                    "episode": map_episode_row(next_ep),
-                    "progressSeconds": 0,
-                    "seriesId": sid,
-                })
-
+    result = db_progress.get_continue_watching(g.user_id)
     return jsonify(result), 200
 
 

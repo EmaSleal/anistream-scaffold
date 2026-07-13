@@ -260,6 +260,9 @@ def _process_scraped_episodes(
             "aired_at": _resolve_aired_at(mal_id, ep_num, series_id, current_max_ep),
         })
 
+        prev_ep_id = f"{series_id}-ep-{ep_num - 1}"
+        db_progress.refresh_simulcast_next_episodes(series_id, prev_ep_id, ep_id)
+
         if user_id is not None:
             # Seed at progress_sec=1 so the new episode appears in Continue Watching.
             db_progress.upsert_progress(
