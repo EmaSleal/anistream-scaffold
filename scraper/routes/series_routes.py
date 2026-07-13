@@ -247,10 +247,12 @@ def series_recommendations():
     watched_series_ids = {row["series_id"] for row in all_progress}
     watched_mal_ids = set(db_progress.get_mal_ids_for_series(list(watched_series_ids)).values())
 
-    # Step 3 — resolve recommendation IDs per seed (DB-first, lazy Jikan on NULL)
+    # Step 3 — resolve recommendation IDs per seed (batch DB read, lazy Jikan on NULL)
+    seed_mal_ids = list(mal_id_map.values())
+    rec_batch = db_series.get_recommended_mal_ids_batch(seed_mal_ids)
     candidate_ids: set[int] = set()
     for seed_mal_id in mal_id_map.values():
-        rec_ids = db_series.get_recommended_mal_ids(seed_mal_id)
+        rec_ids = rec_batch.get(seed_mal_id)
         if rec_ids is None:
             # Cold seed — fetch from Jikan and persist for future requests
             entries = fetch_recommendations(seed_mal_id)

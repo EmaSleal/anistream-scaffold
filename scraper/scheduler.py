@@ -36,12 +36,21 @@ def run_scheduler_forever() -> None:
     from apscheduler.schedulers.blocking import BlockingScheduler
     from apscheduler.triggers.interval import IntervalTrigger
     from jobs.simulcast_job import run_simulcast_daily_check
+    from jobs.recommendations_job import run_recommendations_warmup
 
     scheduler = BlockingScheduler()
     scheduler.add_job(
         run_simulcast_daily_check,
         trigger=IntervalTrigger(hours=2),
         id="simulcast_discovery",
+        replace_existing=True,
+        coalesce=True,
+        max_instances=1,
+    )
+    scheduler.add_job(
+        run_recommendations_warmup,
+        trigger=IntervalTrigger(hours=6),
+        id="recommendations_warmup",
         replace_existing=True,
         coalesce=True,
         max_instances=1,

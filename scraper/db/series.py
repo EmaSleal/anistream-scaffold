@@ -3,7 +3,11 @@
 All functions return raw dicts from the DB (snake_case). Callers are
 responsible for passing them through domain/series.map_series_row().
 """
+import logging
+
 import storage
+
+logger = logging.getLogger(__name__)
 
 
 def get_series_list(
@@ -233,6 +237,38 @@ def get_recommended_mal_ids(mal_id: int) -> list[int] | None:
     if not result or not result.data:
         return None
     return result.data.get("recommended_mal_ids")  # None | list[int]
+
+
+def get_recommended_mal_ids_batch(
+    mal_ids: list[int],
+) -> dict[int, list[int] | None]:
+    """Return a dict mapping each mal_id to its recommended_mal_ids, in one query.
+
+    Tri-state per entry (mirrors get_recommended_mal_ids):
+      None  — column IS NULL (never fetched from Jikan).
+      []    — fetched; genuinely empty.
+      [ids] — fetched; list of recommended MAL IDs.
+
+    Keys absent from the DB are absent from the returned dict (not padded).
+    Returns {} on empty input or on any DB error (fail-open).
+    """
+    if not mal_ids:
+        return {}
+    try:
+        client = storage.get_client()
+        result = (
+            client.table("series")
+            .select("mal_id, recommended_mal_ids")
+            .in_("mal_id", mal_ids)
+            .execute()
+        )
+        return {
+            row["mal_id"]: row["recommended_mal_ids"]
+            for row in result.data or []
+        }
+    except Exception as exc:
+        logger.warning("get_recommended_mal_ids_batch failed: %s", exc)
+        return {}
 
 
 def save_recommended_mal_ids(mal_id: int, mal_ids: list[int]) -> None:
