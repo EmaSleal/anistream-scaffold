@@ -20,6 +20,24 @@ MEDIA_TYPE_RANK: dict[str, int] = {
 
 _PART_RE = re.compile(r"\s+[Pp]art[-\s]*\d+\s*.*$")
 
+# camelCase keys from map_series_row that catalog/browse endpoints include in
+# their response. Streaming-config keys (principalSlug, fallbackSlug,
+# animeflvDisabled) and operational-metadata keys (broadcast*, airedFrom,
+# kitsuStatus, lastSimulcastCheck) are intentionally absent.
+_CATALOG_KEYS: frozenset[str] = frozenset({
+    "id", "malId", "title", "slug", "description",
+    "thumbnailUrl", "bannerUrl",
+    "rating", "genres", "audioFormats",
+    "seasonCount", "episodeCount", "year",
+    "isSimulcast", "isFeatured", "score",
+    "franchiseId", "seasonOrder", "franchiseRelation", "mediaType",
+})
+
+
+def strip_to_catalog(series: dict) -> dict:
+    """Return only catalog-display fields from a fully mapped series dict."""
+    return {k: v for k, v in series.items() if k in _CATALOG_KEYS}
+
 
 def media_rank(media_type: str | None) -> int:
     """Return the numeric rank for a media_type string (default 0 for unknowns)."""

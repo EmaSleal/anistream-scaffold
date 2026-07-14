@@ -9,6 +9,17 @@ import storage
 
 logger = logging.getLogger(__name__)
 
+# Columns fetched for catalog/browse endpoints (consolidated=True).
+# Excludes streaming config (principal_slug, fallback_slug, animeflv_*) and
+# operational metadata (broadcast_*, aired_from, kitsu_status, last_simulcast_check)
+# that catalog callers never read, cutting raw row size in Python memory.
+_CATALOG_SELECT = (
+    "id, mal_id, title, slug, description, thumbnail_url, banner_url, "
+    "rating, genres, audio_formats, season_count, episode_count, year, "
+    "is_simulcast, is_featured, score, "
+    "franchise_id, season_order, franchise_relation, media_type"
+)
+
 
 def get_series_list(
     limit: int = 20,
@@ -30,7 +41,8 @@ def get_series_list(
         featured: If True, filter to is_featured=true.
         franchise_id: If set, filter to a specific franchise UUID.
         consolidated: If True, fetch enough rows for consolidation upstream.
-            When consolidating, we bypass the limit and let the domain layer trim.
+            Uses _CATALOG_SELECT projection; limit is bypassed so the domain
+            layer has sufficient material to consolidate and trim.
         simulcast: If True, filter to is_simulcast=true.
         genre: If set, filter to series containing this genre (case-sensitive).
         year: If set (and non-zero), filter to series with this release year.
@@ -38,7 +50,8 @@ def get_series_list(
         has_banner: If True, filter to series where banner_url IS NOT NULL.
     """
     client = storage.get_client()
-    query = client.table("series").select("*")
+    select_expr = _CATALOG_SELECT if consolidated else "*"
+    query = client.table("series").select(select_expr)
 
     if featured is True:
         query = query.eq("is_featured", True)

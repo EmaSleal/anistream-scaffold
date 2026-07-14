@@ -10,6 +10,7 @@ from domain.series import (
     map_series_row,
     consolidate_franchises,
     build_seasons,
+    strip_to_catalog,
 )
 from auth import require_admin, require_auth
 from fetcher import fetch_recommendations, fetch_jikan_by_genre, search_animeflv
@@ -114,8 +115,7 @@ def list_series():
             mapped = filtered_by_season
 
     if consolidated:
-        mapped = consolidate_franchises(mapped)
-        mapped = mapped[:limit]
+        mapped = [strip_to_catalog(s) for s in consolidate_franchises(mapped)[:limit]]
 
     return jsonify(mapped)
 
