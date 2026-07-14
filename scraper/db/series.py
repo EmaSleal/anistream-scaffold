@@ -20,6 +20,7 @@ def get_series_list(
     genre: str | None = None,
     year: int | None = None,
     search: str | None = None,
+    has_banner: bool = False,
 ) -> list[dict]:
     """Return a list of series rows.
 
@@ -34,6 +35,7 @@ def get_series_list(
         genre: If set, filter to series containing this genre (case-sensitive).
         year: If set (and non-zero), filter to series with this release year.
         search: If set, filter by ILIKE title match.
+        has_banner: If True, filter to series where banner_url IS NOT NULL.
     """
     client = storage.get_client()
     query = client.table("series").select("*")
@@ -55,6 +57,9 @@ def get_series_list(
 
     if search:
         query = query.ilike("title", f"%{search}%")
+
+    if has_banner:
+        query = query.not_.is_("banner_url", "null")
 
     if sort == "title":
         query = query.order("title", desc=False)

@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { getSeriesList } from "@/lib/series";
+import { getSeriesList, getSeriesCount } from "@/lib/series";
 import { MarketingHero } from "@/components/marketing/MarketingHero";
 import { TrustBar } from "@/components/marketing/TrustBar";
 import { FeatureGrid } from "@/components/marketing/FeatureGrid";
@@ -40,11 +40,11 @@ export const metadata: Metadata = {
 export const dynamic = "force-dynamic";
 
 export default async function MarketingPage() {
-  const allSeries = await getSeriesList({ limit: 1000, sort: "score" });
-
-  const seriesCount = allSeries.length;
-  const heroSeries = allSeries.filter((s) => s.bannerUrl).slice(0, 8);
-  const catalogSeries = allSeries.slice(0, 20);
+  const [seriesCount, heroSeries, catalogSeries] = await Promise.all([
+    getSeriesCount(),
+    getSeriesList({ limit: 8, sort: "score", hasBanner: true }),
+    getSeriesList({ limit: 20, sort: "score" }),
+  ]);
 
   return (
     <div className={styles.page}>

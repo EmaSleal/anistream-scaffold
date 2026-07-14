@@ -2,6 +2,7 @@
 import logging
 import threading
 from flask import Blueprint, request, jsonify, g
+import storage
 from db import series as db_series
 from db import episodes as db_episodes
 from db import progress as db_progress
@@ -74,10 +75,12 @@ def list_series():
     year = request.args.get("year", type=int)
     season = request.args.get("season")
     search = request.args.get("q") or None
+    has_banner_param = request.args.get("has_banner")
 
     featured = featured_param is not None and featured_param.lower() not in ("false", "0", "")
     consolidated = consolidated_param is not None and consolidated_param.lower() not in ("false", "0", "")
     simulcast = simulcast_param is not None and simulcast_param.lower() not in ("false", "0", "")
+    has_banner = has_banner_param is not None and has_banner_param.lower() not in ("false", "0", "")
 
     rows = db_series.get_series_list(
         limit=limit,
@@ -89,6 +92,7 @@ def list_series():
         genre=genre,
         year=year,
         search=search,
+        has_banner=has_banner,
     )
     mapped = [map_series_row(r) for r in rows]
 
@@ -301,6 +305,17 @@ def series_recommendations():
 
     _recommendations_cache.set(cache_key, matched)
     return jsonify(matched)
+
+
+@series_bp.get("/count")
+def series_count():
+    """GET /api/series/count — total series count."""
+    try:
+        result = storage.get_client().table("series").select("*", count="exact").limit(0).execute()
+        return jsonify({"count": result.count or 0})
+    except Exception:
+        logging.exception("series_count failed")
+        return jsonify({"count": 0})
 
 
 @series_bp.get("/<series_id>")

@@ -62,11 +62,12 @@ export interface SeriesListParams {
   season?: string;
   consolidated?: boolean;
   search?: string;
+  hasBanner?: boolean;
 }
 
 export async function getSeriesList(arg: number | SeriesListParams = 50): Promise<Series[]> {
   const params: SeriesListParams = typeof arg === "number" ? { limit: arg } : arg;
-  const { limit = 50, sort = "score", genre, year, season, consolidated, search } = params;
+  const { limit = 50, sort = "score", genre, year, season, consolidated, search, hasBanner } = params;
 
   const qs = new URLSearchParams({ limit: String(limit), sort });
   if (genre) qs.set("genre", genre);
@@ -74,6 +75,7 @@ export async function getSeriesList(arg: number | SeriesListParams = 50): Promis
   if (season) qs.set("season", season);
   if (consolidated) qs.set("consolidated", "true");
   if (search) qs.set("q", search);
+  if (hasBanner) qs.set("has_banner", "true");
 
   const rows = await apiFetch<Record<string, unknown>[]>(
     `/api/series?${qs.toString()}`,
@@ -82,8 +84,10 @@ export async function getSeriesList(arg: number | SeriesListParams = 50): Promis
   return rows.map(mapRow);
 }
 
-
-
+export async function getSeriesCount(): Promise<number> {
+  const { count } = await apiFetch<{ count: number }>("/api/series/count", { count: 0 });
+  return count;
+}
 
 export async function getSimulcastSeries(limit = 50): Promise<Series[]> {
   const rows = await apiFetch<Record<string, unknown>[]>(
