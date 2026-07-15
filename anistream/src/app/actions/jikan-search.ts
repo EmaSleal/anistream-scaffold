@@ -1,26 +1,11 @@
 "use server";
 
+import type { JWT } from "next-auth/jwt";
 import { auth } from "@/auth";
 import { redirect } from "next/navigation";
+import { mintInternalToken } from "@/lib/internal-token";
+import { flaskAuthGet } from "@/lib/flask-client";
 import type { JikanAnime, JikanPagination, JikanSearchParams, JikanSearchResponse } from "@/types/jikan";
-
-const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
-
-async function jikanFetch(url: string): Promise<Response> {
-  const RETRYABLE = new Set([429, 504, 503]);
-  let res!: Response;
-  for (let attempt = 0; attempt < 3; attempt++) {
-    if (attempt > 0) await sleep(attempt * 1500);
-    try {
-      res = await fetch(url, { cache: "no-store" });
-    } catch {
-      if (attempt === 2) throw new Error("Network error — unable to reach Jikan.");
-      continue;
-    }
-    if (!RETRYABLE.has(res.status)) return res;
-  }
-  return res;
-}
 
 export async function searchJikan(
   params: JikanSearchParams
@@ -31,41 +16,24 @@ export async function searchJikan(
   }
 
   // Build URLSearchParams from caller-supplied values.
-  // Strip any sfw/approved keys the caller might smuggle in (the type disallows
-  // them, but strip defensively before the guard runs).
-  const { sfw: _sfw, approved: _approved, ...safeParams } = params as JikanSearchParams & {
-    sfw?: unknown;
-    approved?: unknown;
-  };
-  void _sfw;
-  void _approved;
-
+  // Content guards (sfw, approved, genres_exclude, min_score default, rx rating)
+  // are enforced on the Flask side — do not duplicate them here.
   const sp = new URLSearchParams();
 
-  for (const [key, value] of Object.entries(safeParams)) {
+  for (const [key, value] of Object.entries(params)) {
     if (value === undefined || value === null) continue;
-    // Reject rx at the server level even though the TS type disallows it
-    if (key === "rating" && String(value) === "rx") continue;
     sp.set(key, String(value));
   }
 
-  // Default quality floor — skip unscored/obscure entries unless caller sets their own min.
-  if (!sp.has("min_score")) sp.set("min_score", "5");
+  const token: JWT = {
+    sub: session.user?.email || "unknown",
+    role: (session.user as { role?: string })?.role || "USER",
+  };
 
-  // Content guard — executed LAST so these values can never be overridden by caller.
-  sp.set("sfw", "true");
-  sp.set("approved", "true");
-  // Redundant but explicit: if somehow "rx" reached the params, delete it.
-  if (sp.get("rating") === "rx") sp.delete("rating");
-  // Hentai (MAL genre 12) — always excluded regardless of caller input.
-  const existingExclude = sp.get("genres_exclude");
-  const excludeIds = existingExclude
-    ? [...new Set([...existingExclude.split(","), "12"])]
-    : ["12"];
-  sp.set("genres_exclude", excludeIds.join(","));
+  const internalToken = await mintInternalToken(token);
 
   try {
-    const res = await jikanFetch(`https://api.jikan.moe/v4/anime?${sp.toString()}`);
+    const res = await flaskAuthGet(`/api/jikan/anime?${sp.toString()}`, internalToken);
 
     if (res.status === 429) {
       return { error: "Rate limit reached — Jikan is throttling requests. Wait a moment and try again." };
@@ -78,6 +46,6 @@ export async function searchJikan(
     const json = (await res.json()) as { data: JikanAnime[]; pagination: JikanPagination };
     return { data: json.data, pagination: json.pagination };
   } catch (err) {
-    return { error: err instanceof Error ? err.message : "Network error — unable to reach Jikan." };
+    return { error: err instanceof Error ? err.message : "Network error — unable to reach Flask." };
   }
 }
