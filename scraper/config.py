@@ -21,3 +21,6 @@ SCRAPER_BASE_URL = os.environ.get("SCRAPER_BASE_URL", "http://localhost:5000")
 # NAS API (disk-api-skeleton on astro1). Both must be set for NAS lookups to activate.
 NAS_BASE_URL = os.environ.get("NAS_BASE_URL", "")
 NAS_API_KEY = os.environ.get("NAS_API_KEY", "")
+
+# MAL official API v2 — used by the admin browse proxy route.
+MAL_CLIENT_ID = os.environ.get("MAL_CLIENT_ID", "")
