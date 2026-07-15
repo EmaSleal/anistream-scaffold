@@ -8,6 +8,8 @@ import type { JikanAnime, JikanPagination, JikanSearchParams } from "@/types/jik
 import AnimeFlvSlugSearch from "@/components/admin/AnimeFlvSlugSearch";
 import styles from "./BrowseTable.module.css";
 
+const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
 type IngestRowState = "idle" | "loading" | "done" | "error";
 
 export default function BrowseTable() {
@@ -45,6 +47,7 @@ export default function BrowseTable() {
       const MAX_AUTO_ADVANCE = 10;
 
       for (let attempt = 0; attempt < MAX_AUTO_ADVANCE; attempt++) {
+        if (attempt > 0) await sleep(600);
         const res = await searchJikan({ ...merged, page: currentPage });
 
         if ("error" in res) {

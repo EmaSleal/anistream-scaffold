@@ -4,6 +4,24 @@ import { auth } from "@/auth";
 import { redirect } from "next/navigation";
 import type { JikanAnime, JikanPagination, JikanSearchParams, JikanSearchResponse } from "@/types/jikan";
 
+const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
+async function jikanFetch(url: string): Promise<Response> {
+  const RETRYABLE = new Set([429, 504, 503]);
+  let res!: Response;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    if (attempt > 0) await sleep(attempt * 1500);
+    try {
+      res = await fetch(url, { cache: "no-store" });
+    } catch {
+      if (attempt === 2) throw new Error("Network error — unable to reach Jikan.");
+      continue;
+    }
+    if (!RETRYABLE.has(res.status)) return res;
+  }
+  return res;
+}
+
 export async function searchJikan(
   params: JikanSearchParams
 ): Promise<JikanSearchResponse> {
@@ -47,12 +65,10 @@ export async function searchJikan(
   sp.set("genres_exclude", excludeIds.join(","));
 
   try {
-    const res = await fetch(`https://api.jikan.moe/v4/anime?${sp.toString()}`, {
-      cache: "no-store",
-    });
+    const res = await jikanFetch(`https://api.jikan.moe/v4/anime?${sp.toString()}`);
 
     if (res.status === 429) {
-      return { error: "Rate limit reached, please wait a moment." };
+      return { error: "Rate limit reached — Jikan is throttling requests. Wait a moment and try again." };
     }
 
     if (!res.ok) {
@@ -61,7 +77,7 @@ export async function searchJikan(
 
     const json = (await res.json()) as { data: JikanAnime[]; pagination: JikanPagination };
     return { data: json.data, pagination: json.pagination };
-  } catch {
-    return { error: "Network error — unable to reach Jikan." };
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Network error — unable to reach Jikan." };
   }
 }
