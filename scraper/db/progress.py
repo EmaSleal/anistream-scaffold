@@ -372,12 +372,15 @@ def get_continue_watching(user_id: str, limit: int = 10) -> list[dict]:
         ep = episode_by_id.get(row.get("episode_id"))
         if ep is None:
             continue
-        # Exclude completed episodes (>= 0.95 of duration).
+        # Exclude completed episodes: >= 95% watched OR <= 120s remaining.
         # UCW duration_sec is authoritative (captured at watch time); fall back
         # to the episodes table value when the column is 0 or absent.
         duration_sec = row.get("duration_sec") or ep.get("duration_sec") or 0
         progress_sec = row.get("progress_sec", 0)
-        if duration_sec > 0 and progress_sec / duration_sec >= 0.95:
+        if duration_sec > 0 and (
+            progress_sec / duration_sec >= 0.95
+            or duration_sec - progress_sec <= 120
+        ):
             continue
         episode = map_episode_row(ep)
         if duration_sec > 0:
