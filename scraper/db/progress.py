@@ -75,6 +75,7 @@ def _upsert_continue_watching(
     episode_id: str,
     progress_sec: int,
     next_episode_id: str | None,
+    duration_sec: int = 0,
 ) -> None:
     """Best-effort upsert into user_continue_watching. Never raises."""
     try:
@@ -85,6 +86,7 @@ def _upsert_continue_watching(
             "series_id": series_id,
             "episode_id": episode_id,
             "progress_sec": int(progress_sec),
+            "duration_sec": int(duration_sec),
             "next_episode_id": next_episode_id,
             "updated_at": datetime.now(timezone.utc).isoformat(),
         }
@@ -118,7 +120,7 @@ def upsert_progress(
 
     franchise_key = _resolve_franchise_key(series_id)
     next_ep_id = _resolve_next_episode_id(episode_id, series_id)
-    _upsert_continue_watching(user_id, franchise_key, series_id, episode_id, int(progress_sec), next_ep_id)
+    _upsert_continue_watching(user_id, franchise_key, series_id, episode_id, int(progress_sec), next_ep_id, int(duration_sec))
 
 
 def advance_episode(
@@ -159,7 +161,7 @@ def advance_episode(
         ).execute()
         franchise_key = _resolve_franchise_key(next_series_id or current_series_id)
         next_next_ep_id = _resolve_next_episode_id(next_ep_id, next_series_id or current_series_id)
-        _upsert_continue_watching(user_id, franchise_key, next_series_id or current_series_id, next_ep_id, 0, next_next_ep_id)
+        _upsert_continue_watching(user_id, franchise_key, next_series_id or current_series_id, next_ep_id, 0, next_next_ep_id, 0)
 
 
 def get_episode_progress(user_id: str, episode_id: str) -> float:
@@ -370,13 +372,18 @@ def get_continue_watching(user_id: str, limit: int = 10) -> list[dict]:
         ep = episode_by_id.get(row.get("episode_id"))
         if ep is None:
             continue
-        # Exclude completed episodes (>= 0.95 of duration)
-        duration_sec = ep.get("duration_sec") or 0
+        # Exclude completed episodes (>= 0.95 of duration).
+        # UCW duration_sec is authoritative (captured at watch time); fall back
+        # to the episodes table value when the column is 0 or absent.
+        duration_sec = row.get("duration_sec") or ep.get("duration_sec") or 0
         progress_sec = row.get("progress_sec", 0)
         if duration_sec > 0 and progress_sec / duration_sec >= 0.95:
             continue
+        episode = map_episode_row(ep)
+        if duration_sec > 0:
+            episode["duration"] = duration_sec
         result.append({
-            "episode": map_episode_row(ep),
+            "episode": episode,
             "progressSeconds": progress_sec,
             "seriesId": row["series_id"],
         })
