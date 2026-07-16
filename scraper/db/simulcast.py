@@ -5,7 +5,7 @@ responsible for any domain transformations.
 """
 from __future__ import annotations
 
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 import storage
 
@@ -80,12 +80,14 @@ def _cr_date(iso_str: str) -> date | None:
 
 
 def get_due_simulcast_series() -> list[dict]:
-    """Return simulcast series that have not yet been checked today (CR tz).
+    """Return simulcast series not checked within the last 4 hours.
 
     Fetches all rows where ``is_simulcast=True`` and ``principal_slug IS NOT
     NULL`` (AnimeAV1 integration marker), then applies a Python-side filter
-    that excludes any series whose ``last_simulcast_check`` already falls on
-    today's date in the ``America/Costa_Rica`` timezone.
+    that excludes any series whose ``last_simulcast_check`` is within the
+    4-hour cooldown window. The time-based cooldown (rather than once-per-day)
+    lets the job re-check later in the same day when AnimeAV1 hasn't posted
+    the episode yet at the time of the first pass.
 
     A single batched ``episodes`` query resolves ``max_episode_number`` for all
     surviving candidates (same technique as ``db.progress.get_series_simulcast_meta``).
@@ -106,15 +108,25 @@ def get_due_simulcast_series() -> list[dict]:
     )
     rows = result.data or []
 
-    # Filter out series already checked today in CR timezone.
-    today_cr: date = datetime.now(timezone.utc).astimezone(_CR_TZ).date()
+    # Filter out series checked within the last 4 hours.
+    # A time-based cooldown (rather than once-per-day) lets the scheduler
+    # re-check later the same day when an episode wasn't on AnimeAV1 yet at
+    # the time of the previous check (AnimeAV1 typically lags 2–6 h after
+    # the Japanese broadcast).
+    now_utc = datetime.now(timezone.utc)
+    _cooldown = timedelta(hours=4)
     candidates = []
     for row in rows:
         last_check = row.get("last_simulcast_check")
         if last_check is not None:
-            cr_checked = _cr_date(last_check)
-            if cr_checked is not None and cr_checked >= today_cr:
-                continue  # already checked today — skip
+            try:
+                last_dt = datetime.fromisoformat(last_check)
+                if last_dt.tzinfo is None:
+                    last_dt = last_dt.replace(tzinfo=timezone.utc)
+                if now_utc - last_dt < _cooldown:
+                    continue  # checked within cooldown window — skip
+            except Exception:
+                pass
         candidates.append(row)
 
     if not candidates:

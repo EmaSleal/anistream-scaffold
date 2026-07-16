@@ -16,7 +16,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 os.environ.setdefault("INTERNAL_JWT_SECRET", "test-internal-secret-for-tests-only")
 os.environ.setdefault("SERVICE_SECRET", "test-service-secret")
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from unittest.mock import patch, MagicMock
 
 import pytest
@@ -195,26 +195,42 @@ class TestGetDueSimulcastSeries:
         assert len(result) == 1
         assert result[0]["id"] == "s1"
 
-    def test_already_checked_today_cr_is_excluded(self):
-        """Row with last_simulcast_check = today in CR tz → already done → excluded."""
+    def test_checked_within_cooldown_is_excluded(self):
+        """Row with last_simulcast_check = 1 hour ago → within 4-hour cooldown → excluded."""
         from db.simulcast import get_due_simulcast_series
-        from zoneinfo import ZoneInfo
 
-        # Build a timestamp that falls on today's date in CR timezone
-        today_cr = datetime.now(timezone.utc).astimezone(ZoneInfo("America/Costa_Rica"))
-        today_noon_cr = today_cr.replace(hour=12, minute=0, second=0, microsecond=0)
+        one_hour_ago = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
         row = {
             "id": "s1",
             "principal_slug": "slug1",
             "mal_id": 42,
             "kitsu_id": None,
-            "last_simulcast_check": today_noon_cr.isoformat(),
+            "last_simulcast_check": one_hour_ago,
         }
         mock_client = _make_simulcast_client([row], [])
         with patch("storage.get_client", return_value=mock_client):
             result = get_due_simulcast_series()
 
         assert result == []
+
+    def test_checked_outside_cooldown_is_included(self):
+        """Row with last_simulcast_check = 5 hours ago → cooldown expired → included."""
+        from db.simulcast import get_due_simulcast_series
+
+        five_hours_ago = (datetime.now(timezone.utc) - timedelta(hours=5)).isoformat()
+        row = {
+            "id": "s1",
+            "principal_slug": "slug1",
+            "mal_id": 42,
+            "kitsu_id": None,
+            "last_simulcast_check": five_hours_ago,
+        }
+        mock_client = _make_simulcast_client([row], [])
+        with patch("storage.get_client", return_value=mock_client):
+            result = get_due_simulcast_series()
+
+        assert len(result) == 1
+        assert result[0]["id"] == "s1"
 
     def test_return_shape_has_required_keys(self):
         """Result dicts include id, principal_slug, mal_id, kitsu_id, max_episode_number."""
