@@ -315,11 +315,11 @@ def warm_recommendations(mal_ids: list[int]) -> None:
     from fetcher import fetch_recommendations
     for mid in mal_ids:
         try:
-            if get_recommended_mal_ids(mid) is not None:
-                continue  # already warm or confirmed empty — skip
             entries = fetch_recommendations(mid)
-            if not entries:
-                continue  # fail-open: leave NULL so next request retries
+            if entries is None:
+                continue  # network/HTTP error — leave NULL so next run retries
+            # entries == [] means Jikan confirmed no recommendations — persist it
+            # so this series is never re-queued as "cold" again.
             rec_ids = [
                 e.get("entry", {}).get("mal_id")
                 for e in entries

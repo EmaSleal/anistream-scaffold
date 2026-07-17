@@ -32,19 +32,21 @@ def fetch_anime_by_id(mal_id: int) -> dict:
     return data["data"]
 
 
-def fetch_recommendations(mal_id: int) -> list[dict]:
+def fetch_recommendations(mal_id: int) -> list[dict] | None:
     """Fetch the top-3 anime recommendations for a given MAL ID.
 
     Calls the Jikan ``/anime/{mal_id}/recommendations`` endpoint and returns
     the first 3 entries from the response data array.
 
-    Returns an empty list on any network or HTTP error (fail-open).
+    Returns:
+        list[dict] — Jikan recommendation entries (may be empty if none exist).
+        None       — network or HTTP error; caller should retry later.
     """
     try:
         response = _get(f"anime/{mal_id}/recommendations")
         return response.get("data", [])[:3]
     except Exception:
-        return []
+        return None
 
 
 def fetch_top_anime(pages: int = 2) -> list[dict]:

@@ -47,26 +47,27 @@ class TestFetchRecommendations:
         assert all("entry" in r for r in result)
         assert all(r["entry"]["mal_id"] in [1, 2, 3] for r in result)
 
-    def test_returns_empty_list_on_requests_exception(self):
+    def test_returns_none_on_requests_exception(self):
         with patch.object(fetcher, "_get", side_effect=requests.RequestException("timeout")):
             result = fetcher.fetch_recommendations(1)
-        assert result == []
+        assert result is None
 
-    def test_returns_empty_list_on_http_error(self):
+    def test_returns_none_on_http_error(self):
         mock_response = MagicMock()
         mock_response.status_code = 500
         with patch.object(
             fetcher, "_get", side_effect=requests.HTTPError(response=mock_response)
         ):
             result = fetcher.fetch_recommendations(1)
-        assert result == []
+        assert result is None
 
     def test_returns_empty_list_when_data_key_missing(self):
+        # Successful Jikan response with no recommendations → [] (not None)
         with patch.object(fetcher, "_get", return_value={}):
             result = fetcher.fetch_recommendations(1)
         assert result == []
 
-    def test_returns_empty_list_on_generic_exception(self):
+    def test_returns_none_on_generic_exception(self):
         with patch.object(fetcher, "_get", side_effect=ValueError("unexpected")):
             result = fetcher.fetch_recommendations(1)
-        assert result == []
+        assert result is None

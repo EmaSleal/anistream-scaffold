@@ -258,9 +258,10 @@ def series_recommendations():
     for seed_mal_id in mal_id_map.values():
         rec_ids = rec_batch.get(seed_mal_id)
         if rec_ids is None:
-            # Cold seed — fetch from Jikan and persist for future requests
+            # Cold seed — fetch from Jikan and persist for future requests.
+            # None return means network error; [] means confirmed no recs (save it).
             entries = fetch_recommendations(seed_mal_id)
-            if entries:
+            if entries is not None:
                 rec_ids = [
                     e.get("entry", {}).get("mal_id")
                     for e in entries
@@ -268,7 +269,7 @@ def series_recommendations():
                 ]
                 db_series.save_recommended_mal_ids(seed_mal_id, rec_ids)
             else:
-                # fail-open: leave NULL so next request retries Jikan
+                # Jikan unreachable — leave NULL so next request retries
                 rec_ids = []
         candidate_ids.update(rec_ids)
 
