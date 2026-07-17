@@ -43,6 +43,7 @@ def run_recommendations_warmup() -> None:
             .select("mal_id")
             .not_.is_("mal_id", "null")
             .is_("recommended_mal_ids", "null")
+            .limit(10)
             .execute()
         )
     except Exception as exc:
