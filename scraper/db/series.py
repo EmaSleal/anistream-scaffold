@@ -302,31 +302,35 @@ def save_recommended_mal_ids(mal_id: int, mal_ids: list[int]) -> None:
     ).eq("mal_id", mal_id).execute()
 
 
-def warm_recommendations(mal_ids: list[int]) -> None:
-    """For each mal_id whose recommended_mal_ids is NULL, fetch Jikan and persist.
+def warm_recommendations(mal_ids: list[int]) -> tuple[int, int]:
+    """For each mal_id fetch Jikan recommendations and persist.
 
+    Returns (saved, skipped) where saved = rows written, skipped = Jikan errors.
     Designed to run inside a daemon thread. Throttled, fail-open, never raises.
-    Skips mal_ids that already have a non-NULL value (including []).
     Uses a local import of fetch_recommendations to avoid circular imports
     (same pattern as upsert_series_stub).
     """
     import logging
     import time
     from fetcher import fetch_recommendations
+    saved = 0
+    skipped = 0
     for mid in mal_ids:
         try:
             entries = fetch_recommendations(mid)
             if entries is None:
+                skipped += 1
                 continue  # network/HTTP error — leave NULL so next run retries
-            # entries == [] means Jikan confirmed no recommendations — persist it
-            # so this series is never re-queued as "cold" again.
             rec_ids = [
                 e.get("entry", {}).get("mal_id")
                 for e in entries
                 if e.get("entry", {}).get("mal_id")
             ]
             save_recommended_mal_ids(mid, rec_ids)
+            saved += 1
         except Exception:
             logging.exception("warm_recommendations failed for mal_id=%s", mid)
+            skipped += 1
         finally:
             time.sleep(0.5)  # Jikan rate-limit courtesy — runs on every iteration
+    return saved, skipped

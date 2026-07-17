@@ -58,20 +58,21 @@ def run_recommendations_warmup() -> None:
 
     logger.info("recommendations_job: %d cold series to warm", len(mal_ids))
 
-    processed = 0
-    errors = 0
+    saved = 0
+    skipped = 0
 
     chunks = [mal_ids[i : i + _CHUNK_SIZE] for i in range(0, len(mal_ids), _CHUNK_SIZE)]
     for chunk in chunks:
         try:
-            db_series.warm_recommendations(chunk)
-            processed += len(chunk)
+            chunk_saved, chunk_skipped = db_series.warm_recommendations(chunk)
+            saved += chunk_saved
+            skipped += chunk_skipped
         except Exception as exc:
             logger.warning("recommendations_job: chunk failed: %s", exc)
-            errors += 1
+            skipped += len(chunk)
 
     logger.info(
-        "recommendations_job: done — processed=%d, errors=%d",
-        processed,
-        errors,
+        "recommendations_job: done — saved=%d, jikan_errors=%d",
+        saved,
+        skipped,
     )
