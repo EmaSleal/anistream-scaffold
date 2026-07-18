@@ -180,11 +180,13 @@ def run_simulcast_update(
     series_id: str,
     principal_slug: str,
     current_max_ep: int,
-) -> None:
+) -> int:
     """Like run_simulcast_check but without seeding watch_progress.
 
     Use this when the trigger is a series page visit (user has no watch_progress).
     Discovers and upserts new episodes, stamps the cooldown — does NOT seed progress.
+
+    Returns the number of new episodes upserted (0 if none or on error).
     """
     mal_id = _get_series_mal_id(series_id)
 
@@ -196,10 +198,11 @@ def run_simulcast_update(
             series_id, principal_slug, exc,
         )
         _stamp_cooldown(series_id)
-        return
+        return 0
 
+    episodes_added = 0
     try:
-        _process_scraped_episodes(
+        episodes_added = _process_scraped_episodes(
             scraped_episodes=scraped_episodes,
             series_id=series_id,
             user_id=None,
@@ -213,6 +216,7 @@ def run_simulcast_update(
         )
     finally:
         _stamp_cooldown(series_id)
+    return episodes_added
 
 
 def _process_scraped_episodes(
@@ -222,12 +226,14 @@ def _process_scraped_episodes(
     user_id: str | None,
     current_max_ep: int,
     mal_id: int | None,
-) -> None:
+) -> int:
     """Upsert new episodes and optionally seed watch_progress for the user.
 
     Only episodes with episode_number > current_max_ep are considered new.
     Episode IDs follow the ``{series_id}-ep-{num}`` convention (no zero-padding),
     matching the format used in ``_build_episodes`` (routes.py).
+
+    Returns the number of episodes upserted.
     """
     new_episodes = [
         ep for ep in scraped_episodes
@@ -242,7 +248,7 @@ def _process_scraped_episodes(
             current_max_ep,
             max((ep["episode_number"] for ep in scraped_episodes), default="N/A"),
         )
-        return
+        return 0
 
     for ep in new_episodes:
         ep_num = ep["episode_number"]
@@ -277,6 +283,8 @@ def _process_scraped_episodes(
             "simulcast_check: upserted new episode %r for series=%r, seeded progress for user=%r",
             ep_id, series_id, user_id,
         )
+
+    return len(new_episodes)
 
 
 def _stamp_cooldown(series_id: str) -> None:

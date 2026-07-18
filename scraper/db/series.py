@@ -302,35 +302,57 @@ def save_recommended_mal_ids(mal_id: int, mal_ids: list[int]) -> None:
     ).eq("mal_id", mal_id).execute()
 
 
-def warm_recommendations(mal_ids: list[int]) -> tuple[int, int]:
-    """For each mal_id fetch Jikan recommendations and persist.
+def get_random_series_mal_ids_by_genre(
+    genre: str,
+    exclude_mal_id: int,
+    limit: int = 5,
+) -> list[int]:
+    """Return up to `limit` random mal_ids for series in `genre`, excluding `exclude_mal_id`."""
+    import random
+    result = (
+        storage.get_client()
+        .table("series")
+        .select("mal_id")
+        .contains("genres", [genre])
+        .not_.is_("mal_id", "null")
+        .neq("mal_id", exclude_mal_id)
+        .limit(30)
+        .execute()
+    )
+    candidates = [row["mal_id"] for row in result.data or [] if row.get("mal_id")]
+    return random.sample(candidates, min(limit, len(candidates)))
 
-    Returns (saved, skipped) where saved = rows written, skipped = Jikan errors.
-    Designed to run inside a daemon thread. Throttled, fail-open, never raises.
-    Uses a local import of fetch_recommendations to avoid circular imports
-    (same pattern as upsert_series_stub).
+
+def warm_recommendations(mal_ids: list[int]) -> tuple[int, int]:
+    """For each mal_id fetch related anime from MAL API v2 and persist.
+
+    Falls back to random same-genre series from the catalog when MAL returns
+    no related anime for a series.
+
+    Returns (saved, skipped) where saved = rows written, skipped = API errors.
     """
     import logging
     import time
-    from fetcher import fetch_recommendations
+    from fetcher import fetch_related_anime
     saved = 0
     skipped = 0
     for mid in mal_ids:
         try:
-            entries = fetch_recommendations(mid)
-            if entries is None:
+            related_ids, genres = fetch_related_anime(mid)
+            if related_ids is None:
                 skipped += 1
-                continue  # network/HTTP error — leave NULL so next run retries
-            rec_ids = [
-                e.get("entry", {}).get("mal_id")
-                for e in entries
-                if e.get("entry", {}).get("mal_id")
-            ]
-            save_recommended_mal_ids(mid, rec_ids)
+                continue
+            if not related_ids and genres:
+                for genre in genres[:2]:
+                    fallback = get_random_series_mal_ids_by_genre(genre, mid, limit=5)
+                    if fallback:
+                        related_ids = fallback
+                        break
+            save_recommended_mal_ids(mid, related_ids)
             saved += 1
         except Exception:
             logging.exception("warm_recommendations failed for mal_id=%s", mid)
             skipped += 1
         finally:
-            time.sleep(0.5)  # Jikan rate-limit courtesy — runs on every iteration
+            time.sleep(0.3)
     return saved, skipped

@@ -568,13 +568,12 @@ class TestRecommendationsEndpoint:
         assert len(data) == 3
 
     def test_returns_deduped_and_watched_filtered_results(self, client):
-        """User has history, recommendations are fetched, watched ones are removed."""
+        """User has history, recommendations are fetched from MAL API, watched ones are removed."""
         progress_rows = [
             {"series_id": "s1", "progress_sec": 100, "updated_at": "2026-01-01T00:00:00Z"},
         ]
-        # s1 has mal_id=10; the seed gives back recommendations for mal_id 20, 30
+        # s1 has mal_id=10; the seed gives back related anime for mal_id 20, 30
         # mal_id 10 is already watched and should be excluded
-        rec_entries = [self._rec_entry(20), self._rec_entry(30), self._rec_entry(10)]
         matched_rows = [self._series_row_with_mal(id="s20", mal_id=20, title="Anime 20")]
 
         with (
@@ -586,7 +585,7 @@ class TestRecommendationsEndpoint:
                 {"s1": 10},       # seed mal_ids
                 {"s1": 10},       # watched mal_ids
             ]),
-            patch("routes.series_routes.fetch_recommendations", return_value=rec_entries),
+            patch("routes.series_routes.fetch_related_anime", return_value=([20, 30, 10], ["Action"])),
             patch("routes.series_routes.db_series.get_series_by_mal_ids", return_value=matched_rows),
             patch("routes.series_routes.db_series.upsert_series_stub"),
             patch("threading.Thread") as mock_thread,
@@ -616,8 +615,8 @@ class TestRecommendationsEndpoint:
         data = json.loads(res.data)
         assert len(data) == 1
 
-    def test_skips_failed_jikan_seed_fail_open(self, client):
-        """If fetch_recommendations returns [] for a seed, continue without error."""
+    def test_skips_failed_mal_api_seed_fail_open(self, client):
+        """If fetch_related_anime returns ([], []) for a seed, continue without error."""
         progress_rows = [
             {"series_id": "s1", "progress_sec": 100, "updated_at": "2026-01-01T00:00:00Z"},
         ]
@@ -630,7 +629,7 @@ class TestRecommendationsEndpoint:
                 {"s1": 10},
                 {"s1": 10},
             ]),
-            patch("routes.series_routes.fetch_recommendations", return_value=[]),
+            patch("routes.series_routes.fetch_related_anime", return_value=([], [])),
             patch("routes.series_routes.db_series.get_series_list", return_value=[self._series_row_with_mal()]) as mock_fallback,
         ):
             res = client.get("/api/series/recommendations", headers=_auth_header())
@@ -641,7 +640,6 @@ class TestRecommendationsEndpoint:
         progress_rows = [
             {"series_id": "s1", "progress_sec": 100, "updated_at": "2026-01-01T00:00:00Z"},
         ]
-        rec_entries = [self._rec_entry(200)]  # mal_id=200, not in DB
         with (
             patch("routes.series_routes.db_progress.get_recent_progress", side_effect=[
                 progress_rows,
@@ -653,7 +651,7 @@ class TestRecommendationsEndpoint:
             ]),
             patch("routes.series_routes.db_series.get_recommended_mal_ids", return_value=None),
             patch("routes.series_routes.db_series.save_recommended_mal_ids"),
-            patch("routes.series_routes.fetch_recommendations", return_value=rec_entries),
+            patch("routes.series_routes.fetch_related_anime", return_value=([200], ["Action"])),
             patch("routes.series_routes.db_series.get_series_by_mal_ids", return_value=[]),
             patch("routes.series_routes.threading") as mock_threading,
         ):

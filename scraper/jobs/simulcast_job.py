@@ -76,6 +76,7 @@ def run_simulcast_daily_check() -> None:
 
     processed = 0
     errors = 0
+    episodes_added = 0
 
     for series in candidates:
         series_id: str = series["id"]
@@ -94,7 +95,7 @@ def run_simulcast_daily_check() -> None:
             # Scrape AnimeAV1, upsert new episodes, stamp cooldown.
             # run_simulcast_update handles its own internal try/finally cooldown
             # stamp, so even on failure the series won't be re-checked immediately.
-            run_simulcast_update(series_id, principal_slug, max_ep)
+            episodes_added += run_simulcast_update(series_id, principal_slug, max_ep)
 
             processed += 1
         except Exception as exc:
@@ -106,7 +107,8 @@ def run_simulcast_daily_check() -> None:
             errors += 1
 
     logger.info(
-        "simulcast_job: done — processed=%d, errors=%d",
+        "simulcast_job: done — processed=%d, episodes_added=%d, errors=%d",
         processed,
+        episodes_added,
         errors,
     )

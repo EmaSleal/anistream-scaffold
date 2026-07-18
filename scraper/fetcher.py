@@ -49,6 +49,35 @@ def fetch_recommendations(mal_id: int) -> list[dict] | None:
         return None
 
 
+def fetch_related_anime(mal_id: int) -> tuple[list[int], list[str]] | tuple[None, None]:
+    """Fetch related anime IDs and genres for a MAL ID via the official MAL API v2.
+
+    Returns (related_mal_ids, genres) on success, (None, None) on network/HTTP error.
+    An empty related_mal_ids list is a valid result (series with no related entries).
+    """
+    from config import MAL_CLIENT_ID
+    if not MAL_CLIENT_ID:
+        return None, None
+    try:
+        resp = requests.get(
+            f"https://api.myanimelist.net/v2/anime/{mal_id}",
+            params={"fields": "related_anime,genres"},
+            headers={"X-MAL-CLIENT-ID": MAL_CLIENT_ID},
+            timeout=10,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        related_ids = [
+            entry["node"]["id"]
+            for entry in data.get("related_anime", [])
+            if entry.get("node", {}).get("id")
+        ]
+        genres = [g["name"] for g in data.get("genres", []) if g.get("name")]
+        return related_ids, genres
+    except Exception:
+        return None, None
+
+
 def fetch_top_anime(pages: int = 2) -> list[dict]:
     """Fetch top anime by popularity (25 per page)."""
     results = []

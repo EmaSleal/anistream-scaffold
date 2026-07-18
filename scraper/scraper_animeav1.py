@@ -5,10 +5,13 @@ All page requests use cloudscraper to bypass Cloudflare.
 Zilla player requests always include the required Referer/Origin headers.
 """
 
+import logging
 import re
 import cloudscraper
 from bs4 import BeautifulSoup
 from config import CLOUDSCRAPER_BROWSER
+
+logger = logging.getLogger(__name__)
 
 _scraper = cloudscraper.create_scraper(browser=CLOUDSCRAPER_BROWSER)
 
@@ -92,7 +95,8 @@ def scrape_animeav1_episodes(slug: str) -> list[dict]:
             timeout=20,
         )
         resp.raise_for_status()
-    except Exception:
+    except Exception as exc:
+        logger.warning("scraper_animeav1: HTTP error for slug=%r: %s", slug, exc)
         return []
 
     soup = BeautifulSoup(resp.text, "html.parser")
@@ -149,6 +153,8 @@ def scrape_animeav1_episodes(slug: str) -> list[dict]:
         })
 
     episodes.sort(key=lambda e: e["episode_number"])
+    if not episodes:
+        logger.warning("scraper_animeav1: page loaded but 0 episodes found for slug=%r", slug)
     return episodes
 
 

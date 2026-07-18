@@ -13,7 +13,7 @@ from domain.series import (
     strip_to_catalog,
 )
 from auth import require_admin, require_auth
-from fetcher import fetch_recommendations, fetch_jikan_by_genre, search_animeflv
+from fetcher import fetch_related_anime, fetch_jikan_by_genre, search_animeflv
 from scraper_animeav1 import search_animeav1
 from cache import TTLCache
 
@@ -258,18 +258,11 @@ def series_recommendations():
     for seed_mal_id in mal_id_map.values():
         rec_ids = rec_batch.get(seed_mal_id)
         if rec_ids is None:
-            # Cold seed — fetch from Jikan and persist for future requests.
-            # None return means network error; [] means confirmed no recs (save it).
-            entries = fetch_recommendations(seed_mal_id)
-            if entries is not None:
-                rec_ids = [
-                    e.get("entry", {}).get("mal_id")
-                    for e in entries
-                    if e.get("entry", {}).get("mal_id")
-                ]
-                db_series.save_recommended_mal_ids(seed_mal_id, rec_ids)
+            related_ids, _genres = fetch_related_anime(seed_mal_id)
+            if related_ids is not None:
+                db_series.save_recommended_mal_ids(seed_mal_id, related_ids)
+                rec_ids = related_ids
             else:
-                # Jikan unreachable — leave NULL so next request retries
                 rec_ids = []
         candidate_ids.update(rec_ids)
 
