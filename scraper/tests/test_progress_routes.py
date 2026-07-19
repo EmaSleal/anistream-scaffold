@@ -62,6 +62,39 @@ def _episode_row(id: str = "ep1", series_id: str = "s1") -> dict:
     }
 
 
+def _ucw_row(
+    episode_id: str = "ep1",
+    next_episode_id: str | None = None,
+    series_id: str = "s1",
+    progress_sec: float = 100.0,
+    duration_sec: float = 1440.0,
+    updated_at: str = "2026-01-01T00:00:00Z",
+) -> dict:
+    return {
+        "episode_id": episode_id,
+        "next_episode_id": next_episode_id,
+        "series_id": series_id,
+        "progress_sec": progress_sec,
+        "duration_sec": duration_sec,
+        "updated_at": updated_at,
+    }
+
+
+def _ucw_client(ucw_rows: list) -> MagicMock:
+    """Build a Supabase client mock that returns ucw_rows for the UCW query."""
+    chain = MagicMock()
+    chain.select.return_value = chain
+    chain.eq.return_value = chain
+    chain.order.return_value = chain
+    chain.limit.return_value = chain
+    result_mock = MagicMock()
+    result_mock.data = ucw_rows
+    chain.execute.return_value = result_mock
+    mock_client = MagicMock()
+    mock_client.table.return_value = chain
+    return mock_client
+
+
 @pytest.fixture
 def client():
     with patch("storage.get_client"):
@@ -195,11 +228,10 @@ class TestContinueWatching:
         assert json.loads(res.data) == []
 
     def test_returns_enriched_episodes(self, client):
-        rows = [_progress_row("ep1", "s1", 100, 1440)]
+        ucw = [_ucw_row("ep1", None, "s1", 100, 1440)]
         eps = [_episode_row("ep1", "s1")]
         with (
-            patch("db.progress.get_recent_progress", return_value=rows),
-            patch("db.progress.get_series_franchise_map", return_value={"s1": "f1"}),
+            patch("storage.get_client", return_value=_ucw_client(ucw)),
             patch("db.progress.get_episodes_by_ids", return_value=eps),
         ):
             res = client.get("/api/progress/continue-watching", headers=_auth_header())
@@ -473,64 +505,21 @@ class TestWatchHistoryRoute:
 
 
 class TestContinueWatchingLookahead:
-    """Simulcast look-ahead: synthesizes a CW entry (progressSeconds=0) when the
-    next episode (current_ep + 1) exists in the DB but is not yet in the user's
-    progress. All assertions are DB-only — zero external HTTP calls are made.
+    """Next-episode promotion: synthesizes a CW entry (progressSeconds=0) when the
+    completed episode's next_episode_id exists in the DB but has no UCW row yet.
+    All assertions are DB-only — zero external HTTP calls are made.
     """
 
-    def _simulcast_meta(self, series_id: str, is_simulcast: bool = True) -> dict:
-        """Return a series_meta dict as returned by get_series_simulcast_meta."""
-        return {
-            series_id: {
-                "id": series_id,
-                "is_simulcast": is_simulcast,
-                "animeflv_slug": f"{series_id}-slug",
-                "broadcast_day": None,
-                "broadcast_time": None,
-                "broadcast_timezone": None,
-                "last_simulcast_check": None,
-                "max_episode_number": 5,
-            }
-        }
-
-    def _lookahead_client(self, next_ep_rows: list) -> MagicMock:
-        """Build a Supabase client mock that returns next_ep_rows for the episodes look-ahead query."""
-        eps_chain = MagicMock()
-        eps_chain.select.return_value = eps_chain
-        eps_chain.in_.return_value = eps_chain
-        eps_result = MagicMock()
-        eps_result.data = next_ep_rows
-        eps_chain.execute.return_value = eps_result
-
-        mock_client = MagicMock()
-        mock_client.table.return_value = eps_chain
-        return mock_client
-
     def test_next_episode_in_db_synthesized_as_cw_entry(self, client):
-        """N+1 episode in DB and not in user progress → synthesized CW entry with progressSeconds=0."""
-        # User has ep5 at 97% complete (filtered from regular CW by the 95% threshold)
-        progress_rows = [_progress_row("ep5", "s1", 1400.0, 1440.0)]
+        """Complete episode with next_episode_id → synthesized CW entry with progressSeconds=0."""
+        ucw_row = _ucw_row("ep5", "ep6", "s1", 1400, 1440)
         ep5 = {**_episode_row("ep5", "s1"), "episode_number": 5}
-        meta = self._simulcast_meta("s1", is_simulcast=True)
-
-        # Look-ahead query returns episode 6 (N+1 for series s1)
-        ep6_lookahead = {
-            "id": "ep6",
-            "series_id": "s1",
-            "episode_number": 6,
-            "aired_at": None,
-            "title": "Episode 6",
-            "thumbnail_url": None,
-            "animeflv_slug": "s1-6",
-        }
-        mock_storage = self._lookahead_client([ep6_lookahead])
+        ep6 = {**_episode_row("ep6", "s1"), "episode_number": 6}
+        mock_storage = _ucw_client([ucw_row])
 
         with (
-            patch("db.progress.get_recent_progress", return_value=progress_rows),
-            patch("db.progress.get_series_franchise_map", return_value={"s1": "f1"}),
-            patch("db.progress.get_episodes_by_ids", return_value=[ep5]),
-            patch("db.progress.get_series_simulcast_meta", return_value=meta),
             patch("storage.get_client", return_value=mock_storage),
+            patch("db.progress.get_episodes_by_ids", return_value=[ep5, ep6]),
         ):
             res = client.get("/api/progress/continue-watching", headers=_auth_header())
 
@@ -544,68 +533,48 @@ class TestContinueWatchingLookahead:
         assert synthesized[0]["episode"]["episode"] == 6
 
     def test_next_episode_absent_from_db_not_synthesized(self, client):
-        """N+1 episode NOT in DB → no synthesized entry added to result."""
-        progress_rows = [_progress_row("ep5", "s1", 1400.0, 1440.0)]
+        """next_episode_id set but episode not in DB → no synthesized entry."""
+        ucw_row = _ucw_row("ep5", "ep6", "s1", 1400, 1440)
         ep5 = {**_episode_row("ep5", "s1"), "episode_number": 5}
-        meta = self._simulcast_meta("s1", is_simulcast=True)
+        mock_storage = _ucw_client([ucw_row])
 
-        # Look-ahead query returns nothing: episode 6 does not exist yet
-        mock_storage = self._lookahead_client([])
-
+        # get_episodes_by_ids returns only ep5; ep6 doesn't exist in DB yet
         with (
-            patch("db.progress.get_recent_progress", return_value=progress_rows),
-            patch("db.progress.get_series_franchise_map", return_value={"s1": "f1"}),
-            patch("db.progress.get_episodes_by_ids", return_value=[ep5]),
-            patch("db.progress.get_series_simulcast_meta", return_value=meta),
             patch("storage.get_client", return_value=mock_storage),
+            patch("db.progress.get_episodes_by_ids", return_value=[ep5]),
         ):
             res = client.get("/api/progress/continue-watching", headers=_auth_header())
 
         assert res.status_code == 200
         data = json.loads(res.data)
 
-        # ep5 is 97% complete → filtered from regular CW; no look-ahead → empty result
         synthesized = [item for item in data if item.get("progressSeconds") == 0]
         assert len(synthesized) == 0
 
     def test_next_episode_already_in_user_progress_not_synthesized(self, client):
-        """N+1 episode already in user's progress (episode_id_set) → dedup guard skips it."""
-        # ep5 is most recent (updated_at newer), ep6 already started by user
-        progress_rows = [
-            _progress_row("ep5", "s1", 1400.0, 1440.0, "2026-01-02T00:00:00Z"),
-            _progress_row("ep6", "s1", 100.0, 1440.0, "2026-01-01T00:00:00Z"),
+        """next_episode_id already has its own UCW row → dedup guard skips synthesis."""
+        ucw_rows = [
+            _ucw_row("ep5", "ep6", "s1", 1400, 1440, "2026-01-02T00:00:00Z"),
+            _ucw_row("ep6", None, "s1", 100, 1440, "2026-01-01T00:00:00Z"),
         ]
         ep5 = {**_episode_row("ep5", "s1"), "episode_number": 5}
         ep6 = {**_episode_row("ep6", "s1"), "episode_number": 6}
-        meta = self._simulcast_meta("s1", is_simulcast=True)
-
-        # Look-ahead query returns ep6 — but its id is already in episode_id_set
-        ep6_lookahead = {
-            "id": "ep6",
-            "series_id": "s1",
-            "episode_number": 6,
-            "aired_at": None,
-            "title": "Episode 6",
-            "thumbnail_url": None,
-            "animeflv_slug": "s1-6",
-        }
-        mock_storage = self._lookahead_client([ep6_lookahead])
+        mock_storage = _ucw_client(ucw_rows)
 
         with (
-            patch("db.progress.get_recent_progress", return_value=progress_rows),
-            patch("db.progress.get_series_franchise_map", return_value={"s1": "f1"}),
-            patch("db.progress.get_episodes_by_ids", return_value=[ep5, ep6]),
-            patch("db.progress.get_series_simulcast_meta", return_value=meta),
             patch("storage.get_client", return_value=mock_storage),
+            patch("db.progress.get_episodes_by_ids", return_value=[ep5, ep6]),
         ):
             res = client.get("/api/progress/continue-watching", headers=_auth_header())
 
         assert res.status_code == 200
         data = json.loads(res.data)
 
-        # ep6 already in user progress → NOT synthesized as a fresh look-ahead entry
+        # ep6 already in UCW → NOT synthesized; appears as a regular entry instead
         synthesized = [item for item in data if item.get("progressSeconds") == 0]
         assert len(synthesized) == 0
+        regular = [item for item in data if item.get("progressSeconds") == 100]
+        assert len(regular) == 1
 
 
 class TestBuildContinueWatching:

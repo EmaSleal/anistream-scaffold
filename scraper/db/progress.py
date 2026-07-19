@@ -364,10 +364,23 @@ def get_continue_watching(user_id: str, limit: int = 10) -> list[dict]:
         return []
 
     episode_ids = [row["episode_id"] for row in ucw_rows if row.get("episode_id")]
-    episode_rows = get_episodes_by_ids(episode_ids)
+    ucw_episode_id_set = set(episode_ids)
+
+    # Collect next_episode_ids for potential promotion — but only those the user
+    # hasn't started yet (if they've started it, it already has its own UCW row).
+    next_episode_ids = [
+        row["next_episode_id"]
+        for row in ucw_rows
+        if row.get("next_episode_id") and row["next_episode_id"] not in ucw_episode_id_set
+    ]
+
+    all_ids = list(set(episode_ids + next_episode_ids))
+    episode_rows = get_episodes_by_ids(all_ids)
     episode_by_id = {ep["id"]: ep for ep in episode_rows}
 
     result: list[dict] = []
+    promoted_ids: set[str] = set()
+
     for row in ucw_rows:
         ep = episode_by_id.get(row.get("episode_id"))
         if ep is None:
@@ -381,6 +394,22 @@ def get_continue_watching(user_id: str, limit: int = 10) -> list[dict]:
             progress_sec / duration_sec >= 0.95
             or duration_sec - progress_sec <= 120
         ):
+            # Promote the next episode if available and not yet shown.
+            next_ep_id = row.get("next_episode_id")
+            if (
+                next_ep_id
+                and next_ep_id not in ucw_episode_id_set
+                and next_ep_id not in promoted_ids
+            ):
+                next_ep = episode_by_id.get(next_ep_id)
+                if next_ep:
+                    promoted_ids.add(next_ep_id)
+                    next_episode = map_episode_row(next_ep)
+                    result.append({
+                        "episode": next_episode,
+                        "progressSeconds": 0,
+                        "seriesId": row["series_id"],
+                    })
             continue
         episode = map_episode_row(ep)
         if duration_sec > 0:

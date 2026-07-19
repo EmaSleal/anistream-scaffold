@@ -106,7 +106,11 @@ def test_resolve_next_episode_id_returns_none_when_no_next_episode():
 # ---------------------------------------------------------------------------
 
 def test_advance_episode_none_next_ep_id_skips_ucw():
-    """T4.4: advance_episode does not call _upsert_continue_watching when next_ep_id is None."""
+    """T4.4: advance_episode skips the next-episode UCW block when next_ep_id is None.
+
+    UCW is still called once (for the current episode via upsert_progress), but
+    the next-episode branch is skipped so it is NOT called a second time.
+    """
     import db.progress as db_progress
 
     mock_client, _ = _make_mock_client(table_data=None)
@@ -120,7 +124,9 @@ def test_advance_episode_none_next_ep_id_skips_ucw():
                 next_ep_id=None,
                 next_series_id=None,
             )
-    mock_ucw.assert_not_called()
+    # Called exactly once: for the current episode (via upsert_progress).
+    # The next-episode UCW block is skipped because next_ep_id is None.
+    mock_ucw.assert_called_once()
 
 
 # ---------------------------------------------------------------------------
