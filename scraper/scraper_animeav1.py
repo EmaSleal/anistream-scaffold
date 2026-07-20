@@ -159,10 +159,13 @@ def scrape_animeav1_episodes(slug: str) -> list[dict]:
 
 
 def scrape_animeav1_hash(serie_slug: str, episode_number: int) -> str | None:
-    """Fetch an AnimeAV1 episode page and extract the Zilla player hash.
+    """Fetch an AnimeAV1 episode page and extract the Zilla player hash for the SUB row.
 
     GET https://animeav1.com/media/{serie_slug}/{episode_number}
     Sends Referer: https://animeav1.com/ as required by the Zilla player.
+
+    Prefers the hash embedded within the SUB row (span.ic-sub). Falls back to
+    the first Zilla hash found on the page if the SUB row yields nothing.
 
     Returns:
         The hex hash string (e.g. "a1b2c3d4...") or None if not found.
@@ -173,6 +176,16 @@ def scrape_animeav1_hash(serie_slug: str, episode_number: int) -> str | None:
         resp.raise_for_status()
     except Exception:
         return None
+
+    soup = BeautifulSoup(resp.text, "html.parser")
+
+    sub_span = soup.find("span", class_=lambda c: c and "ic-sub" in c.split())
+    if sub_span:
+        sub_row = sub_span.find_parent("div")
+        if sub_row:
+            m = re.search(r"zilla-networks\.com/play/([a-f0-9]+)", str(sub_row))
+            if m:
+                return m.group(1)
 
     m = _ZILLA_HASH_RE.search(resp.text)
     return m.group(1) if m else None
