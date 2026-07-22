@@ -14,6 +14,7 @@ from unittest.mock import patch
 from domain.stream import (
     orchestrate_stream,
     resolve_jkanime_stream,
+    resolve_animeav1_stream,
     NoSourceError,
     UpstreamError,
 )
@@ -183,6 +184,34 @@ class TestOrchestrateStreamAnimeAV1:
         ):
             with pytest.raises(NoSourceError):
                 orchestrate_stream(ep, cfg)
+
+    # S-08: resolve_animeav1_stream passes audio_type="dub" to scrape_animeav1_hash
+    def test_s08_resolve_animeav1_stream_passes_audio_type_dub(self):
+        """S-08: resolve_animeav1_stream calls scrape_animeav1_hash with audio_type='dub'."""
+        with patch("scraper_animeav1.scrape_animeav1_hash", return_value="dubhash") as mock_hash, \
+             patch("scraper_animeav1.get_zilla_m3u8_url", return_value="https://player.zilla-networks.com/m3u8/dubhash"):
+            result = resolve_animeav1_stream("naruto", 1, audio_type="dub")
+
+        mock_hash.assert_called_once_with("naruto", 1, audio_type="dub")
+        assert result["error_type"] is None
+        assert "dubhash" in result["url"]
+
+    def test_s08_resolve_animeav1_stream_default_audio_type_is_sub(self):
+        """resolve_animeav1_stream without audio_type defaults to 'sub'."""
+        with patch("scraper_animeav1.scrape_animeav1_hash", return_value="subhash") as mock_hash, \
+             patch("scraper_animeav1.get_zilla_m3u8_url", return_value="https://player.zilla-networks.com/m3u8/subhash"):
+            result = resolve_animeav1_stream("naruto", 1)
+
+        mock_hash.assert_called_once_with("naruto", 1, audio_type="sub")
+        assert result["error_type"] is None
+
+    def test_resolve_animeav1_stream_dub_returns_no_source_when_hash_is_none(self):
+        """resolve_animeav1_stream with dub returns no_source when hash is None."""
+        with patch("scraper_animeav1.scrape_animeav1_hash", return_value=None):
+            result = resolve_animeav1_stream("naruto", 1, audio_type="dub")
+
+        assert result["url"] is None
+        assert result["error_type"] == "no_source"
 
     # AV1 network_error + JKAnime network_error → UpstreamError
     def test_all_sources_network_error_raises_upstream(self):

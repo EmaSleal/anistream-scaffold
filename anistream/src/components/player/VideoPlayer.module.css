@@ -108,6 +108,39 @@
 .dot { color: var(--color-text-muted); font-size: 12px; }
 .format { font-size: 11px; color: var(--color-text-secondary); }
 
+/* SUB/DUB audio track toggle */
+.audioToggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  border: 1px solid rgba(255,255,255,0.15);
+  border-radius: 4px;
+  overflow: hidden;
+}
+.audioToggleBtn {
+  background: transparent;
+  border: none;
+  color: var(--color-text-secondary);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  padding: 2px 6px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.audioToggleBtn:hover:not(:disabled) {
+  background: rgba(255,255,255,0.08);
+  color: var(--color-text-primary, #fff);
+}
+.audioToggleBtn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+.audioToggleBtnActive {
+  background: rgba(255,255,255,0.15);
+  color: var(--color-text-primary, #fff);
+}
+
 .releaseDate {
   font-size: 12px;
   color: var(--color-text-muted);

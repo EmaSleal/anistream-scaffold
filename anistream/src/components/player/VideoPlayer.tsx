@@ -22,6 +22,10 @@ interface VideoPlayerProps {
   initialProgress?: number;
   streamUrl?: string;
   streamType?: "mp4" | "hls";
+  /** Proxied DUB stream URL. Null or undefined means DUB is unavailable. */
+  dubUrl?: string | null;
+  /** Audio tracks available for this episode. Controls toggle visibility. */
+  audioFormats?: ("sub" | "dub")[];
 }
 
 export function VideoPlayer({
@@ -31,6 +35,8 @@ export function VideoPlayer({
   initialProgress = 0,
   streamUrl,
   streamType = "mp4",
+  dubUrl,
+  audioFormats = ["sub"],
 }: VideoPlayerProps) {
   const router = useRouter();
   const containerRef = useRef<HTMLDivElement>(null);
@@ -38,6 +44,10 @@ export function VideoPlayer({
   const [countdown, setCountdown] = useState<number | null>(null);
   const [showAddToHomeHint, setShowAddToHomeHint] = useState(false);
   const [videoAspectRatio, setVideoAspectRatio] = useState<string | undefined>(undefined);
+  // Audio track state: "sub" is always the initial track.
+  const [audioTrack, setAudioTrack] = useState<"sub" | "dub">("sub");
+  // Preserve currentTime across track swaps via a ref.
+  const pendingSeekRef = useRef<number | null>(null);
   const {
     playerState,
     videoRef,
@@ -121,12 +131,34 @@ export function VideoPlayer({
 
   const hlsRef = useRef<import("hls.js").default | null>(null);
 
-  const resolvedStreamUrl = streamUrl;
+  // Derive the active URL and type from the selected audio track.
+  const activeUrl: string | undefined =
+    audioTrack === "dub" && dubUrl ? dubUrl : streamUrl;
+  const activeType: "mp4" | "hls" =
+    audioTrack === "dub" ? "hls" : streamType;
+
+  // Alias kept for clarity in JSX (video src for MP4 path).
+  const resolvedStreamUrl = activeUrl;
+
+  // loadedmetadata handler: restore currentTime after track swap.
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+
+    const onMetadata = () => {
+      if (pendingSeekRef.current !== null) {
+        video.currentTime = pendingSeekRef.current;
+        pendingSeekRef.current = null;
+      }
+    };
+    video.addEventListener("loadedmetadata", onMetadata);
+    return () => video.removeEventListener("loadedmetadata", onMetadata);
+  }, [videoRef, activeUrl]);
 
   useEffect(() => {
     const video = videoRef.current;
-    console.log("[player] HLS effect — streamUrl:", resolvedStreamUrl, "streamType:", streamType, "video:", !!video);
-    if (!video || !resolvedStreamUrl || streamType !== "hls") return;
+    console.log("[player] HLS effect — activeUrl:", activeUrl, "activeType:", activeType, "video:", !!video);
+    if (!video || !resolvedStreamUrl || activeType !== "hls") return;
 
     // iOS / Safari: no MSE support — set src directly so it's ready before first tap
     if (typeof window !== "undefined" && !window.MediaSource) {
@@ -173,7 +205,7 @@ export function VideoPlayer({
       hlsRef.current?.destroy();
       hlsRef.current = null;
     };
-  }, [resolvedStreamUrl, streamType, videoRef]);
+  }, [resolvedStreamUrl, activeType, videoRef]);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -265,6 +297,21 @@ export function VideoPlayer({
 
   const nextEpisodeHref = nextEpisode ? `/watch/${nextEpisode.id}` : undefined;
 
+  // Audio track swap: capture currentTime before changing source so the
+  // loadedmetadata handler can restore it after HLS re-initialises.
+  function handleAudioTrackSwap(track: "sub" | "dub") {
+    if (track === audioTrack) return;
+    const video = videoRef.current;
+    if (track === "dub" && !dubUrl) return; // guard: DUB unavailable
+    if (video && video.currentTime > 0) {
+      pendingSeekRef.current = video.currentTime;
+    }
+    setAudioTrack(track);
+  }
+
+  // Whether the DUB toggle should be rendered at all.
+  const hasDubTrack = audioFormats.includes("dub");
+
   function handleToggleFullscreen() {
     const el = containerRef.current;
     const canNativeFs = !!el?.requestFullscreen;
@@ -298,7 +345,7 @@ export function VideoPlayer({
         <video
           ref={videoRef}
           className={styles.video}
-          src={streamType === "hls" ? undefined : (resolvedStreamUrl ?? "/sample.mp4")}
+          src={activeType === "hls" ? undefined : (resolvedStreamUrl ?? "/sample.mp4")}
           playsInline
           preload="metadata"
           aria-label={`${episode.seriesTitle} – ${episode.title}`}
@@ -383,7 +430,35 @@ export function VideoPlayer({
           <div className={styles.badges}>
             <Badge variant="rating">{episode.rating}</Badge>
             <span className={styles.dot}>·</span>
-            <span className={styles.format}>Sub | Dob</span>
+            {hasDubTrack ? (
+              <span className={styles.audioToggle} role="group" aria-label="Audio track">
+                <button
+                  className={cn(
+                    styles.audioToggleBtn,
+                    audioTrack === "sub" && styles.audioToggleBtnActive,
+                  )}
+                  onClick={(e) => { e.stopPropagation(); handleAudioTrackSwap("sub"); }}
+                  aria-pressed={audioTrack === "sub"}
+                  aria-label="Switch to SUB audio"
+                >
+                  SUB
+                </button>
+                <button
+                  className={cn(
+                    styles.audioToggleBtn,
+                    audioTrack === "dub" && styles.audioToggleBtnActive,
+                  )}
+                  onClick={(e) => { e.stopPropagation(); handleAudioTrackSwap("dub"); }}
+                  disabled={!dubUrl}
+                  aria-pressed={audioTrack === "dub"}
+                  aria-label="Switch to DUB audio"
+                >
+                  DUB
+                </button>
+              </span>
+            ) : (
+              <span className={styles.format}>SUB</span>
+            )}
           </div>
 
           <p className={styles.releaseDate}>

@@ -15,6 +15,7 @@ Raised exceptions from orchestrate_stream:
 import re
 import logging
 import requests
+from typing import Literal
 from urllib.parse import quote
 from config import NAS_BASE_URL, NAS_API_KEY
 
@@ -117,43 +118,53 @@ def resolve_animeflv_stream(episode_slug: str) -> dict:
         return {"url": None, "error_type": "network_error"}
 
 
-def resolve_animeav1_stream(serie_slug: str, episode_number: int) -> dict:
+def resolve_animeav1_stream(
+    serie_slug: str,
+    episode_number: int,
+    audio_type: Literal["sub", "dub"] = "sub",
+) -> dict:
     """Attempt to resolve a stream URL via the AnimeAV1 scraper.
 
     Calls scraper_animeav1 to extract the Zilla hash for the episode, constructs
-    the raw Zilla m3u8 URL, then wraps it in the server-side proxy URL so the
-    caller receives a self-contained playable URL that enforces the required
-    Referer header.
+    the raw Zilla m3u8 URL.
+
+    Args:
+        serie_slug: AnimeAV1 series slug.
+        episode_number: Episode number to resolve.
+        audio_type: "sub" (default) or "dub". DUB probe returns no_source when
+            the ic-dub row is absent — it never falls back to SUB.
 
     Returns:
         { "url": str | None, "error_type": "no_source" | "network_error" | None }
     """
     from scraper_animeav1 import scrape_animeav1_hash, get_zilla_m3u8_url
-    from config import SCRAPER_BASE_URL
 
     try:
-        hash_id = scrape_animeav1_hash(serie_slug, episode_number)
+        hash_id = scrape_animeav1_hash(serie_slug, episode_number, audio_type=audio_type)
     except Exception:
         logger.warning(
-            "[stream] animeav1 scrape raised for slug=%s ep=%s",
+            "[stream] animeav1 scrape raised for slug=%s ep=%s audio_type=%s",
             serie_slug,
             episode_number,
+            audio_type,
         )
         return {"url": None, "error_type": "network_error"}
 
     if not hash_id:
         logger.warning(
-            "[stream] animeav1 no hash found for slug=%s ep=%s",
+            "[stream] animeav1 no hash found for slug=%s ep=%s audio_type=%s",
             serie_slug,
             episode_number,
+            audio_type,
         )
         return {"url": None, "error_type": "no_source"}
 
     raw_m3u8 = get_zilla_m3u8_url(hash_id)
     logger.warning(
-        "[stream] animeav1 resolved for slug=%s ep=%s → m3u8=%s",
+        "[stream] animeav1 resolved for slug=%s ep=%s audio_type=%s → m3u8=%s",
         serie_slug,
         episode_number,
+        audio_type,
         raw_m3u8,
     )
     return {"url": raw_m3u8, "error_type": None}

@@ -117,11 +117,14 @@ def search_series(q: str, limit: int = 8) -> list[dict]:
 
 
 def get_stream_config(series_id: str) -> dict | None:
-    """Return animeflv_disabled, fallback_slug, and principal_slug for the given series."""
+    """Return streaming config fields for the given series.
+
+    Includes audio_formats so the stream-url route can gate the DUB probe.
+    """
     client = storage.get_client()
     result = (
         client.table("series")
-        .select("animeflv_disabled, fallback_slug, principal_slug")
+        .select("animeflv_disabled, fallback_slug, principal_slug, audio_formats")
         .eq("id", series_id)
         .maybe_single()
         .execute()

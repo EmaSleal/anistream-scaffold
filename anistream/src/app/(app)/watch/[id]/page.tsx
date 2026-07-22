@@ -75,21 +75,44 @@ export default async function WatchPage({ params }: WatchPageProps) {
     );
   }
 
-  const streamType =
-    streamResult.source === "jkanime" || streamResult.source === "animeav1" ? "hls" : "mp4";
+  // ---------------------------------------------------------------------------
+  // Derive proxied URLs and stream type from the dual-audio or legacy result.
+  // ---------------------------------------------------------------------------
+
+  function proxyAnimeAV1Url(rawUrl: string): string {
+    // Zilla CDN requires Referer: https://animeav1.com/ — proxy through Next.js.
+    return `/api/stream/animeav1-proxy?path=${encodeURIComponent(rawUrl)}`;
+  }
 
   let streamUrl: string;
-  if (streamResult.source === "jkanime") {
-    streamUrl = streamResult.url;
-  } else if (streamResult.source === "animeav1") {
-    // Zilla CDN requires Referer: https://animeav1.com/ — proxy through Next.js to avoid CORS.
-    streamUrl = `/api/stream/animeav1-proxy?path=${encodeURIComponent(streamResult.url)}`;
-  } else if (streamResult.source === "nas") {
-    // NAS download requires X-API-Key — proxy through Next.js.
-    streamUrl = `/api/proxy/nas-file?url=${encodeURIComponent(streamResult.url)}`;
+  let dubUrl: string | null = null;
+  let audioFormats: ("sub" | "dub")[] = ["sub"];
+  let streamType: "hls" | "mp4";
+
+  if ("subUrl" in streamResult) {
+    // Dual-audio shape — DUB-capable AnimeAV1 series.
+    const subSource = streamResult.subSource;
+    audioFormats = streamResult.audioFormats;
+    streamType = "hls"; // AnimeAV1 is always HLS
+    streamUrl = proxyAnimeAV1Url(streamResult.subUrl);
+    dubUrl = streamResult.dubUrl ? proxyAnimeAV1Url(streamResult.dubUrl) : null;
+    void subSource; // consumed above via proxy; kept for type narrowing
   } else {
-    // animeflv (Streamtape) — proxy through Next.js to fix iOS Referer restriction.
-    streamUrl = `/api/proxy/stream?url=${encodeURIComponent(streamResult.url)}`;
+    // Legacy single-URL shape.
+    streamType =
+      streamResult.source === "jkanime" || streamResult.source === "animeav1" ? "hls" : "mp4";
+
+    if (streamResult.source === "jkanime") {
+      streamUrl = streamResult.url;
+    } else if (streamResult.source === "animeav1") {
+      streamUrl = proxyAnimeAV1Url(streamResult.url);
+    } else if (streamResult.source === "nas") {
+      // NAS download requires X-API-Key — proxy through Next.js.
+      streamUrl = `/api/proxy/nas-file?url=${encodeURIComponent(streamResult.url)}`;
+    } else {
+      // animeflv (Streamtape) — proxy through Next.js to fix iOS Referer restriction.
+      streamUrl = `/api/proxy/stream?url=${encodeURIComponent(streamResult.url)}`;
+    }
   }
 
   return (
@@ -99,6 +122,8 @@ export default async function WatchPage({ params }: WatchPageProps) {
       nextEpisode={enrichEpisode(adjacent.next) ?? undefined}
       initialProgress={initialProgress}
       streamUrl={streamUrl}
+      dubUrl={dubUrl}
+      audioFormats={audioFormats}
       streamType={streamType}
     />
   );

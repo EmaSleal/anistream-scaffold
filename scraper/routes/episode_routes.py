@@ -1,9 +1,15 @@
 """Flask Blueprint for public episode endpoints."""
+from concurrent.futures import ThreadPoolExecutor, Future
 from flask import Blueprint, request, jsonify
 from db import episodes as db_episodes
 from db import series as db_series
 from domain.series import map_episode_row
-from domain.stream import orchestrate_stream, NoSourceError, UpstreamError
+from domain.stream import (
+    orchestrate_stream,
+    resolve_animeav1_stream,
+    NoSourceError,
+    UpstreamError,
+)
 
 episode_bp = Blueprint("episodes", __name__, url_prefix="/api/episodes")
 
@@ -27,10 +33,18 @@ def watch_episode_stream(watch_id: str):
     """GET /api/episodes/watch/<id>/stream-url — resolve a playable stream URL.
 
     Accepts both UUID and animeflv_slug (dual-lookup via get_episode_for_watch).
+
+    When series.audio_formats includes "dub" AND hint != "h264" AND
+    principal_slug is set, fires SUB + DUB probes in parallel via
+    ThreadPoolExecutor(2) and returns the new dual-URL shape.
+
+    Otherwise falls through to the single-probe legacy shape.
+
     Returns:
-        200  { url, source }            — stream resolved
-        404  { error }                  — episode not found or no source
-        503  { error }                  — upstream scraping failure
+        200  { subUrl, subSource, dubUrl, audioFormats }  — DUB-capable series
+        200  { url, source }                              — SUB-only or h264 hint
+        404  { error }                                    — episode not found or no SUB source
+        503  { error }                                    — upstream SUB scraping failure
     """
     row = db_episodes.get_episode_for_watch(watch_id)
     if not row:
@@ -42,6 +56,45 @@ def watch_episode_stream(watch_id: str):
         return jsonify({"error": "Series not found"}), 404
 
     hint = request.args.get("hint")
+    audio_formats = stream_config.get("audio_formats") or ["sub"]
+    principal_slug = stream_config.get("principal_slug")
+
+    # Dual-probe path: DUB-capable series with a working principal_slug,
+    # and not a Safari h264 hint (which bypasses AnimeAV1 entirely).
+    if "dub" in audio_formats and principal_slug and hint != "h264":
+        episode_number = row.get("episode_number", 0)
+
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            sub_future: Future = executor.submit(
+                orchestrate_stream, row, stream_config, hint
+            )
+            dub_future: Future = executor.submit(
+                resolve_animeav1_stream, principal_slug, episode_number, "dub"
+            )
+
+            # Resolve SUB first — propagate its errors as 404/503.
+            try:
+                sub_result = sub_future.result()
+            except NoSourceError:
+                return jsonify({"error": "No stream source available for this episode"}), 404
+            except UpstreamError:
+                return jsonify({"error": "Upstream scraping error"}), 503
+
+            # DUB failure is silent — null dubUrl disables the toggle client-side.
+            try:
+                dub_result = dub_future.result()
+                dub_url = dub_result.get("url")
+            except Exception:
+                dub_url = None
+
+        return jsonify({
+            "subUrl": sub_result["url"],
+            "subSource": sub_result["source"],
+            "dubUrl": dub_url,
+            "audioFormats": audio_formats,
+        }), 200
+
+    # Single-probe legacy path (SUB-only series or h264 hint).
     try:
         result = orchestrate_stream(row, stream_config, hint=hint)
         return jsonify({"url": result["url"], "source": result["source"]}), 200

@@ -11,9 +11,21 @@ from fetcher import (
 )
 from normalizer import normalize
 from storage import upsert_series, upsert_episodes, get_series_by_mal_id, get_episode_count
-from scraper_animeav1 import scrape_animeav1_episodes, search_animeav1
+from scraper_animeav1 import scrape_animeav1_episodes, search_animeav1, animeav1_has_dub
 
 bp = Blueprint("api", __name__)
+
+
+def _detect_av1_dub(animeav1_slug: str) -> bool:
+    """Probe episode 1 of an AnimeAV1 series to detect DUB availability.
+
+    Returns True when a span.ic-dub element is present on the episode 1 page.
+    Returns False on any error — never raises.
+    """
+    try:
+        return animeav1_has_dub(animeav1_slug, episode_number=1)
+    except Exception:
+        return False
 
 
 _FRANCHISE_RELATIONS = {
@@ -289,6 +301,9 @@ def _ingest_related(entry: dict, franchise_id: str) -> dict:
         episodes = _build_episodes_from_animeav1(canonical_id, av1_slug, kitsu_eps, jikan_titles) if av1_slug else []
         if episodes:
             series["principal_slug"] = av1_slug
+            # Detect DUB availability and persist to audio_formats.
+            if _detect_av1_dub(av1_slug):
+                series["audio_formats"] = ["sub", "dub"]
         else:
             episodes = _build_episodes_from_metadata(canonical_id, kitsu_eps, jikan_titles, series.get("media_type"))
 
@@ -373,6 +388,9 @@ def ingest():
     main_episodes = _build_episodes_from_animeav1(canonical_id, animeav1_slug, kitsu_eps, jikan_titles) if animeav1_slug else []
     if main_episodes:
         series["principal_slug"] = animeav1_slug
+        # Detect DUB availability and persist to audio_formats.
+        if _detect_av1_dub(animeav1_slug):
+            series["audio_formats"] = ["sub", "dub"]
     else:
         media_type = raw.get("type", "")
         main_episodes = _build_episodes_from_metadata(canonical_id, kitsu_eps, jikan_titles, media_type)

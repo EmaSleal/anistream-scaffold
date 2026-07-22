@@ -69,21 +69,39 @@ export async function getEpisodesBySeriesId(seriesId: string): Promise<Episode[]
   return rows.map(mapRow);
 }
 
+// ---------------------------------------------------------------------------
+// Stream URL result types
+//
+// Legacy shape (SUB-only series or Safari h264 hint):
+//   { url: string; source: ... }
+//
+// Dual-audio shape (DUB-capable AnimeAV1 series):
+//   { subUrl: string; subSource: ...; dubUrl: string | null; audioFormats: [...] }
+// ---------------------------------------------------------------------------
+
+export type StreamUrlResult =
+  | {
+      url: string;
+      source: "animeflv" | "jkanime" | "animeav1" | "nas";
+    }
+  | {
+      subUrl: string;
+      subSource: "animeflv" | "jkanime" | "animeav1" | "nas";
+      dubUrl: string | null;
+      audioFormats: ("sub" | "dub")[];
+    };
+
 export async function getEpisodeStreamUrl(
   id: string,
   hint?: string,
-): Promise<{ url: string; source: "animeflv" | "jkanime" | "animeav1" | "nas" } | null> {
+): Promise<StreamUrlResult | null> {
   try {
     const qs = hint ? `?hint=${encodeURIComponent(hint)}` : "";
     const res = await fetch(`${BASE_URL}/api/episodes/watch/${id}/stream-url${qs}`, {
       cache: "no-store",
     });
     if (!res.ok) return null;
-    const data = (await res.json()) as {
-      url: string;
-      source: "animeflv" | "jkanime" | "animeav1" | "nas";
-    };
-    return data;
+    return (await res.json()) as StreamUrlResult;
   } catch {
     return null;
   }

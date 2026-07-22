@@ -7,6 +7,7 @@ Zilla player requests always include the required Referer/Origin headers.
 
 import logging
 import re
+from typing import Literal
 import cloudscraper
 from bs4 import BeautifulSoup
 from config import CLOUDSCRAPER_BROWSER
@@ -158,14 +159,24 @@ def scrape_animeav1_episodes(slug: str) -> list[dict]:
     return episodes
 
 
-def scrape_animeav1_hash(serie_slug: str, episode_number: int) -> str | None:
-    """Fetch an AnimeAV1 episode page and extract the Zilla player hash for the SUB row.
+def scrape_animeav1_hash(
+    serie_slug: str,
+    episode_number: int,
+    audio_type: Literal["sub", "dub"] = "sub",
+) -> str | None:
+    """Fetch an AnimeAV1 episode page and extract the Zilla player hash.
 
     GET https://animeav1.com/media/{serie_slug}/{episode_number}
     Sends Referer: https://animeav1.com/ as required by the Zilla player.
 
-    Prefers the hash embedded within the SUB row (span.ic-sub). Falls back to
-    the first Zilla hash found on the page if the SUB row yields nothing.
+    When audio_type="sub" (default):
+        Prefers the hash embedded within the SUB row (span.ic-sub). Falls back
+        to the first Zilla hash found on the page if the SUB row yields nothing.
+
+    When audio_type="dub":
+        Selects only the span.ic-dub parent row. Returns None if absent — there
+        is NO page-level fallback for DUB, so a missing row correctly disables
+        the toggle instead of returning an incorrect SUB hash.
 
     Returns:
         The hex hash string (e.g. "a1b2c3d4...") or None if not found.
@@ -179,6 +190,17 @@ def scrape_animeav1_hash(serie_slug: str, episode_number: int) -> str | None:
 
     soup = BeautifulSoup(resp.text, "html.parser")
 
+    if audio_type == "dub":
+        dub_span = soup.find("span", class_=lambda c: c and "ic-dub" in c.split())
+        if not dub_span:
+            return None
+        dub_row = dub_span.find_parent("div")
+        if not dub_row:
+            return None
+        m = re.search(r"zilla-networks\.com/play/([a-f0-9]+)", str(dub_row))
+        return m.group(1) if m else None
+
+    # audio_type == "sub" — existing behavior with page-level fallback
     sub_span = soup.find("span", class_=lambda c: c and "ic-sub" in c.split())
     if sub_span:
         sub_row = sub_span.find_parent("div")
@@ -189,6 +211,26 @@ def scrape_animeav1_hash(serie_slug: str, episode_number: int) -> str | None:
 
     m = _ZILLA_HASH_RE.search(resp.text)
     return m.group(1) if m else None
+
+
+def animeav1_has_dub(serie_slug: str, episode_number: int = 1) -> bool:
+    """Check whether an AnimeAV1 series has a DUB audio track available.
+
+    Fetches the episode page for episode_number (default 1) and returns True
+    if a span.ic-dub element is present. Used during ingest to set
+    series.audio_formats = ["sub","dub"] when applicable.
+
+    Returns False on any network or parse error — never raises.
+    """
+    url = f"{ANIMEAV1_BASE}/media/{serie_slug}/{episode_number}"
+    try:
+        resp = _scraper.get(url, headers=_ZILLA_HEADERS, timeout=20)
+        resp.raise_for_status()
+    except Exception:
+        return False
+
+    soup = BeautifulSoup(resp.text, "html.parser")
+    return bool(soup.find("span", class_=lambda c: c and "ic-dub" in c.split()))
 
 
 def get_zilla_m3u8_url(hash_id: str) -> str:
