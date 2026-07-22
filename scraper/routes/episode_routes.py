@@ -72,24 +72,32 @@ def watch_episode_stream(watch_id: str):
                 resolve_animeav1_stream, principal_slug, episode_number, "dub"
             )
 
-            # Resolve SUB first — propagate its errors as 404/503.
+            # Resolve both futures; SUB errors are held until DUB is known.
+            # If SUB is unavailable but DUB is, return subUrl=null so the
+            # player can auto-select DUB instead of returning a hard 404.
+            sub_result = None
+            sub_error: str | None = None
             try:
                 sub_result = sub_future.result()
             except NoSourceError:
-                return jsonify({"error": "No stream source available for this episode"}), 404
+                sub_error = "no_source"
             except UpstreamError:
-                return jsonify({"error": "Upstream scraping error"}), 503
+                sub_error = "upstream"
 
-            # DUB failure is silent — null dubUrl disables the toggle client-side.
             try:
                 dub_result = dub_future.result()
                 dub_url = dub_result.get("url")
             except Exception:
                 dub_url = None
 
+        if sub_error == "upstream":
+            return jsonify({"error": "Upstream scraping error"}), 503
+        if sub_error == "no_source" and not dub_url:
+            return jsonify({"error": "No stream source available for this episode"}), 404
+
         return jsonify({
-            "subUrl": sub_result["url"],
-            "subSource": sub_result["source"],
+            "subUrl": sub_result["url"] if sub_result else None,
+            "subSource": sub_result["source"] if sub_result else None,
             "dubUrl": dub_url,
             "audioFormats": audio_formats,
         }), 200

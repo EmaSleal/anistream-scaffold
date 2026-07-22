@@ -44,8 +44,10 @@ export function VideoPlayer({
   const [countdown, setCountdown] = useState<number | null>(null);
   const [showAddToHomeHint, setShowAddToHomeHint] = useState(false);
   const [videoAspectRatio, setVideoAspectRatio] = useState<string | undefined>(undefined);
-  // Audio track state: "sub" is always the initial track.
-  const [audioTrack, setAudioTrack] = useState<"sub" | "dub">("sub");
+  // Start on DUB when subUrl is unavailable but dubUrl is present.
+  const [audioTrack, setAudioTrack] = useState<"sub" | "dub">(
+    !streamUrl && dubUrl ? "dub" : "sub"
+  );
   // Preserve currentTime across track swaps via a ref.
   const pendingSeekRef = useRef<number | null>(null);
   const {

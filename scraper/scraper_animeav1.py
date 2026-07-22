@@ -159,6 +159,23 @@ def scrape_animeav1_episodes(slug: str) -> list[dict]:
     return episodes
 
 
+def _detect_active_audio(soup: BeautifulSoup) -> str | None:
+    """Return the audio type whose row contains the active (bg-main) button.
+
+    AnimeAV1 marks the currently loaded source with a button styled bg-main.
+    The Zilla player hash embedded in the page corresponds to that source.
+    Returns None when neither row has an active button (indeterminate).
+    """
+    for audio, cls in [("sub", "ic-sub"), ("dub", "ic-dub")]:
+        span = soup.find("span", class_=lambda c: c and cls in c.split())
+        if not span:
+            continue
+        row = span.find_parent("div")
+        if row and row.find("button", class_=lambda c: c and "bg-main" in c.split()):
+            return audio
+    return None
+
+
 def scrape_animeav1_hash(
     serie_slug: str,
     episode_number: int,
@@ -169,14 +186,20 @@ def scrape_animeav1_hash(
     GET https://animeav1.com/media/{serie_slug}/{episode_number}
     Sends Referer: https://animeav1.com/ as required by the Zilla player.
 
-    When audio_type="sub" (default):
-        Prefers the hash embedded within the SUB row (span.ic-sub). Falls back
-        to the first Zilla hash found on the page if the SUB row yields nothing.
+    Zilla hashes are not embedded inside the row divs — they sit elsewhere in
+    the page HTML (typically a single iframe for the currently active source).
+    _detect_active_audio() reads the bg-main button to identify which audio
+    row is active, ensuring the page-level hash is only used when it matches
+    the requested audio_type.
+
+    When audio_type="sub":
+        Tries the ic-sub row first. Falls back to the page hash only when SUB
+        is the active source (or when the active source cannot be determined).
 
     When audio_type="dub":
-        Selects only the span.ic-dub parent row. Returns None if absent — there
-        is NO page-level fallback for DUB, so a missing row correctly disables
-        the toggle instead of returning an incorrect SUB hash.
+        Tries the ic-dub row first. Falls back to the page hash only when DUB
+        is the active source. Returns None if the ic-dub row is absent or if
+        SUB is the active source — avoids returning a SUB hash for DUB.
 
     Returns:
         The hex hash string (e.g. "a1b2c3d4...") or None if not found.
@@ -198,9 +221,15 @@ def scrape_animeav1_hash(
         if not dub_row:
             return None
         m = re.search(r"zilla-networks\.com/play/([a-f0-9]+)", str(dub_row))
-        return m.group(1) if m else None
+        if m:
+            return m.group(1)
+        # Hash not in the row div — use the page hash only when DUB is active.
+        if _detect_active_audio(soup) == "dub":
+            m = _ZILLA_HASH_RE.search(resp.text)
+            return m.group(1) if m else None
+        return None
 
-    # audio_type == "sub" — existing behavior with page-level fallback
+    # audio_type == "sub"
     sub_span = soup.find("span", class_=lambda c: c and "ic-sub" in c.split())
     if sub_span:
         sub_row = sub_span.find_parent("div")
@@ -209,8 +238,12 @@ def scrape_animeav1_hash(
             if m:
                 return m.group(1)
 
-    m = _ZILLA_HASH_RE.search(resp.text)
-    return m.group(1) if m else None
+    # Page-level fallback — only when the active source is SUB (or indeterminate).
+    # Avoids returning a DUB hash as SUB when the DUB row loads first.
+    if _detect_active_audio(soup) != "dub":
+        m = _ZILLA_HASH_RE.search(resp.text)
+        return m.group(1) if m else None
+    return None
 
 
 def animeav1_has_dub(serie_slug: str, episode_number: int = 1) -> bool:
