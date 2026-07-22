@@ -84,7 +84,7 @@ export default async function WatchPage({ params }: WatchPageProps) {
     return `/api/stream/animeav1-proxy?path=${encodeURIComponent(rawUrl)}`;
   }
 
-  let streamUrl: string;
+  let streamUrl: string | undefined;
   let dubUrl: string | null = null;
   let audioFormats: ("sub" | "dub")[] = ["sub"];
   let streamType: "hls" | "mp4";
@@ -94,7 +94,7 @@ export default async function WatchPage({ params }: WatchPageProps) {
     const subSource = streamResult.subSource;
     audioFormats = streamResult.audioFormats;
     streamType = "hls"; // AnimeAV1 is always HLS
-    streamUrl = proxyAnimeAV1Url(streamResult.subUrl);
+    streamUrl = streamResult.subUrl ? proxyAnimeAV1Url(streamResult.subUrl) : undefined;
     dubUrl = streamResult.dubUrl ? proxyAnimeAV1Url(streamResult.dubUrl) : null;
     void subSource; // consumed above via proxy; kept for type narrowing
   } else {
