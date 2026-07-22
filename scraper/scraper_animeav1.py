@@ -159,6 +159,23 @@ def scrape_animeav1_episodes(slug: str) -> list[dict]:
     return episodes
 
 
+def _extract_hash_from_embeds(html: str, audio_type: Literal["sub", "dub"]) -> str | None:
+    """Extract the Zilla HLS hash from the page's embedded JS audio map.
+
+    AnimeAV1 renders a JS object: embeds:{DUB:[{server:"HLS",url:"https://player.zilla-networks.com/play/{hash}"},...],...}
+    This works regardless of which audio type is currently active in the iframe.
+    Only the HLS server uses a zilla-networks.com URL, so the first match per
+    section is always the right one.
+    """
+    tag = "SUB" if audio_type == "sub" else "DUB"
+    m = re.search(rf'(?<!\w){tag}:\[', html)
+    if not m:
+        return None
+    window = html[m.end():m.end() + 2000]
+    zilla = re.search(r'zilla-networks\.com/play/([a-f0-9]+)', window)
+    return zilla.group(1) if zilla else None
+
+
 def _detect_active_audio(soup: BeautifulSoup) -> str | None:
     """Return the audio type whose row contains the active (bg-main) button.
 
@@ -212,6 +229,11 @@ def scrape_animeav1_hash(
         return None
 
     soup = BeautifulSoup(resp.text, "html.parser")
+
+    # Primary: extract hash from the page's JS embeds map (independent of active source).
+    embeds_hash = _extract_hash_from_embeds(resp.text, audio_type)
+    if embeds_hash:
+        return embeds_hash
 
     if audio_type == "dub":
         dub_span = soup.find("span", class_=lambda c: c and "ic-dub" in c.split())
