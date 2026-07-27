@@ -1,7 +1,7 @@
 import re
 import time
 import requests
-from config import JIKAN_BASE, KITSU_BASE, REQUEST_DELAY
+from config import JIKAN_BASE, KITSU_BASE, REQUEST_DELAY, MAL_CLIENT_ID
 
 
 def _get(endpoint: str, params: dict = {}) -> dict:
@@ -12,15 +12,115 @@ def _get(endpoint: str, params: dict = {}) -> dict:
     return response.json()
 
 
-def fetch_anime_by_id(mal_id: int) -> dict:
-    """Fetch a single anime by its MAL id from Jikan.
+_MAL_BASE = "https://api.myanimelist.net/v2"
+_MAL_ANIME_FIELDS = (
+    "alternative_titles,main_picture,num_episodes,status,mean,rank,popularity,"
+    "media_type,rating,genres,synopsis,start_date,start_season,broadcast"
+)
+_MAL_TYPE_MAP = {
+    "tv": "TV", "ova": "OVA", "movie": "Movie", "special": "Special",
+    "ona": "ONA", "music": "Music", "cm": "CM", "pv": "PV", "tv_special": "TV Special",
+}
+_MAL_STATUS_MAP = {
+    "finished_airing": "Finished Airing",
+    "currently_airing": "Currently Airing",
+    "not_yet_aired": "Not yet aired",
+}
+_MAL_RATING_MAP = {
+    "g": "G - All Ages", "pg": "PG - Children", "pg13": "PG-13 - Teens 13 or older",
+    "r17": "R - 17+ (violence & profanity)", "r": "R+ - Mild Nudity", "rx": "Rx - Hentai",
+}
 
-    Returns the ``data`` object from the Jikan response.
+
+def _mal_node_to_jikan(node: dict) -> dict:
+    """Convert a MAL API v2 anime node to Jikan-compatible response shape."""
+    alt = node.get("alternative_titles") or {}
+    pic = node.get("main_picture") or {}
+    broadcast = node.get("broadcast") or {}
+    start_date = node.get("start_date") or ""
+    start_season = node.get("start_season") or {}
+
+    titles = []
+    if alt.get("en"):
+        titles.append({"title": alt["en"]})
+    if alt.get("ja"):
+        titles.append({"title": alt["ja"]})
+    for syn in (alt.get("synonyms") or []):
+        if syn:
+            titles.append({"title": syn})
+
+    bcast_day = broadcast.get("day_of_week") or ""
+    return {
+        "mal_id": node.get("id"),
+        "title": node.get("title"),
+        "title_english": alt.get("en") or None,
+        "title_japanese": alt.get("ja") or None,
+        "images": {
+            "jpg": {
+                "image_url": pic.get("large") or pic.get("medium"),
+                "small_image_url": pic.get("medium"),
+                "large_image_url": pic.get("large"),
+            }
+        },
+        "type": _MAL_TYPE_MAP.get(node.get("media_type") or "", "TV"),
+        "status": _MAL_STATUS_MAP.get(node.get("status") or "", ""),
+        "score": node.get("mean"),
+        "episodes": node.get("num_episodes") or None,
+        "rank": node.get("rank"),
+        "popularity": node.get("popularity"),
+        "synopsis": node.get("synopsis"),
+        "airing": node.get("status") == "currently_airing",
+        "genres": [
+            {"mal_id": g.get("id"), "type": "anime", "name": g.get("name"), "url": ""}
+            for g in (node.get("genres") or [])
+        ],
+        "themes": [],
+        "rating": _MAL_RATING_MAP.get(node.get("rating") or "", ""),
+        "titles": titles,
+        "broadcast": {
+            "day": bcast_day.capitalize() if bcast_day else None,
+            "time": broadcast.get("start_time"),
+            "timezone": "Asia/Tokyo" if bcast_day else None,
+        },
+        "aired": {
+            "from": start_date or None,
+            "prop": {"from": {"year": int(start_date[:4]) if len(start_date) >= 4 else None}},
+        },
+        "year": start_season.get("year"),
+    }
+
+
+def fetch_anime_by_id(mal_id: int) -> dict:
+    """Fetch a single anime by MAL id. Prefers MAL API v2 when MAL_CLIENT_ID is set.
+
+    Returns data in Jikan-compatible shape.
 
     Raises:
-        ValueError: if Jikan returns 404 (anime does not exist on MAL).
-        requests.RequestException: for any other network or HTTP error.
+        ValueError: if the anime does not exist (404).
+        requests.RequestException: on other network/HTTP errors.
     """
+    if MAL_CLIENT_ID:
+        try:
+            resp = requests.get(
+                f"{_MAL_BASE}/anime/{mal_id}",
+                params={"fields": _MAL_ANIME_FIELDS},
+                headers={"X-MAL-CLIENT-ID": MAL_CLIENT_ID},
+                timeout=10,
+            )
+            if resp.status_code == 404:
+                raise ValueError("Anime not found")
+            resp.raise_for_status()
+            node = resp.json()
+            if not node.get("id"):
+                raise ValueError("Anime not found")
+            return _mal_node_to_jikan(node)
+        except ValueError:
+            raise
+        except requests.HTTPError as exc:
+            if exc.response is not None and exc.response.status_code == 404:
+                raise ValueError("Anime not found") from exc
+            raise
+
     try:
         data = _get(f"anime/{mal_id}")
     except requests.HTTPError as exc:
@@ -302,14 +402,37 @@ def fetch_kitsu_series_status(kitsu_id: str) -> str | None:
 
 
 def fetch_jikan_relations(mal_id: int) -> list[dict]:
-    """Fetch related anime entries for a given MAL ID from Jikan.
+    """Fetch related anime entries. Prefers MAL API v2; falls back to Jikan.
 
-    GET https://api.jikan.moe/v4/anime/{mal_id}/relations
-
-    Returns:
-        list of { relation: str, entries: [{ mal_id: int, name: str, type: str }] }
-        Empty list on any error (fail-open).
+    Returns list of {relation, entry: [{mal_id, name, type}]} in Jikan shape.
+    Empty list on any error (fail-open).
     """
+    if MAL_CLIENT_ID:
+        try:
+            resp = requests.get(
+                f"{_MAL_BASE}/anime/{mal_id}",
+                params={"fields": "related_anime"},
+                headers={"X-MAL-CLIENT-ID": MAL_CLIENT_ID},
+                timeout=10,
+            )
+            resp.raise_for_status()
+            related = resp.json().get("related_anime", [])
+            by_relation: dict[str, list] = {}
+            for item in related:
+                node = item.get("node", {})
+                rel = item.get("relation_type_formatted", "")
+                if rel not in by_relation:
+                    by_relation[rel] = []
+                by_relation[rel].append({
+                    "mal_id": node.get("id"),
+                    "name": node.get("title", ""),
+                    "type": "anime",
+                    "url": "",
+                })
+            return [{"relation": rel, "entry": entries} for rel, entries in by_relation.items()]
+        except Exception:
+            return []
+
     try:
         data = _get(f"anime/{mal_id}/relations")
         return data.get("data", [])
