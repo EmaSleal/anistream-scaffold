@@ -78,7 +78,7 @@ def get_recent_simulcast_episodes(limit: int = 20) -> list[dict]:
     # Fetch more than limit to account for Python-side sorting + dedup
     eps_result = (
         client.table("episodes")
-        .select("id, series_id, episode_number, title, thumbnail_url, aired_at, animeflv_slug, created_at")
+        .select("id, series_id, episode_number, title, thumbnail_url, animeflv_slug, created_at")
         .in_("series_id", series_ids)
         .order("created_at", desc=True)
         .limit(limit * 4)
@@ -89,7 +89,7 @@ def get_recent_simulcast_episodes(limit: int = 20) -> list[dict]:
     # Attach series data and compute effective_date for sorting
     enriched = []
     for ep in episodes:
-        effective = ep.get("aired_at") or (ep.get("created_at") or "")[:10]
+        effective = (ep.get("created_at") or "")[:10]
         if not effective:
             continue
         ep["series"] = series_map.get(ep.get("series_id"), {})
