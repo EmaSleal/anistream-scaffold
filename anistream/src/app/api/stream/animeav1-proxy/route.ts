@@ -17,7 +17,7 @@ function rewriteM3u8(content: string, baseUrl: string): string {
       const trimmed = line.trim();
       if (!trimmed) return line;
 
-      if (trimmed.startsWith("#EXT-X-KEY")) {
+      if (trimmed.startsWith("#EXT-X-KEY") || trimmed.startsWith("#EXT-X-MAP")) {
         return trimmed.replace(/URI="([^"]+)"/, (_match, uri: string) => {
           const absolute = new URL(uri, baseUrl).toString();
           return `URI="${PROXY_PATH}?path=${encodeURIComponent(absolute)}"`;
