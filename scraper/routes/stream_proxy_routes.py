@@ -11,7 +11,7 @@ Behavior:
     - Missing `path` → 400
     - Zilla 4xx/5xx → 502
     - .m3u8 / mpegurl content-type → rewrite every segment/variant line and
-      every #EXT-X-KEY URI to point back through this proxy
+      every #EXT-X-KEY / #EXT-X-MAP URI to point back through this proxy
     - All other content (`.ts`, binary segments) → stream bytes unchanged
 """
 
@@ -47,7 +47,7 @@ def _is_m3u8(url: str, content_type: str) -> bool:
 
 
 def _rewrite_m3u8(manifest_text: str, base_url: str) -> str:
-    """Rewrite all non-comment lines and #EXT-X-KEY URI values to go through the proxy.
+    """Rewrite all non-comment lines and #EXT-X-KEY/#EXT-X-MAP URI values to go through the proxy.
 
     Args:
         manifest_text: raw HLS manifest string.
@@ -62,7 +62,7 @@ def _rewrite_m3u8(manifest_text: str, base_url: str) -> str:
         stripped = line.rstrip("\r\n")
         newline = line[len(stripped):]
 
-        if stripped.startswith("#EXT-X-KEY") and 'URI="' in stripped:
+        if stripped.startswith(("#EXT-X-KEY", "#EXT-X-MAP")) and 'URI="' in stripped:
             # Rewrite the URI="..." value inside the tag
             def _rewrite_uri(m):
                 raw_uri = m.group(1)
