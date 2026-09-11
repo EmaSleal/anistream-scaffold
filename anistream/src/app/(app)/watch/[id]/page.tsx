@@ -88,17 +88,18 @@ export default async function WatchPage({ params }: WatchPageProps) {
   let dubUrl: string | null = null;
   let audioFormats: ("sub" | "dub")[] = ["sub"];
   let streamType: "hls" | "mp4";
+  let streamSource: "animeflv" | "jkanime" | "animeav1" | "nas";
 
   if ("subUrl" in streamResult) {
     // Dual-audio shape — DUB-capable AnimeAV1 series.
-    const subSource = streamResult.subSource;
+    streamSource = streamResult.subSource;
     audioFormats = streamResult.audioFormats;
     streamType = "hls"; // AnimeAV1 is always HLS
     streamUrl = streamResult.subUrl ? proxyAnimeAV1Url(streamResult.subUrl) : undefined;
     dubUrl = streamResult.dubUrl ? proxyAnimeAV1Url(streamResult.dubUrl) : null;
-    void subSource; // consumed above via proxy; kept for type narrowing
   } else {
     // Legacy single-URL shape.
+    streamSource = streamResult.source;
     streamType =
       streamResult.source === "jkanime" || streamResult.source === "animeav1" ? "hls" : "mp4";
 
@@ -125,6 +126,7 @@ export default async function WatchPage({ params }: WatchPageProps) {
       dubUrl={dubUrl}
       audioFormats={audioFormats}
       streamType={streamType}
+      streamSource={streamSource}
     />
   );
 }

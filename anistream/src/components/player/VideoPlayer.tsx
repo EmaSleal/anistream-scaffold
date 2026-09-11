@@ -26,7 +26,12 @@ interface VideoPlayerProps {
   dubUrl?: string | null;
   /** Audio tracks available for this episode. Controls toggle visibility. */
   audioFormats?: ("sub" | "dub")[];
+  /** Which backend resolved streamUrl. Used to trigger a runtime fallback when AnimeAV1/Zilla is unreachable. */
+  streamSource?: "animeflv" | "jkanime" | "animeav1" | "nas";
 }
+
+/** Segments/init fragments repeatedly failing to load within one HLS session. */
+const FRAG_ERROR_FALLBACK_THRESHOLD = 3;
 
 export function VideoPlayer({
   episode,
@@ -37,6 +42,7 @@ export function VideoPlayer({
   streamType = "mp4",
   dubUrl,
   audioFormats = ["sub"],
+  streamSource,
 }: VideoPlayerProps) {
   const router = useRouter();
   const containerRef = useRef<HTMLDivElement>(null);
@@ -133,11 +139,43 @@ export function VideoPlayer({
 
   const hlsRef = useRef<import("hls.js").default | null>(null);
 
+  // Runtime fallback: when AnimeAV1/Zilla segments fail to load repeatedly
+  // (e.g. Zilla's Cloudflare WAF blocking the server's IP), re-resolve the
+  // stream with hint=h264 — orchestrate_stream skips AnimeAV1 and returns
+  // jkanime (or NAS) instead — and swap the player over to it in place.
+  const [fallbackStream, setFallbackStream] = useState<{ url: string; type: "hls" | "mp4" } | null>(null);
+  const fallbackTriedRef = useRef(false);
+  const fragErrorCountRef = useRef(0);
+
+  async function trySourceFallback() {
+    if (fallbackTriedRef.current) return;
+    fallbackTriedRef.current = true;
+    console.warn("[player] AnimeAV1 stream unreachable — falling back to hint=h264 source");
+    try {
+      const res = await fetch(`/api/episodes/watch/${episode.id}/stream-url?hint=h264`, {
+        cache: "no-store",
+      });
+      if (!res.ok) return;
+      const data = (await res.json()) as { url?: string; source?: string };
+      if (!data.url || data.source === "animeav1") return;
+
+      const url =
+        data.source === "nas"
+          ? `/api/proxy/nas-file?url=${encodeURIComponent(data.url)}`
+          : data.url;
+      setFallbackStream({ url, type: data.source === "jkanime" ? "hls" : "mp4" });
+    } catch {
+      // Silent — playback just stays broken on the original source.
+    }
+  }
+
   // Derive the active URL and type from the selected audio track.
   const activeUrl: string | undefined =
-    audioTrack === "dub" && dubUrl ? dubUrl : streamUrl;
+    audioTrack === "dub" && dubUrl
+      ? dubUrl
+      : (fallbackStream?.url ?? streamUrl);
   const activeType: "mp4" | "hls" =
-    audioTrack === "dub" ? "hls" : streamType;
+    audioTrack === "dub" ? "hls" : (fallbackStream?.type ?? streamType);
 
   // Alias kept for clarity in JSX (video src for MP4 path).
   const resolvedStreamUrl = activeUrl;
@@ -181,8 +219,30 @@ export function VideoPlayer({
       if (supported) {
         hlsRef.current?.destroy();
         hlsRef.current = new Hls();
+        fragErrorCountRef.current = 0;
         hlsRef.current.on("hlsError" as Parameters<typeof hlsRef.current.on>[0], (_evt: unknown, data: unknown) => {
           console.error("[player] HLS.js error:", data);
+
+          const err = data as { type?: string; details?: string; fatal?: boolean };
+          const isFragOrLevelNetworkError =
+            err.type === "networkError" &&
+            (err.details === "fragLoadError" ||
+              err.details === "levelLoadError" ||
+              err.details === "manifestLoadError");
+
+          const canFallback =
+            streamSource === "animeav1" && audioTrack === "sub" && !fallbackStream;
+          if (!canFallback) return;
+
+          if (err.fatal || isFragOrLevelNetworkError) {
+            fragErrorCountRef.current += 1;
+          }
+          if (err.fatal || fragErrorCountRef.current >= FRAG_ERROR_FALLBACK_THRESHOLD) {
+            void trySourceFallback();
+          }
+        });
+        hlsRef.current.on("hlsFragLoaded" as Parameters<typeof hlsRef.current.on>[0], () => {
+          fragErrorCountRef.current = 0;
         });
         hlsRef.current.on("hlsManifestParsed" as Parameters<typeof hlsRef.current.on>[0], (_evt: unknown, data: unknown) => {
           const d = data as { levels: { videoCodec?: string; audioCodec?: string; bitrate?: number }[] };
@@ -207,7 +267,7 @@ export function VideoPlayer({
       hlsRef.current?.destroy();
       hlsRef.current = null;
     };
-  }, [resolvedStreamUrl, activeType, videoRef]);
+  }, [resolvedStreamUrl, activeType, videoRef, streamSource, audioTrack, fallbackStream, episode.id]);
 
   useEffect(() => {
     const video = videoRef.current;
