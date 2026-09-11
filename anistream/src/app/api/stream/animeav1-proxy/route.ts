@@ -4,7 +4,11 @@ import { auth } from "@/auth";
 const ZILLA_HEADERS = {
   Referer: "https://animeav1.com/",
   Origin: "https://animeav1.com",
+  "User-Agent":
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
 };
+
+const UPSTREAM_TIMEOUT_MS = 10_000;
 
 const ALLOWED_HOSTS = new Set(["player.zilla-networks.com"]);
 
@@ -70,10 +74,17 @@ export async function GET(request: NextRequest) {
 
   let upstream: Response;
   try {
-    upstream = await fetch(targetUrl.toString(), { headers: ZILLA_HEADERS });
+    upstream = await fetch(targetUrl.toString(), {
+      headers: ZILLA_HEADERS,
+      signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
+    });
   } catch (error) {
+    const isTimeout = error instanceof Error && error.name === "TimeoutError";
     return NextResponse.json(
-      { error: "Upstream unreachable", detail: error instanceof Error ? error.message : String(error) },
+      {
+        error: isTimeout ? "Upstream timeout" : "Upstream unreachable",
+        detail: error instanceof Error ? error.message : String(error),
+      },
       { status: 502 },
     );
   }
