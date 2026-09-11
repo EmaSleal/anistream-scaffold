@@ -558,7 +558,7 @@ class TestRecommendationsEndpoint:
     def test_returns_fallback_for_user_with_empty_history(self, client):
         top_rows = [self._series_row_with_mal(id=f"s{i}", mal_id=i, score=float(10-i)) for i in range(1, 4)]
         with (
-            patch("routes.series_routes.db_progress.get_recent_progress", return_value=[]),
+            patch("routes.series_routes.db_progress.get_recent_distinct_series", return_value=[]),
             patch("routes.series_routes.db_series.get_series_list", return_value=top_rows),
         ):
             res = client.get("/api/series/recommendations", headers=_auth_header())
@@ -569,6 +569,9 @@ class TestRecommendationsEndpoint:
 
     def test_returns_deduped_and_watched_filtered_results(self, client):
         """User has history, recommendations are fetched from MAL API, watched ones are removed."""
+        seed_rows = [
+            {"series_id": "s1", "franchise_id": "s1", "last_watched_at": "2026-01-01T00:00:00Z"},
+        ]
         progress_rows = [
             {"series_id": "s1", "progress_sec": 100, "updated_at": "2026-01-01T00:00:00Z"},
         ]
@@ -577,10 +580,8 @@ class TestRecommendationsEndpoint:
         matched_rows = [self._series_row_with_mal(id="s20", mal_id=20, title="Anime 20")]
 
         with (
-            patch("routes.series_routes.db_progress.get_recent_progress", side_effect=[
-                progress_rows,   # first call: limit=5 seeds
-                progress_rows,   # second call: limit=500 watched set
-            ]),
+            patch("routes.series_routes.db_progress.get_recent_distinct_series", return_value=seed_rows),
+            patch("routes.series_routes.db_progress.get_recent_progress", return_value=progress_rows),
             patch("routes.series_routes.db_progress.get_mal_ids_for_series", side_effect=[
                 {"s1": 10},       # seed mal_ids
                 {"s1": 10},       # watched mal_ids
@@ -601,12 +602,12 @@ class TestRecommendationsEndpoint:
 
     def test_returns_fallback_when_seeds_have_no_mal_ids(self, client):
         """Seeds exist but none have mal_id — fallback to top-scored."""
-        progress_rows = [
-            {"series_id": "s-no-mal", "progress_sec": 100, "updated_at": "2026-01-01T00:00:00Z"},
+        seed_rows = [
+            {"series_id": "s-no-mal", "franchise_id": "s-no-mal", "last_watched_at": "2026-01-01T00:00:00Z"},
         ]
         top_rows = [self._series_row_with_mal(id="top1", mal_id=99)]
         with (
-            patch("routes.series_routes.db_progress.get_recent_progress", return_value=progress_rows),
+            patch("routes.series_routes.db_progress.get_recent_distinct_series", return_value=seed_rows),
             patch("routes.series_routes.db_progress.get_mal_ids_for_series", return_value={}),
             patch("routes.series_routes.db_series.get_series_list", return_value=top_rows),
         ):
@@ -617,14 +618,15 @@ class TestRecommendationsEndpoint:
 
     def test_skips_failed_mal_api_seed_fail_open(self, client):
         """If fetch_related_anime returns ([], []) for a seed, continue without error."""
+        seed_rows = [
+            {"series_id": "s1", "franchise_id": "s1", "last_watched_at": "2026-01-01T00:00:00Z"},
+        ]
         progress_rows = [
             {"series_id": "s1", "progress_sec": 100, "updated_at": "2026-01-01T00:00:00Z"},
         ]
         with (
-            patch("routes.series_routes.db_progress.get_recent_progress", side_effect=[
-                progress_rows,
-                progress_rows,
-            ]),
+            patch("routes.series_routes.db_progress.get_recent_distinct_series", return_value=seed_rows),
+            patch("routes.series_routes.db_progress.get_recent_progress", return_value=progress_rows),
             patch("routes.series_routes.db_progress.get_mal_ids_for_series", side_effect=[
                 {"s1": 10},
                 {"s1": 10},
@@ -637,14 +639,15 @@ class TestRecommendationsEndpoint:
 
     def test_spawns_daemon_thread_for_unmatched_candidates(self, client):
         """Unmatched candidates trigger daemon thread spawn; response is not blocked."""
+        seed_rows = [
+            {"series_id": "s1", "franchise_id": "s1", "last_watched_at": "2026-01-01T00:00:00Z"},
+        ]
         progress_rows = [
             {"series_id": "s1", "progress_sec": 100, "updated_at": "2026-01-01T00:00:00Z"},
         ]
         with (
-            patch("routes.series_routes.db_progress.get_recent_progress", side_effect=[
-                progress_rows,
-                progress_rows,
-            ]),
+            patch("routes.series_routes.db_progress.get_recent_distinct_series", return_value=seed_rows),
+            patch("routes.series_routes.db_progress.get_recent_progress", return_value=progress_rows),
             patch("routes.series_routes.db_progress.get_mal_ids_for_series", side_effect=[
                 {"s1": 10},
                 {"s1": 10},

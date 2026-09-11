@@ -198,6 +198,31 @@ def get_recent_progress(user_id: str, limit: int = 30) -> list[dict]:
     return result.data or []
 
 
+def get_recent_distinct_series(user_id: str, limit: int = 10) -> list[dict]:
+    """Return the user's most-recently-watched series, one per franchise.
+
+    Calls the get_recent_distinct_series Postgres function (see
+    scraper/migrations/003_get_recent_distinct_series_fn.sql), which dedupes
+    watch_progress rows by franchise_id (falling back to series_id when a
+    series has no franchise) in a single query, ordered by last activity.
+    Without this, N raw progress rows can all belong to the same series/
+    franchise if the user has been binge-watching it.
+
+    Each returned dict has: series_id, franchise_id, last_watched_at.
+    Returns [] on empty history or any RPC error (fail-open).
+    """
+    try:
+        client = storage.get_client()
+        result = client.rpc(
+            "get_recent_distinct_series",
+            {"p_user_id": user_id, "p_limit": limit},
+        ).execute()
+        return result.data or []
+    except Exception as exc:
+        logger.warning("get_recent_distinct_series failed: %s", exc)
+        return []
+
+
 def get_series_franchise_map(series_ids: list[str]) -> dict[str, str]:
     """Return a mapping of series_id -> franchise_id (fallback to series_id).
 

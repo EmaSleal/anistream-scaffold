@@ -500,6 +500,104 @@ class TestWatchHistoryRoute:
 
 
 # ---------------------------------------------------------------------------
+# db.progress.get_recent_distinct_series — RPC wrapper
+# ---------------------------------------------------------------------------
+
+class TestGetRecentDistinctSeries:
+    def test_calls_rpc_with_expected_args_and_returns_data(self):
+        from db import progress as db_progress
+
+        result_mock = MagicMock()
+        result_mock.data = [
+            {"series_id": "s1", "franchise_id": "s1", "last_watched_at": "2026-01-01T00:00:00Z"},
+        ]
+        rpc_mock = MagicMock()
+        rpc_mock.execute.return_value = result_mock
+        mock_client = MagicMock()
+        mock_client.rpc.return_value = rpc_mock
+
+        with patch("storage.get_client", return_value=mock_client):
+            rows = db_progress.get_recent_distinct_series("u-1", limit=5)
+
+        mock_client.rpc.assert_called_once_with(
+            "get_recent_distinct_series", {"p_user_id": "u-1", "p_limit": 5}
+        )
+        assert rows == [{"series_id": "s1", "franchise_id": "s1", "last_watched_at": "2026-01-01T00:00:00Z"}]
+
+    def test_fails_open_on_rpc_error(self):
+        from db import progress as db_progress
+
+        with patch("storage.get_client", side_effect=RuntimeError("boom")):
+            rows = db_progress.get_recent_distinct_series("u-1")
+
+        assert rows == []
+
+    def test_returns_empty_list_when_data_is_none(self):
+        from db import progress as db_progress
+
+        result_mock = MagicMock()
+        result_mock.data = None
+        rpc_mock = MagicMock()
+        rpc_mock.execute.return_value = result_mock
+        mock_client = MagicMock()
+        mock_client.rpc.return_value = rpc_mock
+
+        with patch("storage.get_client", return_value=mock_client):
+            rows = db_progress.get_recent_distinct_series("u-1")
+
+        assert rows == []
+
+
+# ---------------------------------------------------------------------------
+# GET /api/progress/recent-series
+# ---------------------------------------------------------------------------
+
+class TestRecentSeriesRoute:
+    def _series_row(self, id="s1", title="Naruto"):
+        return {"id": id, "title": title, "slug": id}
+
+    def test_unauthenticated_returns_401(self, client):
+        res = client.get("/api/progress/recent-series")
+        assert res.status_code == 401
+
+    def test_empty_history_returns_empty_array(self, client):
+        with patch("db.progress.get_recent_distinct_series", return_value=[]):
+            res = client.get("/api/progress/recent-series", headers=_auth_header())
+        assert res.status_code == 200
+        assert json.loads(res.data) == []
+
+    def test_returns_series_in_recency_order(self, client):
+        seed_rows = [
+            {"series_id": "s1", "franchise_id": "s1", "last_watched_at": "2026-01-02T00:00:00Z"},
+            {"series_id": "s2", "franchise_id": "s2", "last_watched_at": "2026-01-01T00:00:00Z"},
+        ]
+        series_rows = [self._series_row("s2", "Second"), self._series_row("s1", "First")]
+        with (
+            patch("db.progress.get_recent_distinct_series", return_value=seed_rows),
+            patch("db.progress.get_series_by_ids", return_value=series_rows),
+        ):
+            res = client.get("/api/progress/recent-series", headers=_auth_header())
+        data = json.loads(res.data)
+        assert res.status_code == 200
+        # Order follows seed_rows (already recency-sorted by the DB function), not series_rows
+        assert [item["id"] for item in data] == ["s1", "s2"]
+
+    def test_default_and_custom_limit_forwarded(self, client):
+        with patch("db.progress.get_recent_distinct_series", return_value=[]) as mock_rds:
+            client.get("/api/progress/recent-series", headers=_auth_header())
+        mock_rds.assert_called_once_with("u-1", limit=10)
+
+        with patch("db.progress.get_recent_distinct_series", return_value=[]) as mock_rds:
+            client.get("/api/progress/recent-series?limit=3", headers=_auth_header())
+        mock_rds.assert_called_once_with("u-1", limit=3)
+
+    def test_limit_capped_at_25(self, client):
+        with patch("db.progress.get_recent_distinct_series", return_value=[]) as mock_rds:
+            client.get("/api/progress/recent-series?limit=999", headers=_auth_header())
+        mock_rds.assert_called_once_with("u-1", limit=25)
+
+
+# ---------------------------------------------------------------------------
 # Task 4.5: GET /api/progress/continue-watching — simulcast look-ahead
 # ---------------------------------------------------------------------------
 

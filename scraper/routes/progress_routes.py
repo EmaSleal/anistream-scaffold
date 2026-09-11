@@ -193,37 +193,18 @@ def recent_series():
     """GET /api/progress/recent-series?limit=N — recently watched series.
 
     Returns up to `limit` (default 10, max 25) unique series/franchises ordered
-    by most recently watched. Deduplicates by franchise_id so only one entry per
-    franchise appears. No episode enrichment — returns Series-shaped objects.
+    by most recently watched. Deduplication by franchise_id happens in the DB
+    via db.progress.get_recent_distinct_series. No episode enrichment —
+    returns Series-shaped objects.
     """
     raw_limit = request.args.get("limit", 10, type=int)
     limit = min(max(raw_limit, 1), 25)
 
-    # Fetch more rows than needed to survive franchise deduplication
-    progress_rows = db_progress.get_recent_progress(g.user_id, limit=limit * 4)
-    if not progress_rows:
+    seed_rows = db_progress.get_recent_distinct_series(g.user_id, limit=limit)
+    if not seed_rows:
         return jsonify([]), 200
 
-    unique_series_ids = list({r["series_id"] for r in progress_rows if r.get("series_id")})
-    franchise_map = db_progress.get_series_franchise_map(unique_series_ids)
-
-    # Walk rows (already updated_at DESC) and keep first series per franchise
-    seen_franchises: set[str] = set()
-    deduped_series_ids: list[str] = []
-    for row in progress_rows:
-        sid = row.get("series_id")
-        if not sid:
-            continue
-        franchise_id = franchise_map.get(sid, sid)
-        if franchise_id not in seen_franchises:
-            seen_franchises.add(franchise_id)
-            deduped_series_ids.append(sid)
-        if len(deduped_series_ids) >= limit:
-            break
-
-    if not deduped_series_ids:
-        return jsonify([]), 200
-
+    deduped_series_ids = [row["series_id"] for row in seed_rows]
     series_rows = db_progress.get_series_by_ids(deduped_series_ids)
     series_map = {s["id"]: s for s in series_rows}
     result = [map_series_row(series_map[sid]) for sid in deduped_series_ids if sid in series_map]

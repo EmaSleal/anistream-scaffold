@@ -217,7 +217,9 @@ def series_recommendations():
     """GET /api/series/recommendations — personalized recommendations for the authenticated user.
 
     Pipeline:
-    1. Fetch the 5 most-recent progress entries (progress_sec > 0 enforced by query).
+    1. Fetch up to 10 recently-watched series, deduped by franchise (so one
+       binge-watched show or multi-season franchise can't monopolize every
+       seed slot — see db.progress.get_recent_distinct_series).
     2. Resolve mal_id for each seed series; skip seeds without one.
     3. Call Jikan recommendations for each seed (top 3 each, fail-open).
     4. Deduplicate candidates by mal_id; remove already-watched mal_ids.
@@ -232,9 +234,9 @@ def series_recommendations():
     if cached is not None:
         return jsonify(cached)
 
-    # Step 1 — seed series from watch history
-    progress_rows = db_progress.get_recent_progress(user_id, limit=10)
-    series_ids = list({row["series_id"] for row in progress_rows})
+    # Step 1 — seed series from watch history, one per franchise
+    seed_rows = db_progress.get_recent_distinct_series(user_id, limit=10)
+    series_ids = [row["series_id"] for row in seed_rows]
 
     # Step 2 — resolve mal_ids; empty result triggers fallback
     mal_id_map = db_progress.get_mal_ids_for_series(series_ids) if series_ids else {}
