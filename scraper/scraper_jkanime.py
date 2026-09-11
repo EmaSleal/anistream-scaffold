@@ -1,4 +1,5 @@
 import re
+from urllib.parse import quote
 import cloudscraper
 from bs4 import BeautifulSoup
 from config import CLOUDSCRAPER_BROWSER
@@ -6,6 +7,55 @@ from config import CLOUDSCRAPER_BROWSER
 _scraper = cloudscraper.create_scraper(browser=CLOUDSCRAPER_BROWSER)
 
 JKANIME_BASE = "https://jkanime.net"
+
+
+def search_jkanime(query: str, limit: int = 10) -> list[dict]:
+    """Search the jkanime.net catalog and return matching series.
+
+    GET https://jkanime.net/buscar/{query}
+    Parses .anime__item cards and extracts slug, title, and thumbnail_url.
+
+    Returns:
+        list of { title, slug, jkanime_url, thumbnail_url }
+        Empty list on any error or no results.
+    """
+    query = query.strip()
+    if not query:
+        return []
+
+    try:
+        resp = _scraper.get(f"{JKANIME_BASE}/buscar/{quote(query, safe=':')}", timeout=20)
+        resp.raise_for_status()
+    except Exception:
+        return []
+
+    soup = BeautifulSoup(resp.text, "html.parser")
+    results = []
+
+    for item in soup.find_all("div", class_="anime__item"):
+        link = item.find("a", href=True)
+        if not link:
+            continue
+        slug = link["href"].rstrip("/").rsplit("/", 1)[-1]
+        if not slug:
+            continue
+
+        title_tag = item.select_one(".anime__item__text h5 a")
+        title = title_tag.get_text(strip=True) if title_tag else slug
+
+        pic = item.find("div", class_="anime__item__pic")
+        thumbnail_url = pic.get("data-setbg") if pic else None
+
+        results.append({
+            "title": title,
+            "slug": slug,
+            "jkanime_url": f"{JKANIME_BASE}/{slug}/",
+            "thumbnail_url": thumbnail_url,
+        })
+        if len(results) >= limit:
+            break
+
+    return results
 
 
 def scrape_jkanime_m3u8(serie_slug: str, episode_number: int) -> str | None:

@@ -15,6 +15,7 @@ from domain.series import (
 from auth import require_admin, require_auth
 from fetcher import fetch_related_anime, fetch_jikan_by_genre, search_animeflv
 from scraper_animeav1 import search_animeav1
+from scraper_jkanime import search_jkanime
 from cache import TTLCache
 
 series_bp = Blueprint("series", __name__, url_prefix="/api/series")
@@ -209,6 +210,27 @@ def search_animeav1_results():
 
     results = search_animeav1(q)
     return jsonify(results[:limit])
+
+
+@series_bp.get("/search-jkanime")
+@require_admin
+def search_jkanime_results():
+    """GET /api/series/search-jkanime?q=&limit= — search jkanime.net for slugs.
+
+    Admin-only endpoint. Scrapes jkanime.net public search results.
+    Returns list of {title, slug, jkanime_url, thumbnail_url}.
+    """
+    q = request.args.get("q")
+    if not q or not q.strip():
+        return jsonify({"error": "Missing required parameter: q"}), 422
+
+    try:
+        limit = min(int(request.args.get("limit", 10)), 30)
+    except (TypeError, ValueError):
+        limit = 10
+
+    results = search_jkanime(q, limit=limit)
+    return jsonify(results)
 
 
 @series_bp.get("/recommendations")
