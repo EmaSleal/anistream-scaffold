@@ -10,6 +10,20 @@ const ALLOWED_HOSTS = new Set(["player.zilla-networks.com"]);
 
 const PROXY_PATH = "/api/stream/animeav1-proxy";
 
+const M3U8_CONTENT_TYPES = new Set([
+  "application/vnd.apple.mpegurl",
+  "application/x-mpegurl",
+  "audio/mpegurl",
+  // Zilla sometimes serves manifests without a proper mpegurl content-type
+  "text/plain",
+]);
+
+function isM3u8(pathname: string, contentType: string): boolean {
+  if (pathname.toLowerCase().endsWith(".m3u8")) return true;
+  const baseContentType = contentType.toLowerCase().split(";")[0]?.trim() ?? "";
+  return M3U8_CONTENT_TYPES.has(baseContentType);
+}
+
 function rewriteM3u8(content: string, baseUrl: string): string {
   return content
     .split("\n")
@@ -66,12 +80,8 @@ export async function GET(request: NextRequest) {
   }
 
   const contentType = upstream.headers.get("Content-Type") ?? "";
-  const isM3u8 =
-    contentType.includes("mpegurl") ||
-    contentType.includes("x-mpegurl") ||
-    targetUrl.pathname.endsWith(".m3u8");
 
-  if (isM3u8) {
+  if (isM3u8(targetUrl.pathname, contentType)) {
     const text = await upstream.text();
     const rewritten = rewriteM3u8(text, targetUrl.toString());
     return new NextResponse(rewritten, {
