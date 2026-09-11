@@ -71,12 +71,18 @@ export async function GET(request: NextRequest) {
   let upstream: Response;
   try {
     upstream = await fetch(targetUrl.toString(), { headers: ZILLA_HEADERS });
-  } catch {
-    return NextResponse.json({ error: "Upstream unreachable" }, { status: 502 });
+  } catch (error) {
+    return NextResponse.json(
+      { error: "Upstream unreachable", detail: error instanceof Error ? error.message : String(error) },
+      { status: 502 },
+    );
   }
 
   if (!upstream.ok) {
-    return NextResponse.json({ error: "Upstream error" }, { status: 502 });
+    return NextResponse.json(
+      { error: "Upstream error", upstreamStatus: upstream.status, upstreamStatusText: upstream.statusText },
+      { status: 502 },
+    );
   }
 
   const contentType = upstream.headers.get("Content-Type") ?? "";
