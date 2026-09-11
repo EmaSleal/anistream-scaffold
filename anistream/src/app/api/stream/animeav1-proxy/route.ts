@@ -72,6 +72,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Upstream host not allowed" }, { status: 400 });
   }
 
+  const startedAt = Date.now();
   let upstream: Response;
   try {
     upstream = await fetch(targetUrl.toString(), {
@@ -80,6 +81,9 @@ export async function GET(request: NextRequest) {
     });
   } catch (error) {
     const isTimeout = error instanceof Error && error.name === "TimeoutError";
+    console.error(
+      `[animeav1-proxy] fetch failed after ${Date.now() - startedAt}ms for ${targetUrl.pathname}: ${error instanceof Error ? error.message : String(error)}`,
+    );
     return NextResponse.json(
       {
         error: isTimeout ? "Upstream timeout" : "Upstream unreachable",
@@ -88,6 +92,10 @@ export async function GET(request: NextRequest) {
       { status: 502 },
     );
   }
+
+  console.log(
+    `[animeav1-proxy] upstream ${upstream.status} in ${Date.now() - startedAt}ms for ${targetUrl.pathname}`,
+  );
 
   if (!upstream.ok) {
     return NextResponse.json(
