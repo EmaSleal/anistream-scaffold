@@ -17,6 +17,7 @@ from fetcher import fetch_related_anime, fetch_jikan_by_genre, search_animeflv
 from scraper_animeav1 import search_animeav1
 from scraper_jkanime import search_jkanime
 from cache import TTLCache
+from routes.ingest_routes import backfill_episodes_from_metadata
 
 series_bp = Blueprint("series", __name__, url_prefix="/api/series")
 
@@ -461,6 +462,11 @@ def update_stream_source(series_id: str):
     )
     if not updated:
         return jsonify({"error": "Series not found"}), 404
+
+    # Series assigned a stream source here may be a metadata-only stub
+    # (upsert_series_stub) that never went through /ingest — no-ops if the
+    # series already has episodes.
+    backfill_episodes_from_metadata(series_id)
 
     return jsonify({
         "id": series_id,

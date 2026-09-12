@@ -12,6 +12,7 @@ from fetcher import (
 from normalizer import normalize
 from storage import upsert_series, upsert_episodes, get_series_by_mal_id, get_episode_count
 from scraper_animeav1 import scrape_animeav1_episodes, search_animeav1, animeav1_has_dub
+from db.series import get_series_by_id
 
 bp = Blueprint("api", __name__)
 
@@ -194,6 +195,39 @@ def backfill_episode_metadata(series_id: str) -> int:
     jikan_titles = fetch_jikan_episodes(mal_id) if mal_id else {}
 
     episodes = _build_episodes_from_animeav1(series_id, principal_slug, kitsu_eps, jikan_titles)
+    if not episodes:
+        return 0
+    return upsert_episodes(episodes)
+
+
+def backfill_episodes_from_metadata(series_id: str) -> int:
+    """Create episode rows from Kitsu/Jikan metadata for a series that has none.
+
+    A series can exist with zero episode rows — created as a metadata-only
+    stub (db.series.upsert_series_stub, used by simulcast auto-discovery and
+    recommendations seeding) or via the admin downloads UI assigning a
+    fallback_slug to such a stub — without ever going through /ingest. Both
+    paths only touch the series row, not episodes. This mirrors what /ingest
+    already does when no AnimeAV1 slug is available (_build_episodes_from_metadata),
+    so it's safe to call standalone: it no-ops whenever episodes already exist.
+
+    Returns the number of episodes created, or 0 if the series already has
+    episodes, doesn't exist, or Kitsu/Jikan have no episode data yet.
+    """
+    if get_episode_count(series_id) > 0:
+        return 0
+
+    row = get_series_by_id(series_id)
+    if not row:
+        return 0
+
+    kitsu_id = row.get("kitsu_id")
+    mal_id = row.get("mal_id")
+    media_type = row.get("media_type") or ""
+    kitsu_eps = fetch_kitsu_episodes(kitsu_id) if kitsu_id else {}
+    jikan_titles = fetch_jikan_episodes(mal_id) if mal_id else {}
+
+    episodes = _build_episodes_from_metadata(series_id, kitsu_eps, jikan_titles, media_type)
     if not episodes:
         return 0
     return upsert_episodes(episodes)
