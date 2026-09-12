@@ -62,6 +62,10 @@ def client():
 # ---------------------------------------------------------------------------
 
 class TestAuthGuard:
+    def test_series_overview_no_token_returns_401(self, client):
+        res = client.get("/api/admin/downloads/series-overview")
+        assert res.status_code == 401
+
     def test_episodes_no_token_returns_401(self, client):
         res = client.get("/api/admin/downloads/episodes/series-1")
         assert res.status_code == 401
@@ -81,6 +85,96 @@ class TestAuthGuard:
     def test_jobs_no_token_returns_401(self, client):
         res = client.get("/api/admin/downloads/jobs/job-1")
         assert res.status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# GET /series-overview
+# ---------------------------------------------------------------------------
+
+_OVERVIEW_ROWS = [
+    {"id": "series-1", "title": "Naruto", "fallback_slug": "naruto"},
+    {"id": "series-2", "title": "One Piece", "fallback_slug": None},
+]
+
+
+class TestSeriesOverviewRoute:
+    def test_all_downloaded(self, client):
+        with patch("routes.downloads_routes.db_series.get_series_overview_page",
+                   return_value=([_OVERVIEW_ROWS[0]], 1)), \
+             patch("routes.downloads_routes.db_episodes.get_episodes_by_series", return_value=_EPISODES), \
+             patch("routes.downloads_routes.nas_configured", return_value=True), \
+             patch("routes.downloads_routes.check_episode_status", return_value="downloaded"):
+            res = client.get("/api/admin/downloads/series-overview", headers=_admin_headers())
+        assert res.status_code == 200
+        data = json.loads(res.data)
+        assert data["total"] == 1
+        row = data["series"][0]
+        assert row["id"] == "series-1"
+        assert row["jkanimeIngested"] is True
+        assert row["episodeCount"] == 2
+        assert row["downloadedCount"] == 2
+        assert row["status"] == "all"
+
+    def test_partial_status(self, client):
+        statuses = iter(["downloaded", "missing"])
+        with patch("routes.downloads_routes.db_series.get_series_overview_page",
+                   return_value=([_OVERVIEW_ROWS[0]], 1)), \
+             patch("routes.downloads_routes.db_episodes.get_episodes_by_series", return_value=_EPISODES), \
+             patch("routes.downloads_routes.nas_configured", return_value=True), \
+             patch("routes.downloads_routes.check_episode_status", side_effect=lambda *_: next(statuses)):
+            res = client.get("/api/admin/downloads/series-overview", headers=_admin_headers())
+        row = json.loads(res.data)["series"][0]
+        assert row["downloadedCount"] == 1
+        assert row["status"] == "partial"
+
+    def test_none_downloaded(self, client):
+        with patch("routes.downloads_routes.db_series.get_series_overview_page",
+                   return_value=([_OVERVIEW_ROWS[1]], 1)), \
+             patch("routes.downloads_routes.db_episodes.get_episodes_by_series", return_value=_EPISODES), \
+             patch("routes.downloads_routes.nas_configured", return_value=True), \
+             patch("routes.downloads_routes.check_episode_status", return_value="missing"):
+            res = client.get("/api/admin/downloads/series-overview", headers=_admin_headers())
+        row = json.loads(res.data)["series"][0]
+        assert row["jkanimeIngested"] is False
+        assert row["downloadedCount"] == 0
+        assert row["status"] == "none"
+
+    def test_unknown_when_nas_not_configured(self, client):
+        with patch("routes.downloads_routes.db_series.get_series_overview_page",
+                   return_value=([_OVERVIEW_ROWS[0]], 1)), \
+             patch("routes.downloads_routes.db_episodes.get_episodes_by_series", return_value=_EPISODES), \
+             patch("routes.downloads_routes.nas_configured", return_value=False):
+            res = client.get("/api/admin/downloads/series-overview", headers=_admin_headers())
+        row = json.loads(res.data)["series"][0]
+        assert row["status"] == "unknown"
+        assert row["downloadedCount"] == 0
+
+    def test_none_status_when_series_has_no_episodes(self, client):
+        with patch("routes.downloads_routes.db_series.get_series_overview_page",
+                   return_value=([_OVERVIEW_ROWS[0]], 1)), \
+             patch("routes.downloads_routes.db_episodes.get_episodes_by_series", return_value=[]), \
+             patch("routes.downloads_routes.nas_configured", return_value=True):
+            res = client.get("/api/admin/downloads/series-overview", headers=_admin_headers())
+        row = json.loads(res.data)["series"][0]
+        assert row["episodeCount"] == 0
+        assert row["status"] == "none"
+
+    def test_forwards_query_params_to_db_layer(self, client):
+        with patch("routes.downloads_routes.db_series.get_series_overview_page",
+                   return_value=([], 0)) as mock_page:
+            res = client.get(
+                "/api/admin/downloads/series-overview?q=naruto&limit=5&offset=10",
+                headers=_admin_headers(),
+            )
+        assert res.status_code == 200
+        mock_page.assert_called_once_with(search="naruto", limit=5, offset=10)
+
+    def test_empty_when_no_series_match(self, client):
+        with patch("routes.downloads_routes.db_series.get_series_overview_page", return_value=([], 0)):
+            res = client.get("/api/admin/downloads/series-overview", headers=_admin_headers())
+        assert res.status_code == 200
+        data = json.loads(res.data)
+        assert data == {"series": [], "total": 0}
 
 
 # ---------------------------------------------------------------------------

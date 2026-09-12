@@ -116,6 +116,28 @@ def search_series(q: str, limit: int = 8) -> list[dict]:
     return result.data or []
 
 
+def get_series_overview_page(
+    search: str | None = None,
+    limit: int = 20,
+    offset: int = 0,
+) -> tuple[list[dict], int]:
+    """Return one page of series for the admin downloads overview, plus total count.
+
+    Minimal projection: id, title, fallback_slug (jkanime ingestion flag).
+    Ordered by title ASC for stable pagination.
+    """
+    client = storage.get_client()
+    query = client.table("series").select("id, title, fallback_slug", count="exact")
+
+    if search:
+        query = query.ilike("title", f"%{search}%")
+
+    query = query.order("title", desc=False).range(offset, offset + limit - 1)
+
+    result = query.execute()
+    return result.data or [], result.count or 0
+
+
 def get_stream_config(series_id: str) -> dict | None:
     """Return streaming config fields for the given series.
 

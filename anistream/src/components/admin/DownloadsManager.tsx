@@ -32,6 +32,17 @@ interface SeriesMeta {
   slug: string;
 }
 
+type SeriesDownloadStatus = "all" | "partial" | "none" | "unknown";
+
+interface SeriesOverviewRow {
+  id: string;
+  title: string;
+  jkanimeIngested: boolean;
+  episodeCount: number;
+  downloadedCount: number;
+  status: SeriesDownloadStatus;
+}
+
 interface State {
   series: SeriesMeta | null;
   episodes: Episode[];
@@ -165,6 +176,22 @@ async function fetchEpisodeStatuses(
       status: e.status ?? "unknown",
     })),
   };
+}
+
+async function fetchSeriesOverview(
+  q: string,
+  limit: number,
+  offset: number
+): Promise<{ series: SeriesOverviewRow[]; total: number }> {
+  const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
+  if (q.trim()) params.set("q", q.trim());
+
+  const res = await fetch(`/api/admin/downloads/series-overview?${params}`, {
+    cache: "no-store",
+  });
+  if (!res.ok) return { series: [], total: 0 };
+  const data = await res.json().catch(() => ({}));
+  return { series: data.series ?? [], total: data.total ?? 0 };
 }
 
 async function fetchSources(seriesId: string, ep: number): Promise<Source[]> {
@@ -332,6 +359,146 @@ function EpisodeRow({
         {!showActions && !isDownloaded && <JobStatusLabel job={job} />}
       </td>
     </tr>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// SeriesOverviewTable
+// ---------------------------------------------------------------------------
+
+const OVERVIEW_PAGE_SIZE = 20;
+
+function DownloadStatusBadge({ status }: { status: SeriesDownloadStatus }) {
+  if (status === "all")
+    return <span className={`${styles.badge} ${styles.badgeDownloaded}`}>All downloaded</span>;
+  if (status === "partial")
+    return <span className={`${styles.badge} ${styles.badgeLoading}`}>Partial</span>;
+  if (status === "none")
+    return <span className={`${styles.badge} ${styles.badgeMissing}`}>None downloaded</span>;
+  return <span className={`${styles.badge} ${styles.badgeUnknown}`}>Unknown</span>;
+}
+
+function SeriesOverviewTable({
+  onSelect,
+}: {
+  onSelect: (series: SeriesMeta) => void;
+}) {
+  const [query, setQuery] = useState("");
+  const [rows, setRows] = useState<SeriesOverviewRow[]>([]);
+  const [total, setTotal] = useState(0);
+  const [offset, setOffset] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const requestIdRef = useRef(0);
+
+  const load = useCallback(async (q: string, off: number) => {
+    const requestId = ++requestIdRef.current;
+    setLoading(true);
+    const data = await fetchSeriesOverview(q, OVERVIEW_PAGE_SIZE, off);
+    if (requestId !== requestIdRef.current) return; // stale response, a newer request won the race
+    setRows(data.series);
+    setTotal(data.total);
+    setLoading(false);
+  }, []);
+
+  useEffect(() => {
+    load(query, offset);
+    // Only `offset` should retrigger the effect — query changes go through the
+    // debounced handler below, which resets offset to 0 and loads directly.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [offset]);
+
+  const handleQueryChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = e.target.value;
+    setQuery(val);
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
+      setOffset(0);
+      load(val, 0);
+    }, 300);
+  };
+
+  const hasPrev = offset > 0;
+  const hasNext = offset + OVERVIEW_PAGE_SIZE < total;
+  const rangeStart = total === 0 ? 0 : offset + 1;
+  const rangeEnd = Math.min(offset + OVERVIEW_PAGE_SIZE, total);
+
+  return (
+    <div className={styles.overviewSection}>
+      <h2 className={styles.sectionTitle}>Series overview</h2>
+      <input
+        type="text"
+        className={styles.searchInput}
+        placeholder="Filter series by title…"
+        value={query}
+        onChange={handleQueryChange}
+        autoComplete="off"
+      />
+
+      {loading ? (
+        <p className={styles.episodeEmpty}>Loading…</p>
+      ) : rows.length === 0 ? (
+        <p className={styles.episodeEmpty}>No series found.</p>
+      ) : (
+        <>
+          <table className={styles.table}>
+            <thead>
+              <tr>
+                <th>Title</th>
+                <th>JKanime</th>
+                <th>Downloads</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((s) => (
+                <tr
+                  key={s.id}
+                  className={styles.overviewRow}
+                  onClick={() => onSelect({ id: s.id, title: s.title, slug: "" })}
+                >
+                  <td>{s.title}</td>
+                  <td>
+                    {s.jkanimeIngested ? (
+                      <span className={`${styles.badge} ${styles.badgeDownloaded}`}>Yes</span>
+                    ) : (
+                      <span className={`${styles.badge} ${styles.badgeMissing}`}>No</span>
+                    )}
+                  </td>
+                  <td>
+                    <DownloadStatusBadge status={s.status} />{" "}
+                    <span className={styles.overviewCount}>
+                      ({s.downloadedCount}/{s.episodeCount})
+                    </span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+
+          <div className={styles.pagination}>
+            <button
+              type="button"
+              className={`${styles.triggerBtn} ${styles.triggerBtnSecondary}`}
+              onClick={() => setOffset(Math.max(0, offset - OVERVIEW_PAGE_SIZE))}
+              disabled={!hasPrev}
+            >
+              Prev
+            </button>
+            <span className={styles.paginationLabel}>
+              {rangeStart}–{rangeEnd} of {total}
+            </span>
+            <button
+              type="button"
+              className={`${styles.triggerBtn} ${styles.triggerBtnSecondary}`}
+              onClick={() => setOffset(offset + OVERVIEW_PAGE_SIZE)}
+              disabled={!hasNext}
+            >
+              Next
+            </button>
+          </div>
+        </>
+      )}
+    </div>
   );
 }
 
@@ -526,6 +693,8 @@ export function DownloadsManager() {
   return (
     <div className={styles.root}>
       {state.error && <div className={styles.error}>{state.error}</div>}
+
+      <SeriesOverviewTable onSelect={handleSeriesSelect} />
 
       <SeriesSearchBox onSelect={handleSeriesSelect} />
 

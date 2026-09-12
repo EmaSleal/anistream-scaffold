@@ -3,6 +3,7 @@
 All routes require @require_admin (401 without token, 403 for non-ADMIN role).
 
 Endpoints:
+  GET  /api/admin/downloads/series-overview?q=&limit=&offset=
   GET  /api/admin/downloads/episodes/<series_id>
   GET  /api/admin/downloads/sources/<series_id>?episode_number=N
   POST /api/admin/downloads/trigger
@@ -26,6 +27,91 @@ logger = logging.getLogger(__name__)
 downloads_bp = Blueprint("downloads", __name__, url_prefix="/api/admin/downloads")
 
 _NAS_WORKERS = 8
+
+
+@downloads_bp.get("/series-overview")
+@require_admin
+def series_overview():
+    """Return one page of series with aggregate NAS download status.
+
+    Query params:
+        q (str, optional): title search filter.
+        limit (int, optional): page size, default 20.
+        offset (int, optional): page offset, default 0.
+
+    Status is computed by fanning out per-episode NAS checks across every
+    series in the page through a single shared thread pool — bounding total
+    concurrency regardless of how many episodes the page's series have.
+    "none" covers both zero episodes and zero downloaded episodes.
+
+    Returns:
+        200  {
+          "series": [{id, title, jkanimeIngested, episodeCount, downloadedCount, status}],
+          "total": int
+        }
+    """
+    search = request.args.get("q") or None
+    try:
+        limit = int(request.args.get("limit", 20))
+    except (ValueError, TypeError):
+        limit = 20
+    try:
+        offset = int(request.args.get("offset", 0))
+    except (ValueError, TypeError):
+        offset = 0
+
+    rows, total = db_series.get_series_overview_page(search=search, limit=limit, offset=offset)
+
+    episodes_by_series: dict[str, list[dict]] = {}
+    tasks: list[tuple[str, int]] = []
+    nas_ready = nas_configured()
+
+    for row in rows:
+        series_id = row["id"]
+        episodes = db_episodes.get_episodes_by_series(series_id)
+        episodes_by_series[series_id] = episodes
+        if nas_ready:
+            tasks.extend((series_id, ep["episode_number"]) for ep in episodes)
+
+    downloaded_counts: dict[str, int] = {}
+    if tasks:
+        with ThreadPoolExecutor(max_workers=_NAS_WORKERS) as pool:
+            futures = {
+                pool.submit(check_episode_status, sid, ep_num): sid for sid, ep_num in tasks
+            }
+            for future in as_completed(futures):
+                sid = futures[future]
+                try:
+                    if future.result() == "downloaded":
+                        downloaded_counts[sid] = downloaded_counts.get(sid, 0) + 1
+                except Exception:
+                    logger.warning("[downloads] series-overview NAS check raised for series=%s", sid)
+
+    series_list = []
+    for row in rows:
+        series_id = row["id"]
+        episode_count = len(episodes_by_series[series_id])
+        downloaded_count = downloaded_counts.get(series_id, 0)
+
+        if not nas_ready:
+            status = "unknown"
+        elif downloaded_count == 0:
+            status = "none"
+        elif downloaded_count == episode_count:
+            status = "all"
+        else:
+            status = "partial"
+
+        series_list.append({
+            "id": series_id,
+            "title": row.get("title") or "",
+            "jkanimeIngested": bool(row.get("fallback_slug")),
+            "episodeCount": episode_count,
+            "downloadedCount": downloaded_count,
+            "status": status,
+        })
+
+    return jsonify({"series": series_list, "total": total}), 200
 
 
 @downloads_bp.get("/episodes/<series_id>")
