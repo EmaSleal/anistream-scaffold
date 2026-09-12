@@ -11,9 +11,10 @@ type Phase = "loading" | "success" | "failed";
 interface Props {
   seriesId: string;
   malId: number;
+  principalSlug?: string;
 }
 
-export default function IngestTrigger({ seriesId, malId }: Props) {
+export default function IngestTrigger({ seriesId, malId, principalSlug }: Props) {
   const router = useRouter();
   const [phase, setPhase] = useState<Phase>("loading");
   const [animeav1Custom, setAnimeav1Custom] = useState("");
@@ -43,10 +44,13 @@ export default function IngestTrigger({ seriesId, malId }: Props) {
   }
 
   useEffect(() => {
-    // Guess: the series' own canonical slug is often also its AnimeAV1 slug.
-    // If AnimeAV1 doesn't have it, ingest returns 0 real episodes and the
-    // retry form below lets an admin supply the correct slug.
-    tryIngest(undefined, seriesId);
+    // Prefer an already-confirmed principal_slug (e.g. set via the admin
+    // simulcast editor). Otherwise fall back to guessing the series' own
+    // canonical slug, which is often also its AnimeAV1 slug for series first
+    // ingested through AnimeAV1. If AnimeAV1 doesn't have it, ingest returns
+    // 0 real episodes and the retry form below lets an admin supply the
+    // correct slug.
+    tryIngest(undefined, principalSlug || seriesId);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
