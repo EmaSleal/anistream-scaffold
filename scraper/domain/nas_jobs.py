@@ -7,11 +7,19 @@ gracefully to safe defaults rather than raising to callers.
 
 import logging
 import requests
+from cache import TTLCache
 from config import NAS_BASE_URL, NAS_API_KEY
 
 logger = logging.getLogger(__name__)
 
 _TIMEOUT = 5
+
+# Caches definitive check_episode_status results ("downloaded"/"missing") so
+# admin views that fan out many per-episode checks (series-overview pagination,
+# revisiting an episode list) don't re-hit the NAS for episodes whose status
+# rarely changes. "unknown" (network/transient errors) is never cached — those
+# should be retried on the next call, not locked in for the TTL.
+_STATUS_CACHE = TTLCache(ttl_seconds=60)
 
 
 class NasUnavailable(Exception):
@@ -27,9 +35,15 @@ def check_episode_status(series_id: str, episode_number: int) -> str:
 
     'unknown' is returned on any network or unexpected error so callers can
     always render a result — mirrors the fail-open pattern of resolve_nas_stream.
+    Definitive results are cached for _STATUS_CACHE's TTL (see module docstring).
     """
     if not nas_configured():
         return "unknown"
+
+    cache_key = f"{series_id}:{episode_number}"
+    cached = _STATUS_CACHE.get(cache_key)
+    if cached is not None:
+        return cached
 
     try:
         resp = requests.get(
@@ -46,8 +60,10 @@ def check_episode_status(series_id: str, episode_number: int) -> str:
         return "unknown"
 
     if resp.status_code == 404:
+        _STATUS_CACHE.set(cache_key, "missing")
         return "missing"
     if resp.ok:
+        _STATUS_CACHE.set(cache_key, "downloaded")
         return "downloaded"
 
     logger.warning(

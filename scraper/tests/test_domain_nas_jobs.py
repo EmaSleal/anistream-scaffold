@@ -61,6 +61,13 @@ class TestNasConfigured:
 # ---------------------------------------------------------------------------
 
 class TestCheckEpisodeStatus:
+    @pytest.fixture(autouse=True)
+    def _fresh_status_cache(self, monkeypatch):
+        """check_episode_status caches definitive results — reset it per test
+        so cases sharing a (series_id, episode_number) key don't leak state."""
+        from cache import TTLCache
+        monkeypatch.setattr(nas_jobs_module, "_STATUS_CACHE", TTLCache(ttl_seconds=60))
+
     def test_downloaded_on_200(self, monkeypatch):
         monkeypatch.setattr(nas_jobs_module, "NAS_BASE_URL", "http://nas")
         monkeypatch.setattr(nas_jobs_module, "NAS_API_KEY", "key")
@@ -89,6 +96,22 @@ class TestCheckEpisodeStatus:
         monkeypatch.setattr(nas_jobs_module, "NAS_BASE_URL", "")
         monkeypatch.setattr(nas_jobs_module, "NAS_API_KEY", "")
         assert check_episode_status("series-1", 1) == "unknown"
+
+    def test_second_call_reuses_cached_result_without_hitting_nas(self, monkeypatch):
+        monkeypatch.setattr(nas_jobs_module, "NAS_BASE_URL", "http://nas")
+        monkeypatch.setattr(nas_jobs_module, "NAS_API_KEY", "key")
+        with patch("domain.nas_jobs.requests.get", return_value=_mock_response(200, {"id": 1})) as mock_get:
+            assert check_episode_status("series-1", 1) == "downloaded"
+            assert check_episode_status("series-1", 1) == "downloaded"
+        mock_get.assert_called_once()
+
+    def test_unknown_result_is_not_cached(self, monkeypatch):
+        monkeypatch.setattr(nas_jobs_module, "NAS_BASE_URL", "http://nas")
+        monkeypatch.setattr(nas_jobs_module, "NAS_API_KEY", "key")
+        with patch("domain.nas_jobs.requests.get", side_effect=ConnectionError("timeout")) as mock_get:
+            assert check_episode_status("series-1", 1) == "unknown"
+            assert check_episode_status("series-1", 1) == "unknown"
+        assert mock_get.call_count == 2
 
 
 # ---------------------------------------------------------------------------

@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useReducer, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useReducer, useRef, useState } from "react";
+import { saveAnimeav1Source } from "@/app/actions/stream";
 import styles from "./DownloadsManager.module.css";
 
 // ---------------------------------------------------------------------------
@@ -194,6 +195,23 @@ async function fetchSeriesOverview(
   return { series: data.series ?? [], total: data.total ?? 0 };
 }
 
+interface JkanimeResult {
+  title: string;
+  slug: string;
+  jkanime_url: string;
+  thumbnail_url: string | null;
+}
+
+async function searchJkanime(q: string): Promise<JkanimeResult[]> {
+  if (!q.trim()) return [];
+  const res = await fetch(
+    `/api/series/search-jkanime?q=${encodeURIComponent(q)}&limit=10`,
+    { cache: "no-store" }
+  );
+  if (!res.ok) return [];
+  return res.json().catch(() => []);
+}
+
 async function fetchSources(seriesId: string, ep: number): Promise<Source[]> {
   const res = await fetch(
     `/api/admin/downloads/sources/${seriesId}?episode_number=${ep}`,
@@ -378,6 +396,117 @@ function DownloadStatusBadge({ status }: { status: SeriesDownloadStatus }) {
   return <span className={`${styles.badge} ${styles.badgeUnknown}`}>Unknown</span>;
 }
 
+function JkanimeAssignPanel({
+  seriesId,
+  onDone,
+  onCancel,
+}: {
+  seriesId: string;
+  onDone: () => void;
+  onCancel: () => void;
+}) {
+  const [query, setQuery] = useState("");
+  const [results, setResults] = useState<JkanimeResult[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleSearch = async () => {
+    if (!query.trim()) return;
+    setSearching(true);
+    setError(null);
+    setResults([]);
+    try {
+      const data = await searchJkanime(query);
+      if (data.length === 0) setError("No results found on jkanime.");
+      setResults(data);
+    } catch {
+      setError("Search failed.");
+    } finally {
+      setSearching(false);
+    }
+  };
+
+  const handleSelect = async (result: JkanimeResult) => {
+    setSaving(true);
+    setError(null);
+    try {
+      await saveAnimeav1Source(seriesId, result.slug);
+      onDone();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to save.");
+      setSaving(false);
+    }
+  };
+
+  return (
+    <tr className={styles.assignRow}>
+      <td colSpan={3}>
+        <div className={styles.assignPanel}>
+          <span className={styles.searchLabel}>
+            Not ingested in JKanime — search to link it:
+          </span>
+          <div className={styles.actions}>
+            <input
+              type="text"
+              className={styles.searchInput}
+              placeholder="Search jkanime by title…"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  void handleSearch();
+                }
+              }}
+              disabled={searching || saving}
+              autoFocus
+            />
+            <button
+              type="button"
+              className={styles.triggerBtn}
+              onClick={() => void handleSearch()}
+              disabled={searching || saving || !query.trim()}
+            >
+              {searching ? "Searching…" : "Search"}
+            </button>
+            <button
+              type="button"
+              className={`${styles.triggerBtn} ${styles.triggerBtnSecondary}`}
+              onClick={onCancel}
+              disabled={saving}
+            >
+              Cancel
+            </button>
+          </div>
+
+          {error && <p className={styles.episodeEmpty}>{error}</p>}
+          {saving && <p className={styles.episodeEmpty}>Saving…</p>}
+
+          {results.length > 0 && (
+            <ul className={styles.assignResults} role="listbox">
+              {results.map((r) => (
+                <li
+                  key={r.slug}
+                  className={styles.assignResultItem}
+                  role="option"
+                  aria-selected={false}
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    void handleSelect(r);
+                  }}
+                >
+                  {r.title} <span className={styles.overviewCount}>({r.slug})</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </td>
+    </tr>
+  );
+}
+
 function SeriesOverviewTable({
   onSelect,
 }: {
@@ -388,6 +517,7 @@ function SeriesOverviewTable({
   const [total, setTotal] = useState(0);
   const [offset, setOffset] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [assigningId, setAssigningId] = useState<string | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const requestIdRef = useRef(0);
 
@@ -451,26 +581,41 @@ function SeriesOverviewTable({
             </thead>
             <tbody>
               {rows.map((s) => (
-                <tr
-                  key={s.id}
-                  className={styles.overviewRow}
-                  onClick={() => onSelect({ id: s.id, title: s.title, slug: "" })}
-                >
-                  <td>{s.title}</td>
-                  <td>
-                    {s.jkanimeIngested ? (
-                      <span className={`${styles.badge} ${styles.badgeDownloaded}`}>Yes</span>
-                    ) : (
-                      <span className={`${styles.badge} ${styles.badgeMissing}`}>No</span>
-                    )}
-                  </td>
-                  <td>
-                    <DownloadStatusBadge status={s.status} />{" "}
-                    <span className={styles.overviewCount}>
-                      ({s.downloadedCount}/{s.episodeCount})
-                    </span>
-                  </td>
-                </tr>
+                <Fragment key={s.id}>
+                  <tr
+                    className={styles.overviewRow}
+                    onClick={() =>
+                      s.jkanimeIngested
+                        ? onSelect({ id: s.id, title: s.title, slug: "" })
+                        : setAssigningId((cur) => (cur === s.id ? null : s.id))
+                    }
+                  >
+                    <td>{s.title}</td>
+                    <td>
+                      {s.jkanimeIngested ? (
+                        <span className={`${styles.badge} ${styles.badgeDownloaded}`}>Yes</span>
+                      ) : (
+                        <span className={`${styles.badge} ${styles.badgeMissing}`}>No</span>
+                      )}
+                    </td>
+                    <td>
+                      <DownloadStatusBadge status={s.status} />{" "}
+                      <span className={styles.overviewCount}>
+                        ({s.downloadedCount}/{s.episodeCount})
+                      </span>
+                    </td>
+                  </tr>
+                  {assigningId === s.id && (
+                    <JkanimeAssignPanel
+                      seriesId={s.id}
+                      onCancel={() => setAssigningId(null)}
+                      onDone={() => {
+                        setAssigningId(null);
+                        load(query, offset);
+                      }}
+                    />
+                  )}
+                </Fragment>
               ))}
             </tbody>
           </table>

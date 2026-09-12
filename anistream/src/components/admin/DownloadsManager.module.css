@@ -105,6 +105,46 @@
   color: var(--color-text-secondary);
 }
 
+.assignRow {
+  cursor: default;
+}
+
+.assignRow:hover {
+  background: transparent;
+}
+
+.assignPanel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  background: var(--color-bg-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+.assignResults {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 240px;
+  overflow-y: auto;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+.assignResultItem {
+  padding: var(--space-2) var(--space-3);
+  cursor: pointer;
+  font-size: 0.875rem;
+  color: var(--color-text-primary);
+  transition: background var(--transition-fast);
+}
+
+.assignResultItem:hover {
+  background: var(--color-bg-card);
+}
+
 /* ── Episode list ──────────────────────────────────── */
 .episodeSection {
   display: flex;
