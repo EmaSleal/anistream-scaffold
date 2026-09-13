@@ -47,17 +47,24 @@ def media_rank(media_type: str | None) -> int:
 def season_label(media_type: str | None, tv_index: int) -> str:
     """Return the display label for a season slot.
 
-    tv_index is 1-based and applies only when media_type is TV.
+    tv_index is 1-based and applies only when media_type is TV (or missing —
+    legacy/stub rows with no media_type recorded are assumed to be a real
+    season). Any OTHER value — recognized-but-non-TV (movie/ova/ona/special)
+    or unrecognized (e.g. Jikan's "CM"/"PV"/"TV Special"/"Music", or an
+    oddly-typed crossover entry) — falls back to "Especial" rather than
+    silently inflating the TV season count: a numbered "Temporada" should
+    only ever come from an actual "tv" media_type.
     """
-    mt = (media_type or "tv").lower()
+    if media_type is None:
+        return f"Temporada {tv_index}"
+    mt = media_type.lower()
+    if mt == "tv":
+        return f"Temporada {tv_index}"
     if mt == "movie":
         return "Película"
     if mt in ("ova", "ona"):
         return "OVA"
-    if mt == "special":
-        return "Especial"
-    # Default: TV or unknown
-    return f"Temporada {tv_index}"
+    return "Especial"
 
 
 def map_series_row(row: dict) -> dict:

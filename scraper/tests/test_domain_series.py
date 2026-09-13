@@ -123,6 +123,15 @@ class TestSeasonLabel:
     def test_none_defaults_to_tv(self):
         assert season_label(None, 2) == "Temporada 2"
 
+    def test_unrecognized_type_falls_back_to_especial(self):
+        # e.g. a crossover/collab entry Jikan tags with a type outside our
+        # known set ("CM", "PV", "TV Special", "Music", ...) must not be
+        # mistaken for a real numbered season (regression: "He Wei Dao x
+        # Slime" crossover special was showing as "Temporada 3").
+        assert season_label("cm", 3) == "Especial"
+        assert season_label("music", 3) == "Especial"
+        assert season_label("tv special", 3) == "Especial"
+
 
 # ---------------------------------------------------------------------------
 # map_series_row
