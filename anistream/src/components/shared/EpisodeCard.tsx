@@ -2,6 +2,7 @@ import Link from "next/link";
 import Image from "next/image";
 import type { Episode } from "@/types";
 import { formatDuration, formatEpisodeLabel, cn } from "@/lib/utils";
+import { EpisodeDownloadMenu } from "./EpisodeDownloadMenu";
 import styles from "./EpisodeCard.module.css";
 
 interface EpisodeCardProps {
@@ -11,6 +12,7 @@ interface EpisodeCardProps {
   showSeenBadge?: boolean;
   durationDisplay?: "total" | "remaining";
   size?: "sm" | "md";
+  isAdmin?: boolean;
 }
 
 export function EpisodeCard({
@@ -20,6 +22,7 @@ export function EpisodeCard({
   showSeenBadge = false,
   durationDisplay = "total",
   size = "md",
+  isAdmin = false,
 }: EpisodeCardProps) {
   const pct =
     ep.duration > 0 && ep.progressSeconds
@@ -36,6 +39,9 @@ export function EpisodeCard({
       href={`/watch/${ep.animeflvSlug ?? ep.id}`}
       className={cn(styles.card, size === "sm" && styles.sm, className)}
     >
+      {isAdmin && (
+        <EpisodeDownloadMenu seriesId={ep.seriesId} episodeNumber={ep.episode} />
+      )}
       <div className={styles.thumb}>
         {ep.thumbnailUrl ? (
           <Image

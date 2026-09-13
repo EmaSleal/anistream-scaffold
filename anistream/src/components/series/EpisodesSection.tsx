@@ -13,9 +13,10 @@ interface Season {
 interface EpisodesSectionProps {
   seasons: Season[];
   initialSeasonIdx?: number;
+  isAdmin?: boolean;
 }
 
-export function EpisodesSection({ seasons, initialSeasonIdx = 0 }: EpisodesSectionProps) {
+export function EpisodesSection({ seasons, initialSeasonIdx = 0, isAdmin = false }: EpisodesSectionProps) {
   const [seasonIdx, setSeasonIdx] = useState(initialSeasonIdx);
   const [oldest, setOldest] = useState(true);
   const [optionsOpen, setOptionsOpen] = useState(false);
@@ -104,7 +105,7 @@ export function EpisodesSection({ seasons, initialSeasonIdx = 0 }: EpisodesSecti
 
       <div className={styles.grid}>
         {episodes.map((ep) => (
-          <EpisodeCard key={ep.id} ep={ep} showSeenBadge />
+          <EpisodeCard key={ep.id} ep={ep} showSeenBadge isAdmin={isAdmin} />
         ))}
       </div>
 

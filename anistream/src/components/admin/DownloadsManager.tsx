@@ -2,6 +2,7 @@
 
 import { Fragment, useCallback, useEffect, useReducer, useRef, useState } from "react";
 import { saveAnimeav1Source } from "@/app/actions/stream";
+import { fetchSources, triggerDownload, pollJob, type Source, type JobPhase } from "@/lib/downloads-client";
 import styles from "./DownloadsManager.module.css";
 
 // ---------------------------------------------------------------------------
@@ -9,12 +10,6 @@ import styles from "./DownloadsManager.module.css";
 // ---------------------------------------------------------------------------
 
 type EpisodeStatus = "downloaded" | "missing" | "unknown" | "loading";
-type JobPhase = "pending" | "downloading" | "done" | "failed" | "unknown";
-
-interface Source {
-  source: "jkanime";
-  available: boolean;
-}
 
 interface JobState {
   jobId: string;
@@ -210,40 +205,6 @@ async function searchJkanime(q: string): Promise<JkanimeResult[]> {
   );
   if (!res.ok) return [];
   return res.json().catch(() => []);
-}
-
-async function fetchSources(seriesId: string, ep: number): Promise<Source[]> {
-  const res = await fetch(
-    `/api/admin/downloads/sources/${seriesId}?episode_number=${ep}`,
-    { cache: "no-store" }
-  );
-  if (!res.ok) return [];
-  const data = await res.json().catch(() => ({}));
-  return data.sources ?? [];
-}
-
-async function triggerDownload(
-  seriesId: string,
-  ep: number,
-  source: string
-): Promise<{ jobId: string; status: JobPhase }> {
-  const res = await fetch("/api/admin/downloads/trigger", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ series_id: seriesId, episode_number: ep, source }),
-    cache: "no-store",
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.error ?? `HTTP ${res.status}`);
-  }
-  return res.json();
-}
-
-async function pollJob(jobId: string): Promise<{ status: JobPhase; error?: string }> {
-  const res = await fetch(`/api/admin/downloads/jobs/${jobId}`, { cache: "no-store" });
-  if (!res.ok) return { status: "unknown" };
-  return res.json().catch(() => ({ status: "unknown" }));
 }
 
 // ---------------------------------------------------------------------------

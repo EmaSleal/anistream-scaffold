@@ -97,7 +97,7 @@ export default async function SeriesPage({ params }: SeriesPageProps) {
         />
       )}
       {!noEpisodes ? (
-        <EpisodesSection seasons={seasons} initialSeasonIdx={initialSeasonIdx} />
+        <EpisodesSection seasons={seasons} initialSeasonIdx={initialSeasonIdx} isAdmin={isAdmin} />
       ) : isAdmin && series.malId ? (
         <IngestTrigger seriesId={series.id} malId={series.malId} principalSlug={series.principalSlug} />
       ) : (
