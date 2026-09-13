@@ -12,7 +12,7 @@ from fetcher import (
 from normalizer import normalize
 from storage import upsert_series, upsert_episodes, get_series_by_mal_id, get_episode_count
 from scraper_animeav1 import scrape_animeav1_episodes, search_animeav1, animeav1_has_dub
-from db.series import get_series_by_id
+from db.series import get_series_by_id, get_series_by_franchise
 
 bp = Blueprint("api", __name__)
 
@@ -135,21 +135,41 @@ def _build_episodes_from_animeav1(
     animeav1_slug: str,
     kitsu_eps: dict,
     jikan_titles: dict[int, dict] | None = None,
+    episode_offset: int = 0,
+    max_episodes: int | None = None,
 ) -> list[dict]:
     """Scrape AnimeAV1 episode list and merge with Kitsu + Jikan metadata.
 
     Sets animeflv_slug to None — episodes sourced from AnimeAV1 do not have
     an AnimeFlv episode slug.  Returns [] on scraper error or empty result.
+
+    ``episode_offset`` and ``max_episodes`` handle the case where AnimeAV1
+    doesn't split a MAL cour split ("Part 1"/"Part 2") into separate pages —
+    both parts' title search resolve to the same AnimeAV1 slug. When that
+    happens, an earlier-ingested sibling already claims the leading episodes
+    on that shared page (see ``_claimed_episode_offset``); this member skips
+    those (keeping AnimeAV1's native episode_number, required for stream
+    resolution) and is capped at its own official MAL episode count so it
+    never grabs episodes belonging to a not-yet-ingested later sibling.
+    Kitsu/Jikan lookups are rebased to this member's own numbering (which
+    restarts at 1 per MAL entry) via ``num - episode_offset``.
     """
     raw_episodes = scrape_animeav1_episodes(animeav1_slug)
+    if not raw_episodes:
+        return []
+    if episode_offset:
+        raw_episodes = [ep for ep in raw_episodes if ep["episode_number"] > episode_offset]
+    if max_episodes:
+        raw_episodes = raw_episodes[:max_episodes]
     if not raw_episodes:
         return []
 
     episodes = []
     for ep in raw_episodes:
         num = ep["episode_number"]
-        kitsu = kitsu_eps.get(num, {})
-        jikan = (jikan_titles.get(num) or {}) if jikan_titles else {}
+        rel_num = num - episode_offset
+        kitsu = kitsu_eps.get(rel_num, {})
+        jikan = (jikan_titles.get(rel_num) or {}) if jikan_titles else {}
         title = jikan.get("title") or kitsu.get("title")
         aired_at = kitsu.get("aired_at") or jikan.get("aired_at")
         episodes.append({
@@ -164,6 +184,27 @@ def _build_episodes_from_animeav1(
             "animeflv_slug": None,
         })
     return episodes
+
+
+def _claimed_episode_offset(franchise_id: str | None, av1_slug: str, exclude_id: str) -> int:
+    """Return how many leading episodes on ``av1_slug`` are already claimed
+    by another member of this franchise.
+
+    AnimeAV1 sometimes doesn't split a MAL cour split ("Part 1"/"Part 2")
+    into separate pages, so both parts' title search resolve to the same
+    slug (confirmed against the live site for e.g. Slime Season 4 Part 2).
+    The sibling ingested first claims the leading episodes on that shared
+    page; this offset tells the next one where to continue.
+    """
+    if not franchise_id:
+        return 0
+    siblings = get_series_by_franchise(franchise_id)
+    claimed = 0
+    for s in siblings:
+        if s.get("id") == exclude_id or s.get("principal_slug") != av1_slug:
+            continue
+        claimed += get_episode_count(s["id"])
+    return claimed
 
 
 def backfill_episode_metadata(series_id: str) -> int:
@@ -332,7 +373,13 @@ def _ingest_related(entry: dict, franchise_id: str) -> dict:
                 return {"status": "already_scraped", "episodes_ingested": ep_count}
 
         jikan_titles = fetch_jikan_episodes(mal_id)
-        episodes = _build_episodes_from_animeav1(canonical_id, av1_slug, kitsu_eps, jikan_titles) if av1_slug else []
+        episodes = []
+        if av1_slug:
+            episode_offset = _claimed_episode_offset(franchise_id, av1_slug, canonical_id)
+            episodes = _build_episodes_from_animeav1(
+                canonical_id, av1_slug, kitsu_eps, jikan_titles,
+                episode_offset=episode_offset, max_episodes=series.get("episode_count"),
+            )
         if episodes:
             series["principal_slug"] = av1_slug
             # Detect DUB availability and persist to audio_formats.
