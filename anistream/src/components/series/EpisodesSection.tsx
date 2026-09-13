@@ -17,25 +17,27 @@ interface EpisodesSectionProps {
   isAdmin?: boolean;
 }
 
-type SeasonGroup = "tv" | "movie" | "ova" | "special" | "other";
+type SeasonGroup = "tv" | "movie" | "ova" | "special";
 
-const GROUP_ORDER: SeasonGroup[] = ["tv", "movie", "ova", "special", "other"];
+const GROUP_ORDER: SeasonGroup[] = ["tv", "movie", "ova", "special"];
 
 const GROUP_LABELS: Record<SeasonGroup, string> = {
   tv: "Temporadas",
   movie: "Películas",
   ova: "OVAs",
   special: "Especiales",
-  other: "Otros",
 };
 
+// Mirrors the backend's season_label() fallback (scraper/domain/series.py):
+// any unrecognized media_type defaults to a TV "Temporada N" label, so it
+// must default to the "tv" group here too — otherwise it lands in neither
+// its own group nor "Temporadas", becoming invisible in the dropdown.
 function groupOf(mediaType?: string | null): SeasonGroup {
   const mt = (mediaType || "tv").toLowerCase();
   if (mt === "movie") return "movie";
   if (mt === "ova" || mt === "ona") return "ova";
   if (mt === "special") return "special";
-  if (mt === "tv") return "tv";
-  return "other";
+  return "tv";
 }
 
 export function EpisodesSection({ seasons, initialSeasonIdx = 0, isAdmin = false }: EpisodesSectionProps) {
