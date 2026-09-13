@@ -144,6 +144,7 @@ export async function getSeriesStreamConfig(
 export interface SeasonEntry {
   label: string;
   seriesId: string;
+  mediaType: string | null;
   episodes: Episode[];
 }
 
@@ -170,6 +171,7 @@ function mapEpisodeRow(row: Record<string, unknown>): Episode {
 interface RawSeasonEntry {
   label: string;
   seriesId: string;
+  mediaType: string | null;
   episodes: Record<string, unknown>[];
 }
 
@@ -187,6 +189,7 @@ export async function getSeriesSeasons(
     const seasons: SeasonEntry[] = data.seasons.map((s) => ({
       label: s.label,
       seriesId: s.seriesId,
+      mediaType: s.mediaType,
       episodes: s.episodes.map(mapEpisodeRow),
     }));
     return { seasons, initialSeasonIdx: data.initialSeasonIdx, hasOwnEpisodes: data.hasOwnEpisodes };

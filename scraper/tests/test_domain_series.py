@@ -243,6 +243,24 @@ class TestPartMerge:
         result = part_merge([item1, item2])
         assert len(result) == 2
 
+    def test_overlapping_episode_numbers_deduplicated(self):
+        # Simulates Jikan/Kitsu restarting numbering per part, or both parts
+        # ingesting from the same underlying source (e.g. Slime S4 Part 1/2).
+        p1_ep1 = map_episode_row(make_episode(id="p1-ep1", episode_number=1))
+        p1_ep2 = map_episode_row(make_episode(id="p1-ep2", episode_number=2))
+        p2_ep1 = map_episode_row(make_episode(id="p2-ep1", episode_number=1))
+        p2_ep3 = map_episode_row(make_episode(id="p2-ep3", episode_number=3))
+
+        part1 = self._make_item("Temporada 1", "s1", [p1_ep1, p1_ep2], base_title="Series")
+        part2 = self._make_item("Temporada 1", "s2", [p2_ep1, p2_ep3], base_title="Series")
+
+        result = part_merge([part1, part2])
+        assert len(result) == 1
+        numbers = [e["episode"] for e in result[0]["episodes"]]
+        assert numbers == [1, 2, 3]
+        # The kept episode 1 is part1's (first-seen wins)
+        assert result[0]["episodes"][0]["id"] == "p1-ep1"
+
     def test_merged_episodes_sorted_by_number(self):
         ep3 = map_episode_row(make_episode(id="ep3", episode_number=3))
         ep1 = map_episode_row(make_episode(id="ep1", episode_number=1))

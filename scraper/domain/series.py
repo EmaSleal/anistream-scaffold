@@ -180,7 +180,11 @@ def part_merge(members_with_episodes: list[dict]) -> list[dict]:
       - ``seasonOrder``: int | None
 
     Returns a list with Part 1 / Part 2 siblings collapsed into one entry.
-    Episodes are merged and sorted by ``episode`` key ascending.
+    Episodes are merged and sorted by ``episode`` key ascending. Episode
+    numbers already present from an earlier part are skipped — Jikan/Kitsu
+    sometimes restarts numbering per part (or both parts get ingested from
+    the same underlying source), which otherwise surfaces the same episode
+    twice in the merged season.
     """
     part_map: dict[str, dict] = {}
 
@@ -188,7 +192,9 @@ def part_merge(members_with_episodes: list[dict]) -> list[dict]:
         base = item.get("baseTitle") or _PART_RE.sub("", item.get("label", "")).strip()
         if base in part_map:
             existing = part_map[base]
-            merged_eps = existing["episodes"] + item["episodes"]
+            seen_numbers = {e.get("episode") for e in existing["episodes"]}
+            new_eps = [e for e in item["episodes"] if e.get("episode") not in seen_numbers]
+            merged_eps = existing["episodes"] + new_eps
             merged_eps.sort(key=lambda e: e.get("episode", 0))
             existing["episodes"] = merged_eps
         else:
@@ -269,7 +275,12 @@ def build_seasons(
         if slot["label"].startswith("Temporada"):
             tv_count += 1
             slot = {**slot, "label": f"Temporada {tv_count}"}
-        seasons.append({"label": slot["label"], "seriesId": slot["seriesId"], "episodes": slot["episodes"]})
+        seasons.append({
+            "label": slot["label"],
+            "seriesId": slot["seriesId"],
+            "mediaType": slot.get("mediaType"),
+            "episodes": slot["episodes"],
+        })
 
     # initialSeasonIdx: prefer the slot that matches the requested series, then fall
     # back to the first franchise member's baseTitle.

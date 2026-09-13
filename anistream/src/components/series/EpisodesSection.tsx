@@ -7,6 +7,7 @@ import styles from "./EpisodesSection.module.css";
 
 interface Season {
   label: string;
+  mediaType?: string | null;
   episodes: Episode[];
 }
 
@@ -14,6 +15,27 @@ interface EpisodesSectionProps {
   seasons: Season[];
   initialSeasonIdx?: number;
   isAdmin?: boolean;
+}
+
+type SeasonGroup = "tv" | "movie" | "ova" | "special" | "other";
+
+const GROUP_ORDER: SeasonGroup[] = ["tv", "movie", "ova", "special", "other"];
+
+const GROUP_LABELS: Record<SeasonGroup, string> = {
+  tv: "Temporadas",
+  movie: "Películas",
+  ova: "OVAs",
+  special: "Especiales",
+  other: "Otros",
+};
+
+function groupOf(mediaType?: string | null): SeasonGroup {
+  const mt = (mediaType || "tv").toLowerCase();
+  if (mt === "movie") return "movie";
+  if (mt === "ova" || mt === "ona") return "ova";
+  if (mt === "special") return "special";
+  if (mt === "tv") return "tv";
+  return "other";
 }
 
 export function EpisodesSection({ seasons, initialSeasonIdx = 0, isAdmin = false }: EpisodesSectionProps) {
@@ -54,15 +76,26 @@ export function EpisodesSection({ seasons, initialSeasonIdx = 0, isAdmin = false
           </button>
           {selectOpen && (
             <div className={styles.seasonDropdown}>
-              {seasons.map((s, i) => (
-                <button
-                  key={`${s.label}-${i}`}
-                  className={`${styles.seasonOption} ${i === seasonIdx ? styles.seasonOptionActive : ""}`}
-                  onClick={() => { setSeasonIdx(i); setSelectOpen(false); }}
-                >
-                  {s.label}
-                </button>
-              ))}
+              {GROUP_ORDER.map((group) => {
+                const items = seasons
+                  .map((s, i) => ({ s, i }))
+                  .filter(({ s }) => groupOf(s.mediaType) === group);
+                if (items.length === 0) return null;
+                return (
+                  <div key={group} className={styles.seasonGroup}>
+                    <div className={styles.seasonGroupHeader}>{GROUP_LABELS[group]}</div>
+                    {items.map(({ s, i }) => (
+                      <button
+                        key={`${s.label}-${i}`}
+                        className={`${styles.seasonOption} ${i === seasonIdx ? styles.seasonOptionActive : ""}`}
+                        onClick={() => { setSeasonIdx(i); setSelectOpen(false); }}
+                      >
+                        {s.label}
+                      </button>
+                    ))}
+                  </div>
+                );
+              })}
             </div>
           )}
         </div>
