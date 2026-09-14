@@ -17,7 +17,7 @@ from fetcher import fetch_related_anime, fetch_jikan_by_genre, search_animeflv
 from scraper_animeav1 import search_animeav1
 from scraper_jkanime import search_jkanime
 from cache import TTLCache
-from routes.ingest_routes import backfill_episodes_from_metadata
+from routes.ingest_routes import backfill_episodes_from_metadata, backfill_episodes_from_jkanime
 
 series_bp = Blueprint("series", __name__, url_prefix="/api/series")
 
@@ -465,8 +465,13 @@ def update_stream_source(series_id: str):
 
     # Series assigned a stream source here may be a metadata-only stub
     # (upsert_series_stub) that never went through /ingest — no-ops if the
-    # series already has episodes.
-    backfill_episodes_from_metadata(series_id)
+    # series already has episodes. Try jkanime's own episode count first
+    # (this fallback_slug is a jkanime slug) — Kitsu/Jikan metadata alone
+    # returns nothing for a TV-type stub with no per-episode listing, which
+    # otherwise left this fallback_slug enabling streaming for episodes that
+    # were never created.
+    if not backfill_episodes_from_jkanime(series_id, fallback_slug):
+        backfill_episodes_from_metadata(series_id)
 
     return jsonify({
         "id": series_id,

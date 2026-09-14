@@ -14,7 +14,8 @@ def _normalize_with_kitsu(raw: dict, is_featured: bool = False) -> dict | None:
     banner_url_override: str | None = None
 
     if title:
-        kitsu = search_kitsu_anime(title)
+        alt_titles = [t["title"] for t in (raw.get("titles") or []) if t.get("title")]
+        kitsu = search_kitsu_anime(title, alt_titles=alt_titles)
         time.sleep(0.3)
         if kitsu:
             kitsu_id = kitsu.get("id")

@@ -11,6 +11,7 @@ from typing import Literal
 import cloudscraper
 from bs4 import BeautifulSoup
 from config import CLOUDSCRAPER_BROWSER
+from fetcher import _extract_base_title
 
 logger = logging.getLogger(__name__)
 
@@ -75,6 +76,99 @@ def search_animeav1(query: str) -> list[dict]:
         })
 
     return results
+
+
+# Minimum score (see _score_animeav1_item) required for select_best_animeav1_match
+# to accept a candidate. Below this, none of the titles compared meaningfully
+# line up, so guessing results[0] anyway is more likely to steal a slug that
+# belongs to a different season than to find the right one.
+_MIN_ANIMEAV1_SCORE = 12
+
+
+def _score_animeav1_item(item: dict, title: str, base: str) -> int:
+    """Score an AnimeAV1 search result by how closely its own title matches ours.
+
+    Exact-title equality is weighted far above mere substring containment:
+    for multi-season franchises almost every result contains the base title
+    as a substring (e.g. "Gintama Season 5" vs "Gintama"), so containment
+    alone can't tell seasons apart — only how closely the season-specific
+    wording lines up can.
+    """
+    candidate = (item.get("title") or "").strip().lower()
+    if not candidate:
+        return 0
+    orig_lower = title.strip().lower()
+    base_lower = base.strip().lower()
+
+    if candidate == orig_lower:
+        return 30
+    if candidate == base_lower:
+        return 20
+    if orig_lower in candidate or candidate in orig_lower:
+        return 12
+    if base_lower in candidate or candidate in base_lower:
+        return 6
+    return 0
+
+
+def select_best_animeav1_match(
+    results: list[dict], title: str, alt_titles: list[str] | None = None
+) -> dict | None:
+    """Pick the AnimeAV1 search result whose own title best matches ours.
+
+    AnimeAV1's search endpoint returns multiple candidates with no ranking
+    guarantee. For multi-season franchises it often lists an unrelated season
+    first, and blindly taking ``results[0]`` silently steals that season's
+    slug — confirmed live against Gintama (the 2006 original claimed the
+    Season 5 page) and DanMachi (Season 1 and a recap both claimed the
+    Season 5 page, leaving real Seasons 2-6 with zero episodes). Score every
+    candidate against our title and alt_titles, and only accept the best one
+    when it clears _MIN_ANIMEAV1_SCORE — otherwise return None rather than
+    guess.
+    """
+    if not results:
+        return None
+
+    base = _extract_base_title(title)
+    scored = [(r, _score_animeav1_item(r, title, base)) for r in results]
+
+    for alt in (alt_titles or []):
+        if not alt:
+            continue
+        alt_base = _extract_base_title(alt)
+        scored.extend((r, _score_animeav1_item(r, alt, alt_base)) for r in results)
+
+    best_item, best_score = max(scored, key=lambda pair: pair[1])
+    if best_score < _MIN_ANIMEAV1_SCORE:
+        return None
+    return best_item
+
+
+def find_best_animeav1_match(title: str, alt_titles: list[str] | None = None) -> dict | None:
+    """Search AnimeAV1 for the best-matching series, retrying with alt titles.
+
+    AnimeAV1's catalog search does literal matching against titles it hosts
+    (typically romaji/Japanese), so querying with only our Jikan title (often
+    English) can come back empty or irrelevant even when the series exists
+    there under a different title — confirmed live for DanMachi, where the
+    real Season 1's own English-title query scored below the floor while
+    shorter/differently-worded siblings happened to match. Mirrors
+    search_kitsu_anime's retry strategy: try the primary title first, then
+    each alt title, always scoring against the *original* title/alt_titles so
+    the final pick is judged consistently regardless of which query surfaced it.
+    """
+    match = select_best_animeav1_match(search_animeav1(title), title, alt_titles=alt_titles)
+    if match:
+        return match
+
+    for alt in (alt_titles or []):
+        if not alt or alt == title:
+            continue
+        match = select_best_animeav1_match(search_animeav1(alt), title, alt_titles=alt_titles)
+        if match:
+            return match
+
+    return None
 
 
 def scrape_animeav1_episodes(slug: str) -> list[dict]:

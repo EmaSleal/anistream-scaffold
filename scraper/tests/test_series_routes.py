@@ -433,6 +433,7 @@ class TestStreamConfig:
 class TestPatchStreamSource:
     def test_valid_admin_token_and_body_returns_200(self, client):
         with patch("db.series.update_stream_source", return_value=True), \
+             patch("routes.series_routes.backfill_episodes_from_jkanime", return_value=0), \
              patch("routes.series_routes.backfill_episodes_from_metadata", return_value=0):
             res = client.patch(
                 "/api/series/s1/stream-source",
@@ -448,6 +449,7 @@ class TestPatchStreamSource:
 
     def test_triggers_episode_backfill_on_success(self, client):
         with patch("db.series.update_stream_source", return_value=True), \
+             patch("routes.series_routes.backfill_episodes_from_jkanime", return_value=0) as mock_jkanime_backfill, \
              patch("routes.series_routes.backfill_episodes_from_metadata", return_value=12) as mock_backfill:
             res = client.patch(
                 "/api/series/s1/stream-source",
@@ -456,7 +458,22 @@ class TestPatchStreamSource:
                 content_type="application/json",
             )
         assert res.status_code == 200
+        mock_jkanime_backfill.assert_called_once_with("s1", "naruto-jk")
         mock_backfill.assert_called_once_with("s1")
+
+    def test_skips_metadata_backfill_when_jkanime_backfill_succeeds(self, client):
+        with patch("db.series.update_stream_source", return_value=True), \
+             patch("routes.series_routes.backfill_episodes_from_jkanime", return_value=12) as mock_jkanime_backfill, \
+             patch("routes.series_routes.backfill_episodes_from_metadata") as mock_backfill:
+            res = client.patch(
+                "/api/series/s1/stream-source",
+                headers=_auth_header(role="ADMIN"),
+                data=json.dumps({"fallback_slug": "naruto-jk"}),
+                content_type="application/json",
+            )
+        assert res.status_code == 200
+        mock_jkanime_backfill.assert_called_once_with("s1", "naruto-jk")
+        mock_backfill.assert_not_called()
 
     def test_skips_episode_backfill_when_series_not_found(self, client):
         with patch("db.series.update_stream_source", return_value=False), \

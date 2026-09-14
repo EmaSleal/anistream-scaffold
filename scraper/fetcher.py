@@ -245,15 +245,29 @@ def _score_kitsu_item(item: dict, original: str, base: str) -> int:
     return score
 
 
-def search_kitsu_anime(title: str) -> dict | None:
+# Minimum _score_kitsu_item score required to accept a match. Below this,
+# none of the candidate's titles meaningfully overlap with ours (a 0-score
+# "best effort" match), so returning it anyway does more harm than having no
+# match — it was the source of banner_url/kitsu_id being silently borrowed
+# from an unrelated franchise member.
+_MIN_KITSU_SCORE = 15
+
+
+def search_kitsu_anime(title: str, alt_titles: list[str] | None = None) -> dict | None:
     """Search Kitsu for the best-matching anime and return its cover.
 
     Strategy:
     1. Search with the base title (strips season suffixes and subtitles) to get
        multiple candidates from Kitsu.
-    2. Score each candidate against the original full title.
-    3. Return the highest-scoring result that has a cover image; fall back to
-       the highest-scoring result without one.
+    2. If that returns nothing, try the full original title.
+    3. If that also returns nothing, try each entry in ``alt_titles`` (Jikan's
+       title synonyms/native titles) — catches series indexed on Kitsu under
+       a different language or title than MAL's primary one (recaps, CMs,
+       region-specific releases).
+    4. Score each candidate against the original full title.
+    5. Return the highest-scoring result that has a cover image and clears
+       _MIN_KITSU_SCORE; fall back to the highest-scoring result without a
+       cover. Return None if no candidate clears the score floor.
 
     Returns {"id": str, "cover_url": str | None} or None.
     """
@@ -268,10 +282,22 @@ def search_kitsu_anime(title: str) -> dict | None:
         candidates = _search_kitsu_multi(title)
         time.sleep(0.2)
 
+    if not candidates and alt_titles:
+        for alt in alt_titles:
+            if not alt or alt in (search_query, title):
+                continue
+            candidates = _search_kitsu_multi(alt)
+            time.sleep(0.2)
+            if candidates:
+                break
+
     if not candidates:
         return None
 
     scored = sorted(candidates, key=lambda c: _score_kitsu_item(c, title, base), reverse=True)
+
+    if _score_kitsu_item(scored[0], title, base) < _MIN_KITSU_SCORE:
+        return None
 
     for item in scored:
         attrs = item.get("attributes", {})
