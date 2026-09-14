@@ -233,14 +233,29 @@ class TestSeriesEpisodes:
         assert episodes == sorted(episodes)
 
     def test_hides_episodes_with_no_or_future_aired_at(self, client):
-        """Placeholder episodes (aired_at unset, or extrapolated into the
-        future) exist as rows but haven't actually released — see
-        _is_released in routes/series_routes.py."""
+        """Placeholder episodes (aired_at unset AND no thumbnail — the
+        jkanime-only case, or aired_at extrapolated into the future) exist as
+        rows but haven't actually released — see _is_released in
+        routes/series_routes.py."""
         rows = [
             _episode_row(id="ep1", episode_number=1, aired_at="2020-01-01"),
-            _episode_row(id="ep2", episode_number=2, aired_at=None),
+            _episode_row(id="ep2", episode_number=2, aired_at=None, thumbnail_url=None),
             _episode_row(id="ep3", episode_number=3, aired_at="2999-01-01"),
         ]
+        with patch("db.episodes.get_episodes_by_series", return_value=rows), \
+             patch("routes.series_routes.db_series.get_series_by_id", return_value=None):
+            res = client.get("/api/series/s1/episodes")
+        assert res.status_code == 200
+        data = json.loads(res.data)
+        assert [d["episode"] for d in data] == [1]
+
+    def test_shows_episode_with_no_aired_at_but_real_thumbnail(self, client):
+        """AnimeAV1-sourced episodes always carry a real screenshot thumbnail
+        even when Jikan/Kitsu enrichment failed to supply aired_at — those
+        must stay visible, or a working ingest looks like "no episodes" and
+        the frontend loops back into the reingest UI (regression: Slime
+        Season 1, all 24 episodes had aired_at=None but real thumbnails)."""
+        rows = [_episode_row(id="ep1", episode_number=1, aired_at=None, thumbnail_url="http://img.com/thumb.jpg")]
         with patch("db.episodes.get_episodes_by_series", return_value=rows), \
              patch("routes.series_routes.db_series.get_series_by_id", return_value=None):
             res = client.get("/api/series/s1/episodes")

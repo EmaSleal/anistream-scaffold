@@ -25,21 +25,26 @@ series_bp = Blueprint("series", __name__, url_prefix="/api/series")
 _recommendations_cache = TTLCache(ttl_seconds=600)
 
 
-def _is_released(date_str: str | None) -> bool:
-    """True if a date string is set and not in the future.
+def _is_released(date_str: str | None, thumbnail_url: str | None = None) -> bool:
+    """True if the episode should be visible to viewers.
 
-    Episode rows can exist with no real air date yet — a source that only
-    reports a total episode count (e.g. jkanime, see
-    _build_episodes_from_jkanime) creates placeholder rows with aired_at
-    unset, and the simulcast weekly-cadence fill
-    (routes/simulcast_routes.py::_fill_aired_at_from_cadence) can extrapolate
-    a future date for an episode AnimeAV1 has only pre-generated a thumbnail
-    for. Both are content that hasn't actually released yet and must stay
-    hidden from viewers even though the row already exists.
+    A set aired_at is authoritative: released only if it's today or earlier —
+    this also catches the simulcast weekly-cadence fill
+    (routes/simulcast_routes.py::_fill_aired_at_from_cadence) extrapolating a
+    future date for an episode AnimeAV1 has only pre-generated a thumbnail
+    for.
+
+    With no aired_at at all, fall back to thumbnail_url: jkanime-only
+    placeholder rows (a source that reports just a total episode count, see
+    _build_episodes_from_jkanime) have neither and must stay hidden. But
+    AnimeAV1-sourced episodes always carry a real screenshot thumbnail even
+    when Jikan/Kitsu enrichment failed to supply aired_at (confirmed live on
+    Slime Season 1) — treat those as already released rather than masking a
+    working ingest as "no episodes" and looping the reingest UI.
     """
-    if not date_str:
-        return False
-    return str(date_str)[:10] <= date.today().isoformat()
+    if date_str:
+        return str(date_str)[:10] <= date.today().isoformat()
+    return bool(thumbnail_url)
 
 # In-process guard against spawning duplicate concurrent backfill threads for
 # the same series when several requests land before the first one finishes.
@@ -423,7 +428,7 @@ def series_seasons(series_id: str):
     # backfill) intentionally used the unfiltered counts: those need to know
     # what's already been ingested, not what's watchable yet.
     released_by_series = {
-        sid: [e for e in eps if _is_released(e.get("releasedAt"))]
+        sid: [e for e in eps if _is_released(e.get("releasedAt"), e.get("thumbnailUrl"))]
         for sid, eps in episodes_by_series.items()
     }
 
@@ -464,7 +469,7 @@ def series_episodes(series_id: str):
     if series_row and series_row.get("principal_slug") and rows and not rows[0].get("thumbnail_url"):
         _trigger_thumbnail_backfill(series_id)
 
-    released_rows = [r for r in rows if _is_released(r.get("aired_at"))]
+    released_rows = [r for r in rows if _is_released(r.get("aired_at"), r.get("thumbnail_url"))]
     return jsonify([map_episode_row(r) for r in released_rows])
 
 
