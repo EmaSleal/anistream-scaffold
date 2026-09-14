@@ -74,7 +74,7 @@ def _series_row(
     }
 
 
-def _episode_row(id="ep1", series_id="s1", episode_number=1, thumbnail_url="http://img.com/thumb.jpg"):
+def _episode_row(id="ep1", series_id="s1", episode_number=1, thumbnail_url="http://img.com/thumb.jpg", aired_at="2020-01-01"):
     return {
         "id": id,
         "series_id": series_id,
@@ -82,7 +82,7 @@ def _episode_row(id="ep1", series_id="s1", episode_number=1, thumbnail_url="http
         "title": f"Episode {episode_number}",
         "animeflv_slug": f"naruto-{episode_number}",
         "thumbnail_url": thumbnail_url,
-        "aired_at": None,
+        "aired_at": aired_at,
         "series": {"title": "Naruto"},
     }
 
@@ -231,6 +231,22 @@ class TestSeriesEpisodes:
         assert len(data) == 4
         episodes = [d["episode"] for d in data]
         assert episodes == sorted(episodes)
+
+    def test_hides_episodes_with_no_or_future_aired_at(self, client):
+        """Placeholder episodes (aired_at unset, or extrapolated into the
+        future) exist as rows but haven't actually released — see
+        _is_released in routes/series_routes.py."""
+        rows = [
+            _episode_row(id="ep1", episode_number=1, aired_at="2020-01-01"),
+            _episode_row(id="ep2", episode_number=2, aired_at=None),
+            _episode_row(id="ep3", episode_number=3, aired_at="2999-01-01"),
+        ]
+        with patch("db.episodes.get_episodes_by_series", return_value=rows), \
+             patch("routes.series_routes.db_series.get_series_by_id", return_value=None):
+            res = client.get("/api/series/s1/episodes")
+        assert res.status_code == 200
+        data = json.loads(res.data)
+        assert [d["episode"] for d in data] == [1]
 
 
 # ---------------------------------------------------------------------------

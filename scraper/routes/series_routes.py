@@ -1,6 +1,7 @@
 """Flask Blueprint for public series endpoints."""
 import logging
 import threading
+from datetime import date
 from flask import Blueprint, request, jsonify, g
 import storage
 from db import series as db_series
@@ -22,6 +23,23 @@ from routes.ingest_routes import backfill_episodes_from_metadata, backfill_episo
 series_bp = Blueprint("series", __name__, url_prefix="/api/series")
 
 _recommendations_cache = TTLCache(ttl_seconds=600)
+
+
+def _is_released(date_str: str | None) -> bool:
+    """True if a date string is set and not in the future.
+
+    Episode rows can exist with no real air date yet — a source that only
+    reports a total episode count (e.g. jkanime, see
+    _build_episodes_from_jkanime) creates placeholder rows with aired_at
+    unset, and the simulcast weekly-cadence fill
+    (routes/simulcast_routes.py::_fill_aired_at_from_cadence) can extrapolate
+    a future date for an episode AnimeAV1 has only pre-generated a thumbnail
+    for. Both are content that hasn't actually released yet and must stay
+    hidden from viewers even though the row already exists.
+    """
+    if not date_str:
+        return False
+    return str(date_str)[:10] <= date.today().isoformat()
 
 # In-process guard against spawning duplicate concurrent backfill threads for
 # the same series when several requests land before the first one finishes.
@@ -400,13 +418,23 @@ def series_seasons(series_id: str):
             continue
         _trigger_thumbnail_backfill(sid)
 
-    payload = build_seasons(members, episodes_by_series, requested_series_id=series_id)
-    # Franchise members with zero episodes are dropped from `seasons` (see
-    # build_seasons), so `seasons.length` alone can't tell the caller whether
-    # THIS series has episodes — a sibling season merging into the list is
-    # enough to make it non-empty. Expose the requested series' own episode
-    # presence explicitly so the frontend can trigger ingest correctly.
-    payload["hasOwnEpisodes"] = bool(episodes_by_series.get(series_id))
+    # Hide not-yet-released placeholders from the season/episode selector —
+    # see _is_released. Bookkeeping above (simulcast trigger, thumbnail
+    # backfill) intentionally used the unfiltered counts: those need to know
+    # what's already been ingested, not what's watchable yet.
+    released_by_series = {
+        sid: [e for e in eps if _is_released(e.get("releasedAt"))]
+        for sid, eps in episodes_by_series.items()
+    }
+
+    payload = build_seasons(members, released_by_series, requested_series_id=series_id)
+    # Franchise members with zero *released* episodes are dropped from
+    # `seasons` (see build_seasons), so `seasons.length` alone can't tell the
+    # caller whether THIS series has episodes — a sibling season merging into
+    # the list is enough to make it non-empty. Expose the requested series'
+    # own episode presence explicitly so the frontend can trigger ingest
+    # correctly.
+    payload["hasOwnEpisodes"] = bool(released_by_series.get(series_id))
     return jsonify(payload)
 
 
@@ -436,7 +464,8 @@ def series_episodes(series_id: str):
     if series_row and series_row.get("principal_slug") and rows and not rows[0].get("thumbnail_url"):
         _trigger_thumbnail_backfill(series_id)
 
-    return jsonify([map_episode_row(r) for r in rows])
+    released_rows = [r for r in rows if _is_released(r.get("aired_at"))]
+    return jsonify([map_episode_row(r) for r in released_rows])
 
 
 @series_bp.patch("/<series_id>/stream-source")
