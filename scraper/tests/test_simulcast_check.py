@@ -480,3 +480,387 @@ class TestRunSimulcastCheckIdempotency:
         assert captured_ids == ["my-series-ep-6"]
         # Explicitly confirm no zero-padding (e.g. not "my-series-ep-06")
         assert "my-series-ep-06" not in captured_ids
+
+
+# ---------------------------------------------------------------------------
+# Phase 2, task 2.9 — storage.insert_episode_if_absent uses ignore_duplicates
+# ---------------------------------------------------------------------------
+
+
+class TestInsertEpisodeIfAbsent:
+    def test_never_duplicates_on_repeated_calls(self):
+        """Calling insert_episode_if_absent twice with the same episode id
+        must never overwrite — upsert is called with ignore_duplicates=True."""
+        import storage
+
+        mock_upsert = MagicMock()
+        mock_upsert.execute.return_value = MagicMock()
+        mock_table = MagicMock()
+        mock_table.upsert.return_value = mock_upsert
+        mock_client = MagicMock()
+        mock_client.table.return_value = mock_table
+
+        episode = {"id": "s1-ep-3", "series_id": "s1", "episode_number": 3}
+
+        with patch("storage.get_client", return_value=mock_client):
+            storage.insert_episode_if_absent(episode)
+            storage.insert_episode_if_absent(episode)
+
+        assert mock_table.upsert.call_count == 2
+        for call in mock_table.upsert.call_args_list:
+            args, kwargs = call
+            assert args[0] == episode
+            assert kwargs.get("on_conflict") == "id"
+            assert kwargs.get("ignore_duplicates") is True
+
+
+# ---------------------------------------------------------------------------
+# Phase 2, task 2.11 — _process_scraped_episodes: forward cap + backfill
+# ---------------------------------------------------------------------------
+
+
+class TestProcessScrapedEpisodesForwardCapAndBackfill:
+    def test_airing_mode_forward_path_uncapped_unchanged(self):
+        """mode="airing" (default) → forward path behaves exactly as before:
+        every scraped episode above current_max_ep is upserted, uncapped."""
+        from simulcast_check import _process_scraped_episodes
+
+        scraped = [
+            {"episode_number": 6, "title": "Ep 6", "thumbnail_url": None},
+            {"episode_number": 7, "title": "Ep 7", "thumbnail_url": None},
+        ]
+
+        with (
+            patch("simulcast_check.storage.upsert_episode") as mock_upsert_ep,
+            patch("simulcast_check.db_progress.refresh_simulcast_next_episodes"),
+            patch("simulcast_check._resolve_aired_at", return_value="2026-06-03"),
+        ):
+            count = _process_scraped_episodes(
+                scraped_episodes=scraped,
+                series_id="s1",
+                user_id=None,
+                current_max_ep=5,
+                mal_id=None,
+                mode="airing",
+                backfill_mode="off",
+            )
+
+        assert count == 2
+        assert mock_upsert_ep.call_count == 2
+
+    def test_grace_mode_forward_path_capped_at_offset_plus_expected(self):
+        """mode="grace" → forward path excludes scraped episodes beyond
+        offset+expected, so a same-slug next-cour sibling isn't swallowed."""
+        from simulcast_check import _process_scraped_episodes
+
+        # offset=0 (no sibling), expected=6 → cap at 6. Episode 7 is beyond
+        # this series' own expected count and must NOT be upserted.
+        scraped = [
+            {"episode_number": 6, "title": "Ep 6", "thumbnail_url": None},
+            {"episode_number": 7, "title": "Ep 7 (next cour)", "thumbnail_url": None},
+        ]
+
+        with (
+            patch("simulcast_check.storage.upsert_episode") as mock_upsert_ep,
+            patch("simulcast_check.db_progress.refresh_simulcast_next_episodes"),
+            patch("simulcast_check._resolve_aired_at", return_value="2026-06-03"),
+            patch(
+                "simulcast_check.db_simulcast.get_slug_sibling_episodes",
+                return_value={"offset": 0, "sibling_nums": set()},
+            ),
+        ):
+            count = _process_scraped_episodes(
+                scraped_episodes=scraped,
+                series_id="s1",
+                user_id=None,
+                current_max_ep=5,
+                mal_id=None,
+                mode="grace",
+                backfill_mode="off",
+                franchise_id="fr-1",
+                principal_slug="slug-1",
+                expected=6,
+            )
+
+        assert count == 1
+        mock_upsert_ep.assert_called_once()
+        assert mock_upsert_ep.call_args.args[0]["episode_number"] == 6
+
+    def test_backfill_off_skips_backfill_entirely(self):
+        """backfill_mode="off" (default) → plan_backfill is never called."""
+        from simulcast_check import _process_scraped_episodes
+
+        scraped = [{"episode_number": 6, "title": None, "thumbnail_url": None}]
+
+        with (
+            patch("simulcast_check.storage.upsert_episode"),
+            patch("simulcast_check.db_progress.refresh_simulcast_next_episodes"),
+            patch("simulcast_check._resolve_aired_at", return_value="2026-06-03"),
+            patch("simulcast_check.plan_backfill") as mock_plan,
+        ):
+            _process_scraped_episodes(
+                scraped_episodes=scraped,
+                series_id="s1",
+                user_id=None,
+                current_max_ep=5,
+                mal_id=None,
+                mode="airing",
+                backfill_mode="off",
+                franchise_id="fr-1",
+                principal_slug="slug-1",
+                expected=6,
+            )
+
+        mock_plan.assert_not_called()
+
+    def test_backfill_log_mode_computes_but_writes_nothing(self):
+        """backfill_mode="log" → plan_backfill is called and a plan is
+        computed, but insert_episode_if_absent is NEVER called."""
+        from simulcast_check import _process_scraped_episodes
+
+        # Own has 1,2,4 (missing 3). Source lists 1-4.
+        scraped = [
+            {"episode_number": 1, "title": None, "thumbnail_url": None},
+            {"episode_number": 2, "title": None, "thumbnail_url": None},
+            {"episode_number": 3, "title": None, "thumbnail_url": None},
+            {"episode_number": 4, "title": None, "thumbnail_url": None},
+        ]
+        own_rows = [
+            {"episode_number": 1},
+            {"episode_number": 2},
+            {"episode_number": 4},
+        ]
+
+        with (
+            patch("simulcast_check.storage.upsert_episode"),
+            patch("simulcast_check.storage.insert_episode_if_absent") as mock_insert,
+            patch("simulcast_check.db_progress.refresh_simulcast_next_episodes"),
+            patch(
+                "simulcast_check.db_simulcast.get_slug_sibling_episodes",
+                return_value={"offset": 0, "sibling_nums": set()},
+            ),
+            patch("simulcast_check.db_episodes.get_episodes_by_series", return_value=own_rows),
+        ):
+            count = _process_scraped_episodes(
+                scraped_episodes=scraped,
+                series_id="s1",
+                user_id=None,
+                current_max_ep=4,
+                mal_id=None,
+                mode="airing",
+                backfill_mode="log",
+                franchise_id="fr-1",
+                principal_slug="slug-1",
+                expected=4,
+            )
+
+        mock_insert.assert_not_called()
+        # No new forward episodes (current_max_ep=4, scraped max=4) — count
+        # reflects only the forward path, backfill never increments it.
+        assert count == 0
+
+    def test_backfill_write_mode_inserts_via_insert_episode_if_absent(self):
+        """backfill_mode="write" → the planned missing episode is inserted
+        via storage.insert_episode_if_absent (never upsert_episode)."""
+        from simulcast_check import _process_scraped_episodes
+
+        scraped = [
+            {"episode_number": 1, "title": None, "thumbnail_url": None},
+            {"episode_number": 2, "title": None, "thumbnail_url": None},
+            {"episode_number": 3, "title": None, "thumbnail_url": None},
+            {"episode_number": 4, "title": None, "thumbnail_url": None},
+        ]
+        own_rows = [
+            {"episode_number": 1},
+            {"episode_number": 2},
+            {"episode_number": 4},
+        ]
+
+        with (
+            patch("simulcast_check.storage.upsert_episode") as mock_upsert_ep,
+            patch("simulcast_check.storage.insert_episode_if_absent") as mock_insert,
+            patch("simulcast_check.db_progress.refresh_simulcast_next_episodes"),
+            patch(
+                "simulcast_check.db_simulcast.get_slug_sibling_episodes",
+                return_value={"offset": 0, "sibling_nums": set()},
+            ),
+            patch("simulcast_check.db_episodes.get_episodes_by_series", return_value=own_rows),
+        ):
+            count = _process_scraped_episodes(
+                scraped_episodes=scraped,
+                series_id="s1",
+                user_id=None,
+                current_max_ep=4,
+                mal_id=None,
+                mode="airing",
+                backfill_mode="write",
+                franchise_id="fr-1",
+                principal_slug="slug-1",
+                expected=4,
+            )
+
+        mock_insert.assert_called_once()
+        inserted = mock_insert.call_args.args[0]
+        assert inserted["id"] == "s1-ep-3"
+        assert inserted["episode_number"] == 3
+        mock_upsert_ep.assert_not_called()
+
+    def test_backfill_aired_at_from_jikan_rel_num_or_null(self):
+        """Backfilled episode's aired_at is resolved via Jikan using
+        rel_num = n - offset, or NULL when unavailable — never via
+        _resolve_aired_at (which would compute a wrong cadence-based date
+        for a lower-numbered backfilled episode)."""
+        from simulcast_check import _process_scraped_episodes
+
+        scraped = [
+            {"episode_number": 1, "title": None, "thumbnail_url": None},
+            {"episode_number": 2, "title": None, "thumbnail_url": None},
+            {"episode_number": 3, "title": None, "thumbnail_url": None},
+        ]
+        own_rows = [{"episode_number": 1}, {"episode_number": 3}]
+
+        jikan_eps = {2: {"title": "Ep 2", "aired_at": "2026-01-15T00:00:00+00:00"}}
+
+        with (
+            patch("simulcast_check.storage.upsert_episode"),
+            patch("simulcast_check.storage.insert_episode_if_absent") as mock_insert,
+            patch("simulcast_check.db_progress.refresh_simulcast_next_episodes"),
+            patch(
+                "simulcast_check.db_simulcast.get_slug_sibling_episodes",
+                return_value={"offset": 0, "sibling_nums": set()},
+            ),
+            patch("simulcast_check.db_episodes.get_episodes_by_series", return_value=own_rows),
+            patch("simulcast_check.fetch_jikan_episodes", return_value=jikan_eps),
+            patch("simulcast_check._resolve_aired_at") as mock_resolve,
+        ):
+            _process_scraped_episodes(
+                scraped_episodes=scraped,
+                series_id="s1",
+                user_id=None,
+                current_max_ep=3,
+                mal_id=42,
+                mode="airing",
+                backfill_mode="write",
+                franchise_id="fr-1",
+                principal_slug="slug-1",
+                expected=3,
+            )
+
+        mock_resolve.assert_not_called()
+        inserted = mock_insert.call_args.args[0]
+        assert inserted["aired_at"] == "2026-01-15"
+
+    def test_backfill_aired_at_null_when_jikan_has_no_match(self):
+        """No mal_id / no Jikan match for rel_num → aired_at is None, not a
+        cadence estimate or today's date."""
+        from simulcast_check import _process_scraped_episodes
+
+        scraped = [
+            {"episode_number": 1, "title": None, "thumbnail_url": None},
+            {"episode_number": 2, "title": None, "thumbnail_url": None},
+            {"episode_number": 3, "title": None, "thumbnail_url": None},
+        ]
+        own_rows = [{"episode_number": 1}, {"episode_number": 3}]
+
+        with (
+            patch("simulcast_check.storage.upsert_episode"),
+            patch("simulcast_check.storage.insert_episode_if_absent") as mock_insert,
+            patch("simulcast_check.db_progress.refresh_simulcast_next_episodes"),
+            patch(
+                "simulcast_check.db_simulcast.get_slug_sibling_episodes",
+                return_value={"offset": 0, "sibling_nums": set()},
+            ),
+            patch("simulcast_check.db_episodes.get_episodes_by_series", return_value=own_rows),
+            patch("simulcast_check._resolve_aired_at") as mock_resolve,
+        ):
+            _process_scraped_episodes(
+                scraped_episodes=scraped,
+                series_id="s1",
+                user_id=None,
+                current_max_ep=3,
+                mal_id=None,
+                mode="airing",
+                backfill_mode="write",
+                franchise_id="fr-1",
+                principal_slug="slug-1",
+                expected=3,
+            )
+
+        mock_resolve.assert_not_called()
+        inserted = mock_insert.call_args.args[0]
+        assert inserted["aired_at"] is None
+
+    def test_ambiguous_offset_skip_reason_logged_no_insert(self):
+        """plan_backfill returns skip_reason="ambiguous_offset" → no insert,
+        a WARNING is logged (verified indirectly via no insert calls)."""
+        from simulcast_check import _process_scraped_episodes
+
+        scraped = [{"episode_number": n, "title": None, "thumbnail_url": None} for n in range(1, 5)]
+        own_rows = [{"episode_number": 1}]
+
+        with (
+            patch("simulcast_check.storage.upsert_episode"),
+            patch("simulcast_check.storage.insert_episode_if_absent") as mock_insert,
+            patch("simulcast_check.db_progress.refresh_simulcast_next_episodes"),
+            patch(
+                "simulcast_check.db_simulcast.get_slug_sibling_episodes",
+                # sibling_nums isn't a clean {1..offset} prefix → ambiguous.
+                return_value={"offset": 2, "sibling_nums": {1}},
+            ),
+            patch("simulcast_check.db_episodes.get_episodes_by_series", return_value=own_rows),
+        ):
+            _process_scraped_episodes(
+                scraped_episodes=scraped,
+                series_id="s1",
+                user_id=None,
+                current_max_ep=4,
+                mal_id=None,
+                mode="airing",
+                backfill_mode="write",
+                franchise_id="fr-1",
+                principal_slug="slug-1",
+                expected=4,
+            )
+
+        mock_insert.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Phase 2, task 2.15 — series_routes.py (page-visit path) stays untouched:
+# calling run_simulcast_update exactly the way series_routes.py does (3
+# positional args, no mode/backfill_mode/franchise_id/expected) must never
+# trigger a backfill write, regardless of what's in the DB/source.
+# ---------------------------------------------------------------------------
+
+
+class TestPageVisitPathNeverBackfills:
+    def test_three_positional_args_call_never_backfills(self):
+        """run_simulcast_update(series_id, slug, current_max_ep) — exactly
+        the call shape used in routes/series_routes.py — must default to
+        backfill_mode="off" and mode="airing", so insert_episode_if_absent
+        is never reached even when the scrape reveals an internal gap."""
+        from simulcast_check import run_simulcast_update
+
+        # Source has a gap (missing episode 3) that WOULD be backfillable
+        # if backfill_mode were anything other than "off".
+        scraped = [
+            {"episode_number": n, "title": None, "thumbnail_url": None}
+            for n in (1, 2, 4, 5)
+        ]
+        own_rows = [{"episode_number": n} for n in (1, 2, 4)]
+
+        with (
+            patch("simulcast_check.scrape_animeav1_episodes", return_value=scraped),
+            patch("simulcast_check.storage.upsert_episode"),
+            patch("simulcast_check.storage.insert_episode_if_absent") as mock_insert,
+            patch("simulcast_check.db_progress.refresh_simulcast_next_episodes"),
+            patch("simulcast_check.db_simulcast.update_simulcast_fields"),
+            patch("simulcast_check.db_episodes.get_episodes_by_series", return_value=own_rows),
+            patch("simulcast_check.db_simulcast.get_slug_sibling_episodes") as mock_siblings,
+        ):
+            # Exact call shape from routes/series_routes.py.
+            run_simulcast_update("s1", "s1-slug", 4)
+
+        mock_insert.assert_not_called()
+        # Backfill path never even resolves the slug-sibling offset.
+        mock_siblings.assert_not_called()

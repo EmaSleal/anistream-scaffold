@@ -33,6 +33,22 @@ def upsert_episode(episode: dict) -> None:
     client.table("episodes").upsert(episode, on_conflict="id").execute()
 
 
+def insert_episode_if_absent(episode: dict) -> None:
+    """Insert an episode row only if its ``id`` doesn't already exist.
+
+    Uses ``upsert(on_conflict="id", ignore_duplicates=True)`` so a conflicting
+    id is left completely untouched — unlike ``upsert_episode``'s ON CONFLICT
+    DO UPDATE semantics, this can never overwrite an existing row. Used
+    exclusively by the gap-backfill path, where an existing episode (which
+    may carry real, user-verified data) must never be clobbered by a
+    backfilled guess.
+    """
+    client = get_client()
+    client.table("episodes").upsert(
+        episode, on_conflict="id", ignore_duplicates=True
+    ).execute()
+
+
 def get_episode_count(series_id: str) -> int:
     """Return the number of episodes stored for series_id."""
     client = get_client()

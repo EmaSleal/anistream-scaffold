@@ -332,11 +332,17 @@ class TestRunSimulcastDailyCheck:
         with patch("jobs.simulcast_job._within_cr_window", return_value=True), \
              patch("db.simulcast.get_due_simulcast_series", return_value=candidates), \
              patch("jobs.simulcast_job.refresh_series_from_jikan") as mock_refresh, \
-             patch("jobs.simulcast_job.run_simulcast_update") as mock_update:
+             patch("jobs.simulcast_job.run_simulcast_update") as mock_update, \
+             patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("SIMULCAST_GRACE_ENABLED", None)
+            os.environ.pop("SIMULCAST_BACKFILL_MODE", None)
             run_simulcast_daily_check()
 
         mock_refresh.assert_called_once_with("s1", 10, "k1")
-        mock_update.assert_called_once_with("s1", "a-slug", 5)
+        mock_update.assert_called_once_with(
+            "s1", "a-slug", 5,
+            mode="airing", backfill_mode="off", franchise_id=None, expected=None,
+        )
 
     def test_no_mal_id_skips_jikan_refresh_but_calls_update(self):
         """Candidate without mal_id → refresh_series_from_jikan skipped; run_simulcast_update called."""
@@ -348,13 +354,19 @@ class TestRunSimulcastDailyCheck:
         with patch("jobs.simulcast_job._within_cr_window", return_value=True), \
              patch("db.simulcast.get_due_simulcast_series", return_value=candidates), \
              patch("jobs.simulcast_job.refresh_series_from_jikan") as mock_refresh, \
-             patch("jobs.simulcast_job.run_simulcast_update") as mock_update:
+             patch("jobs.simulcast_job.run_simulcast_update") as mock_update, \
+             patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("SIMULCAST_GRACE_ENABLED", None)
+            os.environ.pop("SIMULCAST_BACKFILL_MODE", None)
             run_simulcast_daily_check()
 
         # No MAL ID → Jikan refresh skipped
         mock_refresh.assert_not_called()
         # AnimeAV1 scrape still runs; max_episode_number=None resolves to 0
-        mock_update.assert_called_once_with("s1", "a-slug", 0)
+        mock_update.assert_called_once_with(
+            "s1", "a-slug", 0,
+            mode="airing", backfill_mode="off", franchise_id=None, expected=None,
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -399,3 +411,135 @@ class TestRunSchedulerForever:
 
         mock_sched.add_job.assert_called_once()
         mock_sched.start.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# Phase 2, task 2.13/2.14 — flag wiring + expired-gap surfacing pass
+# ---------------------------------------------------------------------------
+
+
+class TestRunSimulcastDailyCheckFlagWiring:
+    """Unit tests for jobs.simulcast_job.run_simulcast_daily_check()'s
+    SIMULCAST_GRACE_ENABLED / SIMULCAST_BACKFILL_MODE flag wiring.
+
+    Both flags default OFF — the "no env vars set" test pins today's exact
+    behavior (mode="airing", backfill_mode="off", no surfacing pass).
+    """
+
+    def _candidate(self, **overrides):
+        base = {
+            "id": "s1",
+            "principal_slug": "a-slug",
+            "mal_id": 10,
+            "kitsu_id": "k1",
+            "max_episode_number": 5,
+        }
+        base.update(overrides)
+        return base
+
+    def test_flags_absent_passes_airing_off_defaults(self):
+        """No env vars set → run_simulcast_update called with mode="airing",
+        backfill_mode="off" — byte-for-byte the pre-existing call shape."""
+        from jobs.simulcast_job import run_simulcast_daily_check
+
+        candidates = [self._candidate()]
+        with patch("jobs.simulcast_job._within_cr_window", return_value=True), \
+             patch("db.simulcast.get_due_simulcast_series", return_value=candidates), \
+             patch("jobs.simulcast_job.refresh_series_from_jikan"), \
+             patch("jobs.simulcast_job.run_simulcast_update") as mock_update, \
+             patch("jobs.simulcast_job.db_simulcast.get_expired_gap_candidates") as mock_expired, \
+             patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("SIMULCAST_GRACE_ENABLED", None)
+            os.environ.pop("SIMULCAST_BACKFILL_MODE", None)
+            run_simulcast_daily_check()
+
+        mock_update.assert_called_once_with(
+            "s1", "a-slug", 5,
+            mode="airing",
+            backfill_mode="off",
+            franchise_id=None,
+            expected=None,
+        )
+        # Grace disabled → surfacing pass never runs (migration 004 may not
+        # even be applied yet in production; this keeps behavior inert).
+        mock_expired.assert_not_called()
+
+    def test_grace_candidate_mode_and_franchise_passed_through(self):
+        """Candidate carrying mode="grace"/franchise_id/expected (from a
+        grace-aware get_due_simulcast_series row) is passed straight through
+        to run_simulcast_update, plus the configured backfill_mode."""
+        from jobs.simulcast_job import run_simulcast_daily_check
+
+        candidates = [
+            self._candidate(mode="grace", franchise_id="fr-1", expected=12)
+        ]
+        with patch("jobs.simulcast_job._within_cr_window", return_value=True), \
+             patch("db.simulcast.get_due_simulcast_series", return_value=candidates), \
+             patch("jobs.simulcast_job.refresh_series_from_jikan"), \
+             patch("jobs.simulcast_job.run_simulcast_update") as mock_update, \
+             patch("jobs.simulcast_job.db_simulcast.get_expired_gap_candidates", return_value=[]), \
+             patch.dict(os.environ, {"SIMULCAST_GRACE_ENABLED": "1", "SIMULCAST_BACKFILL_MODE": "log"}, clear=False):
+            run_simulcast_daily_check()
+
+        mock_update.assert_called_once_with(
+            "s1", "a-slug", 5,
+            mode="grace",
+            backfill_mode="log",
+            franchise_id="fr-1",
+            expected=12,
+        )
+
+    def test_grace_enabled_runs_surfacing_pass_once(self):
+        """SIMULCAST_GRACE_ENABLED=1 → get_expired_gap_candidates() is
+        consulted once per run, mark_gap_unresolved() is called per
+        candidate, and a WARNING is logged."""
+        from jobs.simulcast_job import run_simulcast_daily_check
+
+        expired = [
+            {"id": "s-expired", "have": 10, "expected": 12, "own_episode_numbers": {1, 2, 3, 4, 5, 6, 7, 8, 9, 10}},
+        ]
+        with patch("jobs.simulcast_job._within_cr_window", return_value=True), \
+             patch("db.simulcast.get_due_simulcast_series", return_value=[]), \
+             patch("jobs.simulcast_job.run_simulcast_update") as mock_update, \
+             patch("jobs.simulcast_job.db_simulcast.get_expired_gap_candidates", return_value=expired), \
+             patch("jobs.simulcast_job.db_simulcast.mark_gap_unresolved") as mock_mark, \
+             patch.dict(os.environ, {"SIMULCAST_GRACE_ENABLED": "1"}, clear=False):
+            run_simulcast_daily_check()
+
+        mock_update.assert_not_called()  # no due candidates this run
+        mock_mark.assert_called_once()
+        call_args = mock_mark.call_args.args
+        assert call_args[0] == "s-expired"
+        assert sorted(call_args[1]) == [11, 12]
+
+    def test_grace_disabled_surfacing_pass_never_runs_even_with_candidates(self):
+        """SIMULCAST_GRACE_ENABLED off (default) → get_expired_gap_candidates
+        is never called, even when there are ordinary due candidates —
+        zero behavior change until the flag is explicitly flipped on."""
+        from jobs.simulcast_job import run_simulcast_daily_check
+
+        candidates = [self._candidate()]
+        with patch("jobs.simulcast_job._within_cr_window", return_value=True), \
+             patch("db.simulcast.get_due_simulcast_series", return_value=candidates), \
+             patch("jobs.simulcast_job.refresh_series_from_jikan"), \
+             patch("jobs.simulcast_job.run_simulcast_update"), \
+             patch("jobs.simulcast_job.db_simulcast.get_expired_gap_candidates") as mock_expired, \
+             patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("SIMULCAST_GRACE_ENABLED", None)
+            run_simulcast_daily_check()
+
+        mock_expired.assert_not_called()
+
+    def test_surfacing_pass_exception_is_caught_and_logged(self):
+        """get_expired_gap_candidates() raising must not crash the job."""
+        from jobs.simulcast_job import run_simulcast_daily_check
+
+        with patch("jobs.simulcast_job._within_cr_window", return_value=True), \
+             patch("db.simulcast.get_due_simulcast_series", return_value=[]), \
+             patch(
+                 "jobs.simulcast_job.db_simulcast.get_expired_gap_candidates",
+                 side_effect=RuntimeError("db down"),
+             ), \
+             patch.dict(os.environ, {"SIMULCAST_GRACE_ENABLED": "1"}, clear=False):
+            # Must not raise.
+            run_simulcast_daily_check()
