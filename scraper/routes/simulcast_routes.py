@@ -11,6 +11,9 @@ Admin endpoints (require @require_admin):
   GET  /api/simulcast/list                  — list all simulcast series (camelCase DTO)
   PATCH /api/simulcast/<id>/principal-slug  — update principal_slug for a series
   POST /api/simulcast/sync-jikan            — sync DB with Jikan seasons/now
+  GET  /api/simulcast/gaps                  — list series with an unresolved
+                                               episode gap (simulcast-gap-recovery
+                                               Phase 4, read-only visibility)
 """
 from __future__ import annotations
 
@@ -20,7 +23,7 @@ from flask import Blueprint, jsonify, request
 
 from auth import require_admin, require_service
 from db.series import get_series_list, get_series_by_id, upsert_series_stub
-from db.simulcast import get_series_simulcast_data, update_simulcast_fields
+from db.simulcast import get_series_simulcast_data, update_simulcast_fields, get_unresolved_gaps
 from domain.jikan_refresh import refresh_series_from_jikan
 from fetcher import fetch_kitsu_series_status, fetch_kitsu_episodes, fetch_jikan_episodes, fetch_simulcasts
 from routes.ingest_routes import _build_episodes_from_animeav1
@@ -206,6 +209,43 @@ def list_simulcast():
             "isSimulcast": r.get("is_simulcast"),
             "lastSimulcastCheck": r.get("last_simulcast_check"),
             "score": r.get("score"),
+        }
+        for r in rows
+    ]), 200
+
+
+@simulcast_bp.get("/gaps")
+@require_admin
+def list_unresolved_gaps():
+    """GET /api/simulcast/gaps
+
+    Returns all series with an unresolved episode gap (``gap_unresolved_at``
+    IS NOT NULL — set by the cron job's expired-gap surfacing pass once a
+    series' 14-day grace period elapses with a real gap), mapped to a
+    camelCase DTO. Read-only visibility only — this endpoint does not trigger
+    any backfill; that happens exclusively in the scheduled cron job.
+
+    Fails open to an empty list on any DB error (e.g. migration 004 not yet
+    applied in production, so the gap_unresolved_at column doesn't exist) —
+    this must never 500 the admin /admin/simulcast page that already works
+    daily off this same blueprint.
+
+    Returns:
+        200  [{id, title, gapUnresolvedAt, gapMissingEpisodes, episodeCount, principalSlug}]
+        401/403  via @require_admin
+    """
+    try:
+        rows = get_unresolved_gaps()
+    except Exception:
+        rows = []
+    return jsonify([
+        {
+            "id": r["id"],
+            "title": r.get("title"),
+            "gapUnresolvedAt": r.get("gap_unresolved_at"),
+            "gapMissingEpisodes": r.get("gap_missing_episodes") or [],
+            "episodeCount": r.get("episode_count"),
+            "principalSlug": r.get("principal_slug"),
         }
         for r in rows
     ]), 200

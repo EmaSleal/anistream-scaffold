@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import type { Metadata } from "next";
 import { auth } from "@/auth";
-import { getSimulcastSeries } from "@/app/actions/simulcast-admin";
+import { getSimulcastSeries, getUnresolvedGaps } from "@/app/actions/simulcast-admin";
 import SimulcastTable from "@/components/admin/SimulcastTable";
 import { AdminNav } from "@/components/admin/AdminNav";
 import styles from "../admin.module.css";
@@ -28,10 +28,15 @@ export default async function SimulcastPage() {
 
   const series = await getSimulcastSeries();
 
+  // Read-only visibility section (simulcast-gap-recovery Phase 4). Fails
+  // open to an empty list so a transient error here never blocks the main
+  // Simulcast Manager table the admin already relies on daily.
+  const unresolvedGaps = await getUnresolvedGaps().catch(() => []);
+
   return (
     <div className="page-content">
       <AdminNav />
-      <SimulcastTable series={series} />
+      <SimulcastTable series={series} unresolvedGaps={unresolvedGaps} />
     </div>
   );
 }

@@ -452,3 +452,68 @@ class TestSyncJikanReconciliation:
         assert "skipped-id" not in updates_by_id
         assert "hentai-still-airing-id" not in updates_by_id
         assert "no-mal-id" not in updates_by_id
+
+
+# ---------------------------------------------------------------------------
+# GET /api/simulcast/gaps (simulcast-gap-recovery Phase 4 — admin visibility)
+# ---------------------------------------------------------------------------
+
+class TestGapsAuthGuard:
+    def test_no_token_returns_401(self, client):
+        res = client.get("/api/simulcast/gaps")
+        assert res.status_code == 401
+
+    def test_non_admin_token_returns_403(self, client):
+        res = client.get("/api/simulcast/gaps", headers=_user_header())
+        assert res.status_code == 403
+
+
+class TestGapsListing:
+    def test_returns_series_with_unresolved_gaps(self, client):
+        gap_rows = [
+            {
+                "id": "daemons",
+                "title": "Daemons of the Shadow Realm",
+                "gap_unresolved_at": "2026-10-01T00:00:00+00:00",
+                "gap_missing_episodes": [1, 2],
+                "episode_count": 12,
+                "principal_slug": "daemons",
+            },
+        ]
+
+        with patch("routes.simulcast_routes.get_unresolved_gaps", return_value=gap_rows):
+            res = client.get("/api/simulcast/gaps", headers=_admin_header())
+
+        assert res.status_code == 200
+        data = json.loads(res.data)
+        assert data == [
+            {
+                "id": "daemons",
+                "title": "Daemons of the Shadow Realm",
+                "gapUnresolvedAt": "2026-10-01T00:00:00+00:00",
+                "gapMissingEpisodes": [1, 2],
+                "episodeCount": 12,
+                "principalSlug": "daemons",
+            },
+        ]
+
+    def test_returns_empty_list_when_no_unresolved_gaps(self, client):
+        with patch("routes.simulcast_routes.get_unresolved_gaps", return_value=[]):
+            res = client.get("/api/simulcast/gaps", headers=_admin_header())
+
+        assert res.status_code == 200
+        assert json.loads(res.data) == []
+
+    def test_fails_open_to_empty_list_when_db_query_errors(self, client):
+        """Fail-open: migration 004 (gap_unresolved_at column) may not be
+        applied yet in production. This endpoint must not 500 the admin page
+        that already works daily from /admin/simulcast — it degrades to an
+        empty list instead."""
+        with patch(
+            "routes.simulcast_routes.get_unresolved_gaps",
+            side_effect=Exception("column gap_unresolved_at does not exist"),
+        ):
+            res = client.get("/api/simulcast/gaps", headers=_admin_header())
+
+        assert res.status_code == 200
+        assert json.loads(res.data) == []

@@ -368,3 +368,26 @@ def get_expired_gap_candidates() -> list[dict]:
                 }
             )
     return candidates
+
+
+def get_unresolved_gaps() -> list[dict]:
+    """Return series with an unresolved episode gap, for admin review.
+
+    Candidate selection: ``gap_unresolved_at IS NOT NULL`` (set by
+    ``mark_gap_unresolved`` once a series' grace period expires with a real
+    gap), ordered most-recently-surfaced first.
+
+    Returns:
+        A list of dicts with keys: ``id``, ``title``, ``gap_unresolved_at``,
+        ``gap_missing_episodes`` (list[int] or None), ``episode_count``,
+        ``principal_slug``.
+    """
+    client = storage.get_client()
+    result = (
+        client.table("series")
+        .select("id, title, gap_unresolved_at, gap_missing_episodes, episode_count, principal_slug")
+        .not_.is_("gap_unresolved_at", "null")
+        .order("gap_unresolved_at", desc=True)
+        .execute()
+    )
+    return result.data or []

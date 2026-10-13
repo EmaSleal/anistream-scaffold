@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import {
   type SimulcastSeries,
   type SyncResult,
+  type UnresolvedGap,
   updateSimulcastPrincipalSlug,
   syncFromJikan,
 } from "@/app/actions/simulcast-admin";
@@ -12,6 +13,7 @@ import AnimeFlvSlugSearch from "@/components/admin/AnimeFlvSlugSearch";
 
 interface Props {
   series: SimulcastSeries[];
+  unresolvedGaps?: UnresolvedGap[];
 }
 
 function formatLastCheck(value: string | null): string {
@@ -26,7 +28,7 @@ function formatLastCheck(value: string | null): string {
 type SortKey = "title" | "score" | "lastSimulcastCheck";
 type SortDirection = "asc" | "desc";
 
-export default function SimulcastTable({ series }: Props) {
+export default function SimulcastTable({ series, unresolvedGaps = [] }: Props) {
   const router = useRouter();
   const [rows, setRows] = useState<SimulcastSeries[]>(series);
 
@@ -247,6 +249,77 @@ export default function SimulcastTable({ series }: Props) {
           }}
         >
           Sync error: {syncError}
+        </div>
+      )}
+
+      {unresolvedGaps.length > 0 && (
+        <div
+          style={{
+            marginBottom: "1.5rem",
+            border: "1px solid color-mix(in srgb, #f59e0b 40%, transparent)",
+            borderRadius: "var(--radius-md)",
+            overflow: "hidden",
+          }}
+        >
+          <div
+            style={{
+              padding: "0.75rem 1rem",
+              background: "color-mix(in srgb, #f59e0b 12%, transparent)",
+              fontWeight: 700,
+              fontSize: "0.95rem",
+            }}
+          >
+            Unresolved Episode Gaps ({unresolvedGaps.length})
+          </div>
+          <div style={{ overflowX: "auto" }}>
+            <table
+              style={{
+                width: "100%",
+                borderCollapse: "collapse",
+                fontSize: "0.85rem",
+              }}
+            >
+              <thead>
+                <tr
+                  style={{
+                    borderBottom: "1px solid var(--color-border)",
+                    textAlign: "left",
+                  }}
+                >
+                  <th style={{ padding: "0.5rem 0.75rem", fontWeight: 600 }}>Title</th>
+                  <th style={{ padding: "0.5rem 0.75rem", fontWeight: 600 }}>Missing Episodes</th>
+                  <th style={{ padding: "0.5rem 0.75rem", fontWeight: 600 }}>Episode Count</th>
+                  <th style={{ padding: "0.5rem 0.75rem", fontWeight: 600 }}>Unresolved Since</th>
+                </tr>
+              </thead>
+              <tbody>
+                {unresolvedGaps.map((gap) => (
+                  <tr key={gap.id} style={{ borderBottom: "1px solid var(--color-border)" }}>
+                    <td style={{ padding: "0.5rem 0.75rem" }}>{gap.title ?? gap.id}</td>
+                    <td style={{ padding: "0.5rem 0.75rem", color: "var(--color-text-secondary)" }}>
+                      {gap.gapMissingEpisodes.length > 0 ? gap.gapMissingEpisodes.join(", ") : "—"}
+                    </td>
+                    <td style={{ padding: "0.5rem 0.75rem", color: "var(--color-text-secondary)" }}>
+                      {gap.episodeCount ?? "—"}
+                    </td>
+                    <td style={{ padding: "0.5rem 0.75rem", color: "var(--color-text-secondary)" }}>
+                      {formatLastCheck(gap.gapUnresolvedAt)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div
+            style={{
+              padding: "0.5rem 1rem",
+              fontSize: "0.75rem",
+              color: "var(--color-text-secondary)",
+            }}
+          >
+            Read-only — the scheduled job detects and backfills these automatically. No action
+            needed here.
+          </div>
         </div>
       )}
 

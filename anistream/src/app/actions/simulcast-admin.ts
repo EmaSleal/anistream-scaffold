@@ -19,6 +19,15 @@ export interface SyncResult {
   finished: number;
 }
 
+export interface UnresolvedGap {
+  id: string;
+  title: string | null;
+  gapUnresolvedAt: string | null;
+  gapMissingEpisodes: number[];
+  episodeCount: number | null;
+  principalSlug: string | null;
+}
+
 function getAppUrl(): string {
   return process.env.APP_URL ?? "http://localhost:3000";
 }
@@ -107,4 +116,32 @@ export async function syncFromJikan(): Promise<SyncResult> {
   }
 
   return res.json() as Promise<SyncResult>;
+}
+
+/**
+ * Fetch all series with an unresolved episode gap (simulcast-gap-recovery
+ * Phase 4). Read-only visibility — this never triggers a backfill; that
+ * happens exclusively in the scheduled cron job.
+ */
+export async function getUnresolvedGaps(): Promise<UnresolvedGap[]> {
+  const cookieStore = await cookies();
+  const appUrl = getAppUrl();
+
+  const res = await fetch(`${appUrl}/api/admin/simulcast/gaps`, {
+    method: "GET",
+    headers: {
+      "Content-Type": "application/json",
+      Cookie: cookieStore.toString(),
+    },
+    cache: "no-store",
+  });
+
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(
+      (data as { error?: string }).error ?? `Request failed with status ${res.status}`,
+    );
+  }
+
+  return res.json() as Promise<UnresolvedGap[]>;
 }

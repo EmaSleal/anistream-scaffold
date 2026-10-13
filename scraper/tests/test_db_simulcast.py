@@ -439,3 +439,42 @@ class TestGraceAwareGetDueSimulcastSeries:
             result = get_due_simulcast_series()
 
         assert result == []
+
+
+# ---------------------------------------------------------------------------
+# Phase 4 — get_unresolved_gaps() (admin visibility)
+# ---------------------------------------------------------------------------
+
+
+class TestGetUnresolvedGaps:
+    def test_returns_rows_with_non_null_gap_unresolved_at(self):
+        from db.simulcast import get_unresolved_gaps
+
+        rows = [
+            {
+                "id": "daemons",
+                "title": "Daemons of the Shadow Realm",
+                "gap_unresolved_at": "2026-10-01T00:00:00+00:00",
+                "gap_missing_episodes": [1, 2],
+                "episode_count": 12,
+                "principal_slug": "daemons",
+            },
+        ]
+        mock_client = MagicMock()
+        mock_client.table.return_value = _chain_mock(rows)
+
+        with patch("storage.get_client", return_value=mock_client):
+            result = get_unresolved_gaps()
+
+        assert result == rows
+
+    def test_returns_empty_list_when_none_unresolved(self):
+        from db.simulcast import get_unresolved_gaps
+
+        mock_client = MagicMock()
+        mock_client.table.return_value = _chain_mock([])
+
+        with patch("storage.get_client", return_value=mock_client):
+            result = get_unresolved_gaps()
+
+        assert result == []
