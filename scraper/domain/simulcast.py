@@ -237,3 +237,145 @@ def is_simulcast_candidate(
         return False
 
     return now_utc >= broadcast_utc
+
+
+# ---------------------------------------------------------------------------
+# Simulcast gap recovery: grace-period eligibility + backward gap backfill.
+#
+# Pure decision logic only. The DB layer supplies plain facts (rows, owned
+# episode numbers, sibling-claimed episode numbers); the cron job and the
+# read-only simulate script both call these same functions so a CSV review
+# validates the exact code that will later write.
+# ---------------------------------------------------------------------------
+
+
+def _as_aware_utc(value: datetime | str) -> datetime:
+    """Normalise a datetime or ISO string to a timezone-aware UTC datetime."""
+    if isinstance(value, str):
+        value = datetime.fromisoformat(value)
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return value
+
+
+def _owned_window(offset: int, expected: int) -> set[int]:
+    """Return the episode-number window a series owns on a shared source
+    listing: ``(offset, offset + expected]`` — exclusive lower bound (the
+    sibling's claimed range), inclusive upper bound (own expected count).
+    """
+    return set(range(offset + 1, offset + expected + 1))
+
+
+def classify_recheck(
+    row: dict,
+    have: int,
+    now: datetime,
+    grace_days: int = 14,
+) -> str | None:
+    """Classify whether a series is due for a simulcast recheck.
+
+    Returns one of:
+        - ``"airing"``:  ``row["is_simulcast"]`` is True. Behaves exactly as
+          today — unconditionally eligible.
+        - ``"grace"``:   Finished airing within ``grace_days`` and still has
+          fewer ingested episodes (``have``) than Jikan expects
+          (``row["episode_count"]``).
+        - ``"expired"``: The grace window has elapsed and a gap still exists.
+          Eligibility stops here; the gap is surfaced for admin review by
+          the caller (not by this function).
+        - ``None``:      Not eligible — either airing is False with no gap,
+          or the inputs needed to establish a gap are missing.
+
+    Args:
+        row: Plain dict with ``is_simulcast`` (bool), ``simulcast_ended_at``
+            (datetime | ISO str | None — stamped by the DB trigger when
+            ``is_simulcast`` flips True -> False), and ``episode_count``
+            (int | None — Jikan's expected episode count for this series).
+        have: This series' own ingested episode count.
+        now: Reference UTC datetime (passed explicitly for testability).
+        grace_days: Grace window length in days. Default 14.
+    """
+    if row.get("is_simulcast"):
+        return "airing"
+
+    ended_at = row.get("simulcast_ended_at")
+    expected = row.get("episode_count")
+    if ended_at is None or expected is None:
+        return None
+
+    if have >= expected:
+        return None
+
+    ended_at = _as_aware_utc(ended_at)
+    elapsed = now - ended_at
+    if elapsed <= timedelta(days=grace_days):
+        return "grace"
+    return "expired"
+
+
+def plan_backfill(
+    own: set[int],
+    expected: int,
+    offset: int,
+    sibling_nums: set[int],
+    source_nums: set[int],
+    current_max: int,
+) -> dict:
+    """Plan which missing episode numbers to backfill for a series.
+
+    Computes ``inserts = (window ∩ source_nums) − own − sibling_nums``,
+    restricted to numbers below ``current_max`` and capped at
+    ``expected − len(own)`` remaining slots, where ``window`` is the
+    series' own owned range ``(offset, offset + expected]``.
+
+    Refuses to propose any insert (returning ``skip_reason="ambiguous_offset"``
+    instead) when the inputs can't establish a trustworthy boundary:
+        - any number in ``own`` falls outside the owned window — the offset
+          itself must be wrong, or
+        - ``sibling_nums`` is not a clean, contiguous ``1..offset`` prefix —
+          the sibling has its own gap, so the offset derived from its
+          ingested count can't be trusted as a clean boundary.
+
+    An understated offset would shift the window into a sibling's claimed
+    range, which is exactly the failure mode this guards against.
+
+    Args:
+        own: This series' own ingested episode numbers (in shared-source
+            numbering, i.e. already offset-relative to a cour-split sibling
+            if one exists).
+        expected: This series' own Jikan-expected episode count.
+        offset: Episode numbers claimed by a franchise sibling that shares
+            the same source slug (same semantics as
+            ``routes/ingest_routes.py::_claimed_episode_offset`` — the
+            sibling's own ingested episode count).
+        sibling_nums: Episode numbers claimed by that sibling.
+        source_nums: Episode numbers currently listed on the shared source
+            page.
+        current_max: This series' current max known episode number; only
+            numbers strictly below this are eligible for backfill (the
+            forward-scrape path already owns numbers at/above it).
+
+    Returns:
+        ``{"inserts": list[int], "skip_reason": str | None}``. ``inserts``
+        is sorted ascending. ``skip_reason`` is ``"ambiguous_offset"`` or
+        ``None``.
+    """
+    own = set(own)
+    sibling_nums = set(sibling_nums)
+    source_nums = set(source_nums)
+
+    window = _owned_window(offset, expected)
+
+    if any(n not in window for n in own):
+        return {"inserts": [], "skip_reason": "ambiguous_offset"}
+
+    if offset > 0 and sibling_nums != set(range(1, offset + 1)):
+        return {"inserts": [], "skip_reason": "ambiguous_offset"}
+
+    missing = (window & source_nums) - own - sibling_nums
+    missing = {n for n in missing if n < current_max}
+
+    remaining_slots = max(expected - len(own), 0)
+    inserts = sorted(missing)[:remaining_slots]
+
+    return {"inserts": inserts, "skip_reason": None}
