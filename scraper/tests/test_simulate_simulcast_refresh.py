@@ -39,7 +39,6 @@ def _row(**overrides):
         "principal_slug": "test-series",
         "episode_count": 12,
         "is_simulcast": False,
-        "simulcast_ended_at": NOW - timedelta(days=5),
         "franchise_id": None,
     }
     base.update(overrides)
@@ -57,12 +56,13 @@ class TestBuildBackfillPlanRowsUsesRealDomainFunctions:
         directly rather than re-implementing the decision logic locally."""
         row = _row()
         own_nums_map = {"series-1": set(range(2, 13))}  # 2..12 ingested, episode 1 missing
+        last_aired_map = {"series-1": NOW - timedelta(days=5)}
 
         with patch.object(sim, "classify_recheck", wraps=sim.classify_recheck) as mock_classify, \
              patch.object(sim, "plan_backfill", wraps=sim.plan_backfill) as mock_plan, \
              patch.object(sim, "get_slug_sibling_episodes", return_value={"offset": 0, "sibling_nums": set()}), \
              patch.object(sim, "scrape_animeav1_episodes", return_value=[{"episode_number": n} for n in range(1, 13)]):
-            rows = sim.build_backfill_plan_rows([row], own_nums_map, now_utc=NOW)
+            rows = sim.build_backfill_plan_rows([row], own_nums_map, last_aired_map, now_utc=NOW)
 
         mock_classify.assert_called_once()
         mock_plan.assert_called_once()
@@ -73,6 +73,7 @@ class TestBuildBackfillPlanRowsUsesRealDomainFunctions:
     def test_ambiguous_offset_is_surfaced_for_admin_review(self):
         row = _row(franchise_id="franchise-1")
         own_nums_map = {"series-1": {13, 14}}
+        last_aired_map = {"series-1": NOW - timedelta(days=5)}
 
         with patch.object(sim, "get_slug_sibling_episodes", return_value={
             "offset": 12,
@@ -80,7 +81,7 @@ class TestBuildBackfillPlanRowsUsesRealDomainFunctions:
         }), \
              patch.object(sim, "scrape_animeav1_episodes", return_value=[{"episode_number": n} for n in range(1, 25)]):
             rows = sim.build_backfill_plan_rows(
-                [row], own_nums_map, now_utc=NOW,
+                [row], own_nums_map, last_aired_map, now_utc=NOW,
             )
 
         assert rows[0]["skip_reason"] == "ambiguous_offset"
@@ -91,47 +92,51 @@ class TestBuildBackfillPlanRowsReadOnlyScraping:
     def test_performs_read_only_animeav1_scrape_for_grace_candidate(self):
         row = _row()
         own_nums_map = {"series-1": {1, 2, 3}}
+        last_aired_map = {"series-1": NOW - timedelta(days=5)}
 
         with patch.object(sim, "get_slug_sibling_episodes", return_value={"offset": 0, "sibling_nums": set()}), \
              patch.object(sim, "scrape_animeav1_episodes", return_value=[{"episode_number": n} for n in range(1, 5)]) as mock_scrape:
-            sim.build_backfill_plan_rows([row], own_nums_map, now_utc=NOW)
+            sim.build_backfill_plan_rows([row], own_nums_map, last_aired_map, now_utc=NOW)
 
         mock_scrape.assert_called_once_with("test-series")
 
     def test_expired_mode_skips_scrape_and_is_marked_informational(self):
         """Mirrors production: expired rows go through get_expired_gap_candidates
         + mark_gap_unresolved only — never scraped or backfilled."""
-        row = _row(simulcast_ended_at=NOW - timedelta(days=20))
+        row = _row()
         own_nums_map = {"series-1": {1, 2, 3}}
+        last_aired_map = {"series-1": NOW - timedelta(days=20)}
 
         with patch.object(sim, "scrape_animeav1_episodes") as mock_scrape:
-            rows = sim.build_backfill_plan_rows([row], own_nums_map, now_utc=NOW)
+            rows = sim.build_backfill_plan_rows([row], own_nums_map, last_aired_map, now_utc=NOW)
 
         mock_scrape.assert_not_called()
         assert rows[0]["mode"] == "expired"
         assert rows[0]["skip_reason"] == "grace_period_expired_no_scrape"
 
     def test_not_eligible_mode_skips_scrape(self):
-        """have == expected inside the grace window -> classify_recheck returns
-        None -> not eligible, no scrape performed."""
-        row = _row(simulcast_ended_at=NOW - timedelta(days=3), episode_count=12)
+        """have == expected -> classify_recheck returns None (regardless of
+        the anchor) -> not eligible, no scrape performed."""
+        row = _row(episode_count=12)
         own_nums_map = {"series-1": set(range(1, 13))}
+        last_aired_map = {"series-1": NOW - timedelta(days=3)}
 
         with patch.object(sim, "scrape_animeav1_episodes") as mock_scrape:
-            rows = sim.build_backfill_plan_rows([row], own_nums_map, now_utc=NOW)
+            rows = sim.build_backfill_plan_rows([row], own_nums_map, last_aired_map, now_utc=NOW)
 
         mock_scrape.assert_not_called()
         assert rows[0]["mode"] == "not_eligible"
 
     def test_airing_mode_still_eligible_for_backfill_scrape(self):
         """mode='airing' also gets a backfill plan — the cron job's backward
-        gap-backfill is not gated on grace mode specifically."""
-        row = _row(is_simulcast=True, simulcast_ended_at=None)
+        gap-backfill is not gated on grace mode specifically. No anchor is
+        needed here since is_simulcast=True short-circuits classify_recheck."""
+        row = _row(is_simulcast=True)
         own_nums_map = {"series-1": {2, 3, 4}}  # episode 1 missing
 
         with patch.object(sim, "get_slug_sibling_episodes", return_value={"offset": 0, "sibling_nums": set()}), \
              patch.object(sim, "scrape_animeav1_episodes", return_value=[{"episode_number": n} for n in range(1, 5)]) as mock_scrape:
-            rows = sim.build_backfill_plan_rows([row], own_nums_map, now_utc=NOW)
+            rows = sim.build_backfill_plan_rows([row], own_nums_map, {}, now_utc=NOW)
 
         mock_scrape.assert_called_once_with("test-series")
         assert rows[0]["mode"] == "airing"
@@ -168,7 +173,14 @@ class TestMainIsReadOnly:
         episodes_chain.select.return_value = episodes_chain
         episodes_chain.in_.return_value = episodes_chain
         episodes_chain.execute.return_value = MagicMock(
-            data=[{"series_id": "series-1", "episode_number": n} for n in range(1, 12)]
+            data=[
+                {
+                    "series_id": "series-1",
+                    "episode_number": n,
+                    "aired_at": (NOW - timedelta(days=5)).isoformat(),
+                }
+                for n in range(1, 12)
+            ]
         )
 
         call_count = {"series": 0}

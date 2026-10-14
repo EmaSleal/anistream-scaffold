@@ -17,8 +17,10 @@ update_simulcast_fields(), upsert_series(), insert_episode_if_absent(), or
 any other write path. Safe to run repeatedly against production data.
 
 Usage (must run with cwd=scraper/, so config.py's relative .env.local load
-works). Requires migration 004 (simulcast_ended_at) to already be applied —
-see the design doc's rollout order:
+works). No migration prerequisite: the grace/backfill plan below is anchored
+to each series' own ingested episodes' ``aired_at``, not to a seeded
+``simulcast_ended_at`` column, so it works on any already-finished series
+without a one-time backfill step:
 
     cd scraper && python scripts/simulate_simulcast_refresh.py [recency_days]
 
@@ -65,7 +67,7 @@ def _fetch_candidates(recency_days: int) -> list[dict]:
     client = storage.get_client()
     select_cols = (
         "id, title, mal_id, kitsu_id, is_simulcast, principal_slug, "
-        "episode_count, last_simulcast_check, simulcast_ended_at, franchise_id"
+        "episode_count, last_simulcast_check, franchise_id"
     )
 
     airing_resp = (
@@ -122,29 +124,45 @@ def _ingested_episode_counts(series_ids: list[str]) -> dict[str, int]:
     return counts
 
 
-def _own_episode_numbers(series_ids: list[str]) -> dict[str, set[int]]:
-    """Read-only: ingested episode numbers per series_id via one batched SELECT."""
+def _own_episode_numbers(
+    series_ids: list[str],
+) -> tuple[dict[str, set[int]], dict[str, str | None]]:
+    """Read-only: ingested episode numbers + last-aired-episode anchor per
+    series_id, via one batched SELECT.
+
+    Returns ``(own_nums_map, last_aired_map)``: ``own_nums_map`` is this
+    series' own ingested episode numbers; ``last_aired_map`` is the
+    ``aired_at`` of the episode with the highest ``episode_number`` per
+    series — the anchor ``classify_recheck`` uses for grace-period
+    eligibility.
+    """
     if not series_ids:
-        return {}
+        return {}, {}
     client = storage.get_client()
     resp = (
         client.table("episodes")
-        .select("series_id, episode_number")
+        .select("series_id, episode_number, aired_at")
         .in_("series_id", series_ids)
         .execute()
     )
     nums: dict[str, set[int]] = {sid: set() for sid in series_ids}
+    last_aired: dict[str, str | None] = {sid: None for sid in series_ids}
+    max_tracker: dict[str, int] = {}
     for ep in resp.data or []:
         sid = ep.get("series_id")
         num = ep.get("episode_number")
         if sid in nums and num is not None:
             nums[sid].add(num)
-    return nums
+            if num > max_tracker.get(sid, -1):
+                max_tracker[sid] = num
+                last_aired[sid] = ep.get("aired_at")
+    return nums, last_aired
 
 
 def build_backfill_plan_rows(
     candidates: list[dict],
     own_nums_map: dict[str, set[int]],
+    last_aired_map: dict[str, str | None] | None = None,
     now_utc: datetime | None = None,
 ) -> list[dict]:
     """Simulate the grace-period eligibility + backward gap-backfill decision
@@ -164,9 +182,12 @@ def build_backfill_plan_rows(
     Args:
         candidates: Plain dicts with ``id``, ``title``, ``mal_id``,
             ``principal_slug``, ``episode_count``, ``is_simulcast``,
-            ``simulcast_ended_at``, ``franchise_id`` (DB column shapes).
+            ``franchise_id`` (DB column shapes).
         own_nums_map: series_id -> this series' own ingested episode numbers
             (from ``_own_episode_numbers``).
+        last_aired_map: series_id -> ``aired_at`` of this series' own
+            highest-numbered ingested episode (from ``_own_episode_numbers``),
+            the anchor ``classify_recheck`` uses for grace-period eligibility.
         now_utc: Reference UTC datetime (defaults to current time; pass
             explicitly in tests for determinism).
 
@@ -174,13 +195,14 @@ def build_backfill_plan_rows(
         A list of plain dicts, one per candidate, ready for CSV writing.
     """
     now_utc = now_utc or datetime.now(timezone.utc)
+    last_aired_map = last_aired_map or {}
     rows: list[dict] = []
 
     for row in candidates:
         series_id = row["id"]
         own = own_nums_map.get(series_id, set())
         have = len(own)
-        mode = classify_recheck(row, have, now_utc)
+        mode = classify_recheck(row, have, now_utc, last_aired_map.get(series_id))
 
         expected = row.get("episode_count")
         slug = row.get("principal_slug")
@@ -323,13 +345,15 @@ def main(recency_days: int = 14) -> None:
     # Simulcast gap recovery (Phase 3): simulate grace-period eligibility +
     # backward gap-backfill using the SAME domain.simulcast.classify_recheck /
     # plan_backfill functions the cron job calls. Read-only — no DB writes.
-    # Requires migration 004 (simulcast_ended_at) to already be applied;
-    # see design rollout step 1/2.
+    # The grace anchor comes from each series' own ingested episodes'
+    # aired_at, so no migration/seed prerequisite applies here.
     # ------------------------------------------------------------------
     print("\nSimulating grace-period eligibility + backward gap-backfill plan "
           "(same domain functions as the cron job)...")
-    own_nums_map = _own_episode_numbers([c["id"] for c in candidates])
-    backfill_rows = build_backfill_plan_rows(candidates, own_nums_map, now_utc=datetime.now(timezone.utc))
+    own_nums_map, last_aired_map = _own_episode_numbers([c["id"] for c in candidates])
+    backfill_rows = build_backfill_plan_rows(
+        candidates, own_nums_map, last_aired_map, now_utc=datetime.now(timezone.utc)
+    )
     backfill_path = os.path.join(out_dir, "simulcast_backfill_plan.csv")
     _write_csv(backfill_path, backfill_rows)
     print(f"Wrote {len(backfill_rows)} rows -> {backfill_path}")

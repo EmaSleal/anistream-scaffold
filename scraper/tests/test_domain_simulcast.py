@@ -188,65 +188,47 @@ class TestClassifyRecheck:
 
     def test_still_airing_returns_airing(self):
         """is_simulcast=True always classifies as 'airing', regardless of have/expected."""
-        row = {"is_simulcast": True, "simulcast_ended_at": None, "episode_count": 12}
-        assert classify_recheck(row, have=5, now=self.NOW) == "airing"
+        row = {"is_simulcast": True, "episode_count": 12}
+        assert classify_recheck(row, have=5, now=self.NOW, last_episode_aired_at=None) == "airing"
 
-    def test_finished_5_days_ago_with_gap_returns_grace(self):
+    def test_last_episode_aired_5_days_ago_with_gap_returns_grace(self):
         """Within the 14-day grace window and have < expected → 'grace'."""
-        row = {
-            "is_simulcast": False,
-            "simulcast_ended_at": self.NOW - timedelta(days=5),
-            "episode_count": 12,
-        }
-        assert classify_recheck(row, have=11, now=self.NOW) == "grace"
+        row = {"is_simulcast": False, "episode_count": 12}
+        aired_at = self.NOW - timedelta(days=5)
+        assert classify_recheck(row, have=11, now=self.NOW, last_episode_aired_at=aired_at) == "grace"
 
-    def test_finished_3_days_ago_with_matching_counts_returns_none(self):
-        """have == expected → no gap, not eligible even inside the grace window."""
-        row = {
-            "is_simulcast": False,
-            "simulcast_ended_at": self.NOW - timedelta(days=3),
-            "episode_count": 12,
-        }
-        assert classify_recheck(row, have=12, now=self.NOW) is None
+    def test_matching_counts_returns_none(self):
+        """have == expected → no gap, not eligible even with a recent anchor."""
+        row = {"is_simulcast": False, "episode_count": 12}
+        aired_at = self.NOW - timedelta(days=3)
+        assert classify_recheck(row, have=12, now=self.NOW, last_episode_aired_at=aired_at) is None
 
-    def test_finished_15_days_ago_with_gap_returns_expired(self):
+    def test_last_episode_aired_15_days_ago_with_gap_returns_expired(self):
         """Past the 14-day grace window with have < expected → 'expired'."""
-        row = {
-            "is_simulcast": False,
-            "simulcast_ended_at": self.NOW - timedelta(days=15),
-            "episode_count": 12,
-        }
-        assert classify_recheck(row, have=10, now=self.NOW) == "expired"
+        row = {"is_simulcast": False, "episode_count": 12}
+        aired_at = self.NOW - timedelta(days=15)
+        assert classify_recheck(row, have=10, now=self.NOW, last_episode_aired_at=aired_at) == "expired"
 
     def test_null_episode_count_excluded_from_grace_rule(self):
         """A null Jikan-expected count can never establish a grace-period gap."""
-        row = {
-            "is_simulcast": False,
-            "simulcast_ended_at": self.NOW - timedelta(days=5),
-            "episode_count": None,
-        }
-        assert classify_recheck(row, have=5, now=self.NOW) is None
+        row = {"is_simulcast": False, "episode_count": None}
+        aired_at = self.NOW - timedelta(days=5)
+        assert classify_recheck(row, have=5, now=self.NOW, last_episode_aired_at=aired_at) is None
 
-    def test_null_ended_at_excluded(self):
-        """No simulcast_ended_at means we don't know when it finished — exclude."""
-        row = {"is_simulcast": False, "simulcast_ended_at": None, "episode_count": 12}
-        assert classify_recheck(row, have=5, now=self.NOW) is None
+    def test_null_last_episode_aired_at_excluded(self):
+        """No known aired_at for our own episodes means we can't anchor the grace clock — exclude."""
+        row = {"is_simulcast": False, "episode_count": 12}
+        assert classify_recheck(row, have=5, now=self.NOW, last_episode_aired_at=None) is None
 
     def test_grace_boundary_at_exactly_14_days_is_still_grace(self):
-        row = {
-            "is_simulcast": False,
-            "simulcast_ended_at": self.NOW - timedelta(days=14),
-            "episode_count": 12,
-        }
-        assert classify_recheck(row, have=10, now=self.NOW) == "grace"
+        row = {"is_simulcast": False, "episode_count": 12}
+        aired_at = self.NOW - timedelta(days=14)
+        assert classify_recheck(row, have=10, now=self.NOW, last_episode_aired_at=aired_at) == "grace"
 
     def test_grace_boundary_just_past_14_days_is_expired(self):
-        row = {
-            "is_simulcast": False,
-            "simulcast_ended_at": self.NOW - timedelta(days=14, hours=1),
-            "episode_count": 12,
-        }
-        assert classify_recheck(row, have=10, now=self.NOW) == "expired"
+        row = {"is_simulcast": False, "episode_count": 12}
+        aired_at = self.NOW - timedelta(days=14, hours=1)
+        assert classify_recheck(row, have=10, now=self.NOW, last_episode_aired_at=aired_at) == "expired"
 
 
 # ---------------------------------------------------------------------------

@@ -101,8 +101,12 @@ def get_due_simulcast_series() -> list[dict]:
     filter alone — this is what lets a series stop being excluded the instant
     ``is_simulcast`` flips False (rather than permanently, as a hard SQL
     ``eq`` filter would), while still respecting the same 4-hour cooldown for
-    both ``"airing"`` and ``"grace"`` classifications. When the flag is off,
-    behavior is byte-for-byte identical to before this change.
+    both ``"airing"`` and ``"grace"`` classifications. The grace clock is
+    anchored to the ``aired_at`` of each series' own highest-numbered
+    ingested episode (not a stamped status-transition timestamp), so
+    eligibility falls straight out of the episodes already ingested. When
+    the flag is off, behavior is byte-for-byte identical to before this
+    change.
 
     Returns:
         A list of dicts with keys: ``id``, ``principal_slug``, ``mal_id``,
@@ -116,7 +120,7 @@ def get_due_simulcast_series() -> list[dict]:
 
     select_cols = "id, principal_slug, mal_id, kitsu_id, last_simulcast_check"
     if grace_enabled:
-        select_cols += ", is_simulcast, simulcast_ended_at, episode_count, franchise_id"
+        select_cols += ", is_simulcast, episode_count, franchise_id"
 
     query = client.table("series").select(select_cols).not_.is_("principal_slug", "null")
     if not grace_enabled:
@@ -129,24 +133,31 @@ def get_due_simulcast_series() -> list[dict]:
     now_utc = datetime.now(timezone.utc)
     _cooldown = timedelta(hours=4)
 
-    # Grace mode needs each row's own ingested episode numbers up front to
-    # run classify_recheck(); this also doubles as the max_episode_number
-    # source later, so no second episodes query is needed in this branch.
+    # Grace mode needs each row's own ingested episode numbers (and the
+    # aired_at of the highest-numbered one, to anchor classify_recheck) up
+    # front; this also doubles as the max_episode_number source later, so no
+    # second episodes query is needed in this branch.
     own_nums_map: dict[str, set[int]] = {}
+    last_aired_map: dict[str, str | None] = {}
     if grace_enabled and rows:
         row_ids = [r["id"] for r in rows]
         eps_result = (
             client.table("episodes")
-            .select("series_id, episode_number")
+            .select("series_id, episode_number, aired_at")
             .in_("series_id", row_ids)
             .execute()
         )
         own_nums_map = {rid: set() for rid in row_ids}
+        last_aired_map = {rid: None for rid in row_ids}
+        max_num_tracker: dict[str, int] = {}
         for ep in eps_result.data or []:
             sid = ep.get("series_id")
             ep_num = ep.get("episode_number")
             if sid in own_nums_map and ep_num is not None:
                 own_nums_map[sid].add(ep_num)
+                if ep_num > max_num_tracker.get(sid, -1):
+                    max_num_tracker[sid] = ep_num
+                    last_aired_map[sid] = ep.get("aired_at")
 
     # Filter out series checked within the last 4 hours.
     # A time-based cooldown (rather than once-per-day) lets the scheduler
@@ -158,7 +169,7 @@ def get_due_simulcast_series() -> list[dict]:
     for row in rows:
         if grace_enabled:
             have = len(own_nums_map.get(row["id"], set()))
-            mode = classify_recheck(row, have, now_utc)
+            mode = classify_recheck(row, have, now_utc, last_aired_map.get(row["id"]))
             if mode not in ("airing", "grace"):
                 continue  # "expired" or None — not due for a recheck here
         else:
@@ -311,12 +322,15 @@ def get_expired_gap_candidates() -> list[dict]:
     """Return series whose grace period has expired with an unresolved gap.
 
     Candidate selection (SQL-side): ``is_simulcast=False``,
-    ``simulcast_ended_at IS NOT NULL``, ``episode_count IS NOT NULL``, and
-    ``gap_unresolved_at IS NULL`` (not already surfaced). The actual
-    day-threshold decision is delegated to
-    ``domain.simulcast.classify_recheck`` (same pure function used by
-    ``get_due_simulcast_series``) so that logic is never duplicated here —
-    only rows classified ``"expired"`` are returned.
+    ``episode_count IS NOT NULL``, and ``gap_unresolved_at IS NULL`` (not
+    already surfaced). No longer requires a seeded ``simulcast_ended_at`` —
+    the grace clock is anchored to the ``aired_at`` of each series' own
+    highest-numbered ingested episode, computed below from a live episodes
+    query, so any already-finished series with a real gap is caught without
+    depending on a one-time backfill seed. The actual day-threshold decision
+    is delegated to ``domain.simulcast.classify_recheck`` (same pure
+    function used by ``get_due_simulcast_series``) so that logic is never
+    duplicated here — only rows classified ``"expired"`` are returned.
 
     Returns:
         A list of dicts with keys: ``id``, ``have`` (int), ``expected``
@@ -327,9 +341,8 @@ def get_expired_gap_candidates() -> list[dict]:
     client = storage.get_client()
     result = (
         client.table("series")
-        .select("id, is_simulcast, simulcast_ended_at, episode_count")
+        .select("id, is_simulcast, episode_count")
         .eq("is_simulcast", False)
-        .not_.is_("simulcast_ended_at", "null")
         .not_.is_("episode_count", "null")
         .is_("gap_unresolved_at", "null")
         .execute()
@@ -341,23 +354,28 @@ def get_expired_gap_candidates() -> list[dict]:
     series_ids = [r["id"] for r in rows]
     eps_result = (
         client.table("episodes")
-        .select("series_id, episode_number")
+        .select("series_id, episode_number, aired_at")
         .in_("series_id", series_ids)
         .execute()
     )
     own_nums_map: dict[str, set[int]] = {sid: set() for sid in series_ids}
+    last_aired_map: dict[str, str | None] = {sid: None for sid in series_ids}
+    max_num_tracker: dict[str, int] = {}
     for ep in eps_result.data or []:
         sid = ep.get("series_id")
         num = ep.get("episode_number")
         if sid in own_nums_map and num is not None:
             own_nums_map[sid].add(num)
+            if num > max_num_tracker.get(sid, -1):
+                max_num_tracker[sid] = num
+                last_aired_map[sid] = ep.get("aired_at")
 
     now_utc = datetime.now(timezone.utc)
     candidates = []
     for row in rows:
         own_nums = own_nums_map.get(row["id"], set())
         have = len(own_nums)
-        mode = classify_recheck(row, have, now_utc)
+        mode = classify_recheck(row, have, now_utc, last_aired_map.get(row["id"]))
         if mode == "expired":
             candidates.append(
                 {

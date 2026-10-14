@@ -270,6 +270,7 @@ def classify_recheck(
     row: dict,
     have: int,
     now: datetime,
+    last_episode_aired_at: datetime | str | None,
     grace_days: int = 14,
 ) -> str | None:
     """Classify whether a series is due for a simulcast recheck.
@@ -277,37 +278,44 @@ def classify_recheck(
     Returns one of:
         - ``"airing"``:  ``row["is_simulcast"]`` is True. Behaves exactly as
           today — unconditionally eligible.
-        - ``"grace"``:   Finished airing within ``grace_days`` and still has
-          fewer ingested episodes (``have``) than Jikan expects
-          (``row["episode_count"]``).
+        - ``"grace"``:   This series' own highest-numbered ingested episode
+          aired within ``grace_days`` and it still has fewer ingested
+          episodes (``have``) than Jikan expects (``row["episode_count"]``).
         - ``"expired"``: The grace window has elapsed and a gap still exists.
           Eligibility stops here; the gap is surfaced for admin review by
           the caller (not by this function).
         - ``None``:      Not eligible — either airing is False with no gap,
           or the inputs needed to establish a gap are missing.
 
+    The grace clock is anchored to ``last_episode_aired_at`` (the real
+    broadcast date of content we actually have) rather than to when we
+    detected the ``is_simulcast`` flip, so eligibility never depends on
+    seeding a status-transition timestamp — it falls straight out of the
+    episodes we've already ingested.
+
     Args:
-        row: Plain dict with ``is_simulcast`` (bool), ``simulcast_ended_at``
-            (datetime | ISO str | None — stamped by the DB trigger when
-            ``is_simulcast`` flips True -> False), and ``episode_count``
+        row: Plain dict with ``is_simulcast`` (bool) and ``episode_count``
             (int | None — Jikan's expected episode count for this series).
         have: This series' own ingested episode count.
         now: Reference UTC datetime (passed explicitly for testability).
+        last_episode_aired_at: The ``aired_at`` of this series' own
+            highest-numbered ingested episode (datetime | ISO str | None).
+            ``None`` when no own episodes are ingested yet or the aired_at
+            of the latest one is unknown.
         grace_days: Grace window length in days. Default 14.
     """
     if row.get("is_simulcast"):
         return "airing"
 
-    ended_at = row.get("simulcast_ended_at")
     expected = row.get("episode_count")
-    if ended_at is None or expected is None:
+    if expected is None or have >= expected:
         return None
 
-    if have >= expected:
+    if last_episode_aired_at is None:
         return None
 
-    ended_at = _as_aware_utc(ended_at)
-    elapsed = now - ended_at
+    anchor = _as_aware_utc(last_episode_aired_at)
+    elapsed = now - anchor
     if elapsed <= timedelta(days=grace_days):
         return "grace"
     return "expired"

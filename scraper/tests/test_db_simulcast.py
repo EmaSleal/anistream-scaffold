@@ -224,20 +224,20 @@ class TestGetExpiredGapCandidates:
         return mock_client
 
     def test_expired_series_with_gap_is_returned(self):
+        """The anchor must come from the MAX-numbered episode's aired_at,
+        not just any owned episode — early episodes get a recent (fake)
+        aired_at so the test fails if the implementation picks the wrong one."""
         from db.simulcast import get_expired_gap_candidates
 
-        ended_15_days_ago = (datetime.now(timezone.utc) - timedelta(days=15)).isoformat()
+        recent = (datetime.now(timezone.utc) - timedelta(days=2)).isoformat()
+        old = (datetime.now(timezone.utc) - timedelta(days=15)).isoformat()
         series_rows = [
-            {
-                "id": "s1",
-                "is_simulcast": False,
-                "simulcast_ended_at": ended_15_days_ago,
-                "episode_count": 12,
-            }
+            {"id": "s1", "is_simulcast": False, "episode_count": 12}
         ]
         episode_rows = [
-            {"series_id": "s1", "episode_number": n} for n in range(1, 11)
-        ]
+            {"series_id": "s1", "episode_number": n, "aired_at": recent}
+            for n in range(1, 10)
+        ] + [{"series_id": "s1", "episode_number": 10, "aired_at": old}]
         mock_client = self._mock_client(series_rows, episode_rows)
 
         with patch("storage.get_client", return_value=mock_client):
@@ -253,16 +253,13 @@ class TestGetExpiredGapCandidates:
         """have == expected → classify_recheck returns None → excluded."""
         from db.simulcast import get_expired_gap_candidates
 
-        ended_15_days_ago = (datetime.now(timezone.utc) - timedelta(days=15)).isoformat()
+        old = (datetime.now(timezone.utc) - timedelta(days=15)).isoformat()
         series_rows = [
-            {
-                "id": "s1",
-                "is_simulcast": False,
-                "simulcast_ended_at": ended_15_days_ago,
-                "episode_count": 10,
-            }
+            {"id": "s1", "is_simulcast": False, "episode_count": 10}
         ]
-        episode_rows = [{"series_id": "s1", "episode_number": n} for n in range(1, 11)]
+        episode_rows = [
+            {"series_id": "s1", "episode_number": n, "aired_at": old} for n in range(1, 11)
+        ]
         mock_client = self._mock_client(series_rows, episode_rows)
 
         with patch("storage.get_client", return_value=mock_client):
@@ -271,19 +268,17 @@ class TestGetExpiredGapCandidates:
         assert result == []
 
     def test_still_within_grace_excluded(self):
-        """Finished 5 days ago (within 14d grace) → classify_recheck returns "grace", not "expired"."""
+        """Highest-numbered own episode aired 5 days ago (within 14d grace)
+        → classify_recheck returns "grace", not "expired"."""
         from db.simulcast import get_expired_gap_candidates
 
-        ended_5_days_ago = (datetime.now(timezone.utc) - timedelta(days=5)).isoformat()
+        recent = (datetime.now(timezone.utc) - timedelta(days=5)).isoformat()
         series_rows = [
-            {
-                "id": "s1",
-                "is_simulcast": False,
-                "simulcast_ended_at": ended_5_days_ago,
-                "episode_count": 12,
-            }
+            {"id": "s1", "is_simulcast": False, "episode_count": 12}
         ]
-        episode_rows = [{"series_id": "s1", "episode_number": n} for n in range(1, 11)]
+        episode_rows = [
+            {"series_id": "s1", "episode_number": n, "aired_at": recent} for n in range(1, 11)
+        ]
         mock_client = self._mock_client(series_rows, episode_rows)
 
         with patch("storage.get_client", return_value=mock_client):
@@ -342,11 +337,12 @@ class TestGraceAwareGetDueSimulcastSeries:
         assert set(item.keys()) == {"id", "principal_slug", "mal_id", "kitsu_id", "max_episode_number"}
 
     def test_flag_on_includes_grace_eligible_row(self):
-        """SIMULCAST_GRACE_ENABLED=1 → a finished series with a real gap
-        within the 14-day window is included alongside airing rows."""
+        """SIMULCAST_GRACE_ENABLED=1 → a finished series whose own highest-
+        numbered episode aired within the 14-day window, with a real gap,
+        is included alongside airing rows."""
         from db.simulcast import get_due_simulcast_series
 
-        ended_5_days_ago = (datetime.now(timezone.utc) - timedelta(days=5)).isoformat()
+        aired_5_days_ago = (datetime.now(timezone.utc) - timedelta(days=5)).isoformat()
         airing_row = {
             "id": "s-airing",
             "principal_slug": "slug-airing",
@@ -354,7 +350,6 @@ class TestGraceAwareGetDueSimulcastSeries:
             "kitsu_id": None,
             "last_simulcast_check": None,
             "is_simulcast": True,
-            "simulcast_ended_at": None,
             "episode_count": 24,
             "franchise_id": None,
         }
@@ -365,12 +360,12 @@ class TestGraceAwareGetDueSimulcastSeries:
             "kitsu_id": None,
             "last_simulcast_check": None,
             "is_simulcast": False,
-            "simulcast_ended_at": ended_5_days_ago,
             "episode_count": 12,
             "franchise_id": "fr-1",
         }
         episode_rows = [
-            {"series_id": "s-grace", "episode_number": n} for n in range(1, 11)
+            {"series_id": "s-grace", "episode_number": n, "aired_at": aired_5_days_ago}
+            for n in range(1, 11)
         ]
         mock_client = self._mock_client([airing_row, grace_row], episode_rows)
 
@@ -389,11 +384,12 @@ class TestGraceAwareGetDueSimulcastSeries:
         assert airing_item["mode"] == "airing"
 
     def test_flag_on_excludes_expired_row(self):
-        """SIMULCAST_GRACE_ENABLED=1 → a series past the 14-day grace window
-        with a real gap is NOT included (classify_recheck returns "expired")."""
+        """SIMULCAST_GRACE_ENABLED=1 → a series whose own highest-numbered
+        episode aired past the 14-day grace window, with a real gap, is NOT
+        included (classify_recheck returns "expired")."""
         from db.simulcast import get_due_simulcast_series
 
-        ended_20_days_ago = (datetime.now(timezone.utc) - timedelta(days=20)).isoformat()
+        aired_20_days_ago = (datetime.now(timezone.utc) - timedelta(days=20)).isoformat()
         expired_row = {
             "id": "s-expired",
             "principal_slug": "slug-expired",
@@ -401,11 +397,13 @@ class TestGraceAwareGetDueSimulcastSeries:
             "kitsu_id": None,
             "last_simulcast_check": None,
             "is_simulcast": False,
-            "simulcast_ended_at": ended_20_days_ago,
             "episode_count": 12,
             "franchise_id": None,
         }
-        episode_rows = [{"series_id": "s-expired", "episode_number": n} for n in range(1, 11)]
+        episode_rows = [
+            {"series_id": "s-expired", "episode_number": n, "aired_at": aired_20_days_ago}
+            for n in range(1, 11)
+        ]
         mock_client = self._mock_client([expired_row], episode_rows)
 
         with patch("storage.get_client", return_value=mock_client), \
@@ -418,7 +416,7 @@ class TestGraceAwareGetDueSimulcastSeries:
         """Grace row checked 1 hour ago → still within the 4h cooldown → excluded."""
         from db.simulcast import get_due_simulcast_series
 
-        ended_5_days_ago = (datetime.now(timezone.utc) - timedelta(days=5)).isoformat()
+        aired_5_days_ago = (datetime.now(timezone.utc) - timedelta(days=5)).isoformat()
         one_hour_ago = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
         grace_row = {
             "id": "s-grace",
@@ -427,11 +425,13 @@ class TestGraceAwareGetDueSimulcastSeries:
             "kitsu_id": None,
             "last_simulcast_check": one_hour_ago,
             "is_simulcast": False,
-            "simulcast_ended_at": ended_5_days_ago,
             "episode_count": 12,
             "franchise_id": None,
         }
-        episode_rows = [{"series_id": "s-grace", "episode_number": n} for n in range(1, 11)]
+        episode_rows = [
+            {"series_id": "s-grace", "episode_number": n, "aired_at": aired_5_days_ago}
+            for n in range(1, 11)
+        ]
         mock_client = self._mock_client([grace_row], episode_rows)
 
         with patch("storage.get_client", return_value=mock_client), \
