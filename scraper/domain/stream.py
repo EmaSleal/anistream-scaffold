@@ -12,6 +12,7 @@ Raised exceptions from orchestrate_stream:
     UpstreamError  — network or parse failure (map to HTTP 503)
 """
 
+import os
 import re
 import logging
 import requests
@@ -191,11 +192,26 @@ def resolve_jkanime_stream(fallback_slug: str, episode_number: int) -> dict:
     return {"url": url, "error_type": None}
 
 
+def animeav1_enabled() -> bool:
+    """Return True when the ANIMEAV1_ENABLED env flag is on (default OFF, ADR-009).
+
+    Read at call time so tests can toggle it. Only "1" or "true"
+    (case-insensitive) enable it; unset or any other value means OFF.
+    """
+    return os.getenv("ANIMEAV1_ENABLED", "0").strip().lower() in ("1", "true")
+
+
+def skip_animeav1(hint: str | None) -> bool:
+    """Return True when AnimeAV1 must be skipped: flag OFF or hint="h264" (Safari)."""
+    return hint == "h264" or not animeav1_enabled()
+
+
 def orchestrate_stream(episode: dict, stream_config: dict, hint: str | None = None) -> dict:
     """Orchestrate stream URL resolution following the branch order from the spec.
 
     Branch order:
-      1. If hint != "h264" AND stream_config.principal_slug is set: attempt AnimeAV1.
+      1. If ANIMEAV1_ENABLED is on AND hint != "h264" AND stream_config.principal_slug
+         is set: attempt AnimeAV1.
          On success: return { url, source: "animeav1" }.
          On no_source or network_error: continue to next branch.
       2. If fallback_slug is set: attempt JKAnime.
@@ -237,8 +253,8 @@ def orchestrate_stream(episode: dict, stream_config: dict, hint: str | None = No
             return {"url": nas_result["url"], "source": "nas"}
 
     # Branch 1: AnimeAV1 — primary HLS source
-    # Skip when hint="h264" (Safari) or when principal_slug is absent.
-    if hint != "h264" and principal_slug:
+    # Skip when ANIMEAV1_ENABLED is off, hint="h264" (Safari), or principal_slug is absent.
+    if not skip_animeav1(hint) and principal_slug:
         av1_result = resolve_animeav1_stream(principal_slug, episode_number)
         if av1_result["url"] is not None:
             logger.warning("[stream] RESOLVED source=animeav1 url=%s", av1_result["url"])

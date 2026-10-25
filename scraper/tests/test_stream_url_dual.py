@@ -55,6 +55,15 @@ _SUB_URL = "https://player.zilla-networks.com/m3u8/subhash"
 _DUB_URL = "https://player.zilla-networks.com/m3u8/dubhash"
 
 
+@pytest.fixture(autouse=True)
+def _animeav1_enabled(monkeypatch):
+    """Existing tests exercise the AnimeAV1 dual probe, so they run with ANIMEAV1_ENABLED=1 (ADR-009).
+
+    Flag-OFF tests override it with monkeypatch.delenv.
+    """
+    monkeypatch.setenv("ANIMEAV1_ENABLED", "1")
+
+
 @pytest.fixture
 def client():
     with patch("storage.get_client"):
@@ -269,3 +278,51 @@ class TestStreamUrlH264Hint:
         # When h264 hint used, legacy shape (orchestrate handles h264 bypass internally)
         assert "url" in data
         mock_dub.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# ADR-009: ANIMEAV1_ENABLED off → no dual probe, single-URL shape via jkanime
+# ---------------------------------------------------------------------------
+
+class TestStreamUrlAnimeAV1FlagOff:
+
+    _JK_URL = "https://jkanime.net/stream/abc.m3u8"
+
+    def _cfg(self):
+        cfg = _stream_config_dub()
+        cfg["fallback_slug"] = "naruto-jk"
+        return cfg
+
+    def _get(self, client, jk_result):
+        with patch("db.episodes.get_episode_for_watch", return_value=_episode_row()), \
+             patch("db.series.get_stream_config", return_value=self._cfg()), \
+             patch(_ROUTE_RESOLVE) as route_av1, \
+             patch("domain.stream.resolve_animeav1_stream") as domain_av1, \
+             patch("domain.stream.resolve_jkanime_stream", return_value=jk_result):
+            res = client.get("/api/episodes/watch/ep1/stream-url")
+        route_av1.assert_not_called()
+        domain_av1.assert_not_called()
+        return res
+
+    def test_flag_off_dub_series_returns_single_url_shape(self, client, monkeypatch):
+        monkeypatch.delenv("ANIMEAV1_ENABLED", raising=False)
+
+        res = self._get(client, {"url": self._JK_URL, "error_type": None})
+
+        assert res.status_code == 200
+        data = json.loads(res.data)
+        assert data == {"url": self._JK_URL, "source": "jkanime"}
+
+    def test_flag_off_no_jkanime_source_returns_404(self, client, monkeypatch):
+        monkeypatch.delenv("ANIMEAV1_ENABLED", raising=False)
+
+        res = self._get(client, {"url": None, "error_type": "no_source"})
+
+        assert res.status_code == 404
+
+    def test_flag_off_jkanime_upstream_error_returns_503(self, client, monkeypatch):
+        monkeypatch.delenv("ANIMEAV1_ENABLED", raising=False)
+
+        res = self._get(client, {"url": None, "error_type": "network_error"})
+
+        assert res.status_code == 503
