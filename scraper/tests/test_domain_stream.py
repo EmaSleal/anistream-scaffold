@@ -23,6 +23,15 @@ from domain.stream import (
 _PROXY_PREFIX = "/api/stream/animeav1-proxy?path="
 
 
+@pytest.fixture(autouse=True)
+def _animeav1_enabled(monkeypatch):
+    """Existing tests exercise AnimeAV1, so they run with ANIMEAV1_ENABLED=1 (ADR-009).
+
+    Flag-OFF tests override it with monkeypatch.delenv / setenv.
+    """
+    monkeypatch.setenv("ANIMEAV1_ENABLED", "1")
+
+
 # ---------------------------------------------------------------------------
 # Fixtures — minimal episode and stream_config dicts
 # ---------------------------------------------------------------------------
@@ -236,6 +245,82 @@ class TestOrchestrateStreamAnimeAV1:
 # ---------------------------------------------------------------------------
 # NAS branch 0 tests
 # ---------------------------------------------------------------------------
+
+class TestOrchestrateStreamAnimeAV1FlagOff:
+    """ANIMEAV1_ENABLED off (ADR-009): AnimeAV1 is never called; order is NAS -> jkanime."""
+
+    def _cfg(self):
+        return _stream_config(fallback_slug="naruto-jk", principal_slug="naruto")
+
+    @pytest.mark.parametrize("value", [None, "0", "false", "yes", ""])
+    def test_flag_off_skips_animeav1_and_uses_jkanime(self, monkeypatch, value):
+        if value is None:
+            monkeypatch.delenv("ANIMEAV1_ENABLED", raising=False)
+        else:
+            monkeypatch.setenv("ANIMEAV1_ENABLED", value)
+        jk_url = "https://jkanime.net/stream/abc.m3u8"
+
+        with patch("domain.stream.resolve_animeav1_stream") as mock_av1, \
+             patch("domain.stream.resolve_jkanime_stream",
+                   return_value={"url": jk_url, "error_type": None}) as mock_jk:
+            result = orchestrate_stream(_episode(), self._cfg())
+
+        mock_av1.assert_not_called()
+        mock_jk.assert_called_once_with("naruto-jk", 1)
+        assert result == {"url": jk_url, "source": "jkanime"}
+
+    @pytest.mark.parametrize("value", ["1", "true", "TRUE", " True "])
+    def test_flag_on_values_call_animeav1(self, monkeypatch, value):
+        monkeypatch.setenv("ANIMEAV1_ENABLED", value)
+        av1_url = f"{_PROXY_PREFIX}abc"
+
+        with patch("domain.stream.resolve_animeav1_stream",
+                   return_value={"url": av1_url, "error_type": None}) as mock_av1, \
+             patch("domain.stream.resolve_jkanime_stream") as mock_jk:
+            result = orchestrate_stream(_episode(), self._cfg())
+
+        mock_av1.assert_called_once()
+        mock_jk.assert_not_called()
+        assert result["source"] == "animeav1"
+
+    def test_flag_off_nas_miss_falls_through_to_jkanime(self, monkeypatch):
+        monkeypatch.delenv("ANIMEAV1_ENABLED", raising=False)
+        jk_url = "https://jkanime.net/stream/abc.m3u8"
+
+        with patch.multiple("domain.stream", NAS_BASE_URL="https://nas", NAS_API_KEY="k"), \
+             patch("domain.stream.resolve_nas_stream",
+                   return_value={"url": None, "error_type": "no_source"}) as mock_nas, \
+             patch("domain.stream.resolve_animeav1_stream") as mock_av1, \
+             patch("domain.stream.resolve_jkanime_stream",
+                   return_value={"url": jk_url, "error_type": None}):
+            result = orchestrate_stream(_episode(series_id="s1"), self._cfg())
+
+        mock_nas.assert_called_once_with("s1", 1)
+        mock_av1.assert_not_called()
+        assert result["source"] == "jkanime"
+
+    def test_flag_off_no_jkanime_source_raises_no_source(self, monkeypatch):
+        monkeypatch.delenv("ANIMEAV1_ENABLED", raising=False)
+
+        with patch("domain.stream.resolve_animeav1_stream") as mock_av1, \
+             patch("domain.stream.resolve_jkanime_stream",
+                   return_value={"url": None, "error_type": "no_source"}):
+            with pytest.raises(NoSourceError):
+                orchestrate_stream(_episode(), self._cfg())
+
+        mock_av1.assert_not_called()
+
+    def test_flag_off_jkanime_network_error_raises_upstream(self, monkeypatch):
+        monkeypatch.delenv("ANIMEAV1_ENABLED", raising=False)
+
+        with patch("domain.stream.resolve_animeav1_stream") as mock_av1, \
+             patch("domain.stream.resolve_jkanime_stream",
+                   return_value={"url": None, "error_type": "network_error"}):
+            with pytest.raises(UpstreamError):
+                orchestrate_stream(_episode(), self._cfg())
+
+        mock_av1.assert_not_called()
+
 
 class TestOrchestrateStreamNAS:
 

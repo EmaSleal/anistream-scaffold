@@ -7,6 +7,7 @@ from domain.series import map_episode_row
 from domain.stream import (
     orchestrate_stream,
     resolve_animeav1_stream,
+    skip_animeav1,
     NoSourceError,
     UpstreamError,
 )
@@ -34,8 +35,8 @@ def watch_episode_stream(watch_id: str):
 
     Accepts both UUID and animeflv_slug (dual-lookup via get_episode_for_watch).
 
-    When series.audio_formats includes "dub" AND hint != "h264" AND
-    principal_slug is set, fires SUB + DUB probes in parallel via
+    When series.audio_formats includes "dub" AND ANIMEAV1_ENABLED is on AND
+    hint != "h264" AND principal_slug is set, fires SUB + DUB probes in parallel via
     ThreadPoolExecutor(2) and returns the new dual-URL shape.
 
     Otherwise falls through to the single-probe legacy shape.
@@ -60,8 +61,8 @@ def watch_episode_stream(watch_id: str):
     principal_slug = stream_config.get("principal_slug")
 
     # Dual-probe path: DUB-capable series with a working principal_slug,
-    # and not a Safari h264 hint (which bypasses AnimeAV1 entirely).
-    if "dub" in audio_formats and principal_slug and hint != "h264":
+    # ANIMEAV1_ENABLED on, and not a Safari h264 hint (both bypass AnimeAV1).
+    if "dub" in audio_formats and principal_slug and not skip_animeav1(hint):
         episode_number = row.get("episode_number", 0)
 
         with ThreadPoolExecutor(max_workers=2) as executor:

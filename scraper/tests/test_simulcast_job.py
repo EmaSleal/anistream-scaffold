@@ -42,6 +42,8 @@ def _make_simulcast_client(series_rows: list, episode_rows: list | None = None) 
     series_chain.eq.return_value = series_chain
     series_chain.not_ = MagicMock()
     series_chain.not_.is_.return_value = series_chain
+    series_chain.order.return_value = series_chain
+    series_chain.range.return_value = series_chain
     series_result = MagicMock()
     series_result.data = series_rows
     series_chain.execute.return_value = series_result
@@ -50,6 +52,8 @@ def _make_simulcast_client(series_rows: list, episode_rows: list | None = None) 
     eps_chain = MagicMock()
     eps_chain.select.return_value = eps_chain
     eps_chain.in_.return_value = eps_chain
+    eps_chain.order.return_value = eps_chain
+    eps_chain.range.return_value = eps_chain
     eps_result = MagicMock()
     eps_result.data = episode_rows
     eps_chain.execute.return_value = eps_result
@@ -398,7 +402,7 @@ class TestRunSchedulerForever:
         mock_event.wait.assert_called_once()
 
     def test_job_enabled_starts_blocking_scheduler(self):
-        """SIMULCAST_JOB_ENABLED=1 → BlockingScheduler created, job added, .start() called."""
+        """SIMULCAST_JOB_ENABLED=1 → BlockingScheduler created, both jobs added, .start() called."""
         from scheduler import run_scheduler_forever
 
         mock_sched = MagicMock()
@@ -409,7 +413,8 @@ class TestRunSchedulerForever:
              patch("signal.signal"):
             run_scheduler_forever()
 
-        mock_sched.add_job.assert_called_once()
+        job_ids = [c.kwargs["id"] for c in mock_sched.add_job.call_args_list]
+        assert job_ids == ["simulcast_discovery", "recommendations_warmup"]
         mock_sched.start.assert_called_once()
 
 

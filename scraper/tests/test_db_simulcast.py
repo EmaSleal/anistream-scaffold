@@ -33,7 +33,7 @@ def _chain_mock(data):
     .execute() returns a result object with .data = data."""
     chain = MagicMock()
     for method in (
-        "select", "eq", "not_", "is_", "in_", "order", "limit",
+        "select", "eq", "not_", "is_", "in_", "order", "limit", "range",
     ):
         getattr(chain, method).return_value = chain
     chain.not_.is_.return_value = chain
@@ -478,3 +478,174 @@ class TestGetUnresolvedGaps:
             result = get_unresolved_gaps()
 
         assert result == []
+
+
+# ---------------------------------------------------------------------------
+# ADR-010 / P-010 — reads spanning many series must not be truncated by the
+# PostgREST ~1000-row cap. _CappedClient serves at most 1000 rows per
+# request (like Supabase) and honours .order() and .range().
+# ---------------------------------------------------------------------------
+
+_ROW_CAP = 1000
+
+
+class _CappedQuery:
+    def __init__(self, rows):
+        self._rows = rows
+        self._in = None
+        self._order: list[str] = []
+        self._range = None
+
+    @property
+    def not_(self):
+        return self
+
+    def select(self, *_a, **_k):
+        return self
+
+    def eq(self, *_a, **_k):
+        return self
+
+    def is_(self, *_a, **_k):
+        return self
+
+    def in_(self, field, values):
+        self._in = (field, set(values))
+        return self
+
+    def order(self, column, *_a, **_k):
+        self._order.append(column)
+        return self
+
+    def range(self, start, end):
+        self._range = (start, end)
+        return self
+
+    def execute(self):
+        rows = list(self._rows)
+        if self._in is not None:
+            field, values = self._in
+            rows = [r for r in rows if r.get(field) in values]
+        if self._order:
+            rows.sort(key=lambda r: tuple(r.get(c) for c in self._order))
+        if self._range is not None:
+            start, end = self._range
+            rows = rows[start:end + 1]
+        rows = rows[:_ROW_CAP]
+        result = MagicMock()
+        result.data = rows
+        return result
+
+
+class _CappedClient:
+    def __init__(self, series_rows, episode_rows):
+        self._tables = {"series": series_rows, "episodes": episode_rows}
+
+    def table(self, name):
+        return _CappedQuery(self._tables[name])
+
+
+def _sid(i):
+    return f"s{i:02d}"
+
+
+class TestPagedReadsBeyondRowCap:
+    """50 series x 24 episodes = 1200 episode rows: series s42+ only appear
+    after row 1000, so an unpaged read silently drops their episodes."""
+
+    N_SERIES = 50
+    EPS = 24
+
+    def _episodes(self, aired_at, counts=None):
+        counts = counts or {}
+        return [
+            {"series_id": _sid(i), "episode_number": n, "aired_at": aired_at}
+            for i in range(self.N_SERIES)
+            for n in range(1, counts.get(i, self.EPS) + 1)
+        ]
+
+    def test_due_series_grace_on_full_max_and_have_for_every_series(self):
+        from db.simulcast import get_due_simulcast_series
+
+        recent = (datetime.now(timezone.utc) - timedelta(days=1)).isoformat()
+        series_rows = [
+            {
+                "id": _sid(i), "principal_slug": f"slug-{i}", "mal_id": i,
+                "kitsu_id": None, "last_simulcast_check": None,
+                "is_simulcast": True, "episode_count": self.EPS, "franchise_id": None,
+            }
+            for i in range(self.N_SERIES)
+        ]
+        client = _CappedClient(series_rows, self._episodes(recent))
+
+        with patch("storage.get_client", return_value=client), \
+             patch.dict(os.environ, {"SIMULCAST_GRACE_ENABLED": "1"}, clear=False):
+            result = get_due_simulcast_series()
+
+        assert len(result) == self.N_SERIES
+        for item in result:
+            assert item["max_episode_number"] == self.EPS, item["id"]
+            assert item["have"] == self.EPS, item["id"]
+        # The last series' rows are all beyond row 1000.
+        last = next(r for r in result if r["id"] == _sid(self.N_SERIES - 1))
+        assert last["max_episode_number"] == self.EPS
+
+    def test_due_series_grace_off_full_max_for_every_series(self):
+        from db.simulcast import get_due_simulcast_series
+
+        series_rows = [
+            {
+                "id": _sid(i), "principal_slug": f"slug-{i}", "mal_id": i,
+                "kitsu_id": None, "last_simulcast_check": None,
+            }
+            for i in range(self.N_SERIES)
+        ]
+        client = _CappedClient(series_rows, self._episodes(None))
+
+        with patch("storage.get_client", return_value=client), \
+             patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("SIMULCAST_GRACE_ENABLED", None)
+            result = get_due_simulcast_series()
+
+        assert len(result) == self.N_SERIES
+        assert all(item["max_episode_number"] == self.EPS for item in result)
+
+    def test_expired_gap_candidates_only_real_gap_beyond_row_cap(self):
+        from db.simulcast import get_expired_gap_candidates
+
+        old = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
+        gap_idx = self.N_SERIES - 1  # rows live entirely after row 1000
+        series_rows = [
+            {"id": _sid(i), "is_simulcast": False, "episode_count": self.EPS}
+            for i in range(self.N_SERIES)
+        ]
+        client = _CappedClient(series_rows, self._episodes(old, counts={gap_idx: 20}))
+
+        with patch("storage.get_client", return_value=client):
+            result = get_expired_gap_candidates()
+
+        assert [r["id"] for r in result] == [_sid(gap_idx)]
+        assert result[0]["have"] == 20
+        assert result[0]["own_episode_numbers"] == set(range(1, 21))
+
+    def test_slug_sibling_offset_counts_all_rows(self):
+        from db.simulcast import get_slug_sibling_episodes
+
+        siblings = [
+            {"id": "p1", "principal_slug": "shared", "fallback_slug": None},
+            {"id": "p2", "principal_slug": "shared", "fallback_slug": None},
+            {"id": "me", "principal_slug": "shared", "fallback_slug": None},
+        ]
+        episode_rows = [
+            {"series_id": sid, "episode_number": n}
+            for sid in ("p1", "p2")
+            for n in range(1, 601)
+        ]
+        client = _CappedClient([], episode_rows)
+
+        with patch("db.simulcast.get_series_by_franchise", return_value=siblings), \
+             patch("storage.get_client", return_value=client):
+            result = get_slug_sibling_episodes("fr-1", "shared", "me")
+
+        assert result["offset"] == 1200
+        assert result["sibling_nums"] == set(range(1, 601))
