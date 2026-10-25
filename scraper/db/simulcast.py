@@ -9,6 +9,7 @@ import os
 from datetime import date, datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 import storage
+from db._paging import fetch_all
 from db.series import get_series_by_franchise
 from domain.simulcast import classify_recheck
 
@@ -92,8 +93,8 @@ def get_due_simulcast_series() -> list[dict]:
     lets the job re-check later in the same day when AnimeAV1 hasn't posted
     the episode yet at the time of the first pass.
 
-    A single batched ``episodes`` query resolves ``max_episode_number`` for all
-    surviving candidates (same technique as ``db.progress.get_series_simulcast_meta``).
+    One paged ``episodes`` read (``db._paging.fetch_all``, ADR-010) resolves
+    ``max_episode_number`` for all surviving candidates.
 
     Grace-period extension (``SIMULCAST_GRACE_ENABLED=1``, default OFF):
     when enabled, the candidate selection is routed through
@@ -122,13 +123,15 @@ def get_due_simulcast_series() -> list[dict]:
     if grace_enabled:
         select_cols += ", is_simulcast, episode_count, franchise_id"
 
-    query = client.table("series").select(select_cols).not_.is_("principal_slug", "null")
-    if not grace_enabled:
-        # Today's exact behavior: only series still flagged as airing.
-        query = query.eq("is_simulcast", True)
+    def _series_query():
+        query = client.table("series").select(select_cols).not_.is_("principal_slug", "null")
+        if not grace_enabled:
+            # Today's exact behavior: only series still flagged as airing.
+            query = query.eq("is_simulcast", True)
+        return query.order("id")
 
-    result = query.execute()
-    rows = result.data or []
+    # Paged (ADR-010): PostgREST caps each response at ~1000 rows.
+    rows = fetch_all(_series_query)
 
     now_utc = datetime.now(timezone.utc)
     _cooldown = timedelta(hours=4)
@@ -141,16 +144,17 @@ def get_due_simulcast_series() -> list[dict]:
     last_aired_map: dict[str, str | None] = {}
     if grace_enabled and rows:
         row_ids = [r["id"] for r in rows]
-        eps_result = (
-            client.table("episodes")
+        eps_rows = fetch_all(
+            lambda: client.table("episodes")
             .select("series_id, episode_number, aired_at")
             .in_("series_id", row_ids)
-            .execute()
+            .order("series_id")
+            .order("episode_number")
         )
         own_nums_map = {rid: set() for rid in row_ids}
         last_aired_map = {rid: None for rid in row_ids}
         max_num_tracker: dict[str, int] = {}
-        for ep in eps_result.data or []:
+        for ep in eps_rows:
             sid = ep.get("series_id")
             ep_num = ep.get("episode_number")
             if sid in own_nums_map and ep_num is not None:
@@ -205,15 +209,16 @@ def get_due_simulcast_series() -> list[dict]:
             for cid in candidate_ids
         }
     else:
-        # Resolve max_episode_number per candidate via a single batched episodes query.
-        eps_result = (
-            client.table("episodes")
+        # Resolve max_episode_number per candidate via one paged episodes read.
+        eps_rows = fetch_all(
+            lambda: client.table("episodes")
             .select("series_id, episode_number")
             .in_("series_id", candidate_ids)
-            .execute()
+            .order("series_id")
+            .order("episode_number")
         )
         max_ep_map = {cid: None for cid in candidate_ids}
-        for ep in eps_result.data or []:
+        for ep in eps_rows:
             sid = ep.get("series_id")
             ep_num = ep.get("episode_number")
             if sid in max_ep_map and ep_num is not None:
@@ -283,13 +288,13 @@ def get_slug_sibling_episodes(
         return {"offset": 0, "sibling_nums": set()}
 
     client = storage.get_client()
-    eps_result = (
-        client.table("episodes")
+    rows = fetch_all(
+        lambda: client.table("episodes")
         .select("series_id, episode_number")
         .in_("series_id", matching_ids)
-        .execute()
+        .order("series_id")
+        .order("episode_number")
     )
-    rows = eps_result.data or []
     sibling_nums = {
         r["episode_number"] for r in rows if r.get("episode_number") is not None
     }
@@ -339,29 +344,30 @@ def get_expired_gap_candidates() -> list[dict]:
         ``gap_missing_episodes``).
     """
     client = storage.get_client()
-    result = (
-        client.table("series")
+    # Paged (ADR-010): PostgREST caps each response at ~1000 rows.
+    rows = fetch_all(
+        lambda: client.table("series")
         .select("id, is_simulcast, episode_count")
         .eq("is_simulcast", False)
         .not_.is_("episode_count", "null")
         .is_("gap_unresolved_at", "null")
-        .execute()
+        .order("id")
     )
-    rows = result.data or []
     if not rows:
         return []
 
     series_ids = [r["id"] for r in rows]
-    eps_result = (
-        client.table("episodes")
+    eps_rows = fetch_all(
+        lambda: client.table("episodes")
         .select("series_id, episode_number, aired_at")
         .in_("series_id", series_ids)
-        .execute()
+        .order("series_id")
+        .order("episode_number")
     )
     own_nums_map: dict[str, set[int]] = {sid: set() for sid in series_ids}
     last_aired_map: dict[str, str | None] = {sid: None for sid in series_ids}
     max_num_tracker: dict[str, int] = {}
-    for ep in eps_result.data or []:
+    for ep in eps_rows:
         sid = ep.get("series_id")
         num = ep.get("episode_number")
         if sid in own_nums_map and num is not None:
