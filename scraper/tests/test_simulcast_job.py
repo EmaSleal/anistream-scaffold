@@ -398,7 +398,7 @@ class TestRunSchedulerForever:
         mock_event.wait.assert_called_once()
 
     def test_job_enabled_starts_blocking_scheduler(self):
-        """SIMULCAST_JOB_ENABLED=1 → BlockingScheduler created, job added, .start() called."""
+        """SIMULCAST_JOB_ENABLED=1 → BlockingScheduler created, both jobs added, .start() called."""
         from scheduler import run_scheduler_forever
 
         mock_sched = MagicMock()
@@ -409,7 +409,8 @@ class TestRunSchedulerForever:
              patch("signal.signal"):
             run_scheduler_forever()
 
-        mock_sched.add_job.assert_called_once()
+        job_ids = [c.kwargs["id"] for c in mock_sched.add_job.call_args_list]
+        assert job_ids == ["simulcast_discovery", "recommendations_warmup"]
         mock_sched.start.assert_called_once()
 
 

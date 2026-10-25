@@ -154,8 +154,8 @@ class TestStreamUrlDualProbe:
         data = json.loads(res.data)
         assert data["dubUrl"] is None
 
-    def test_sub_failure_still_raises_404(self, client):
-        """SUB probe failure must still return 404 even in dual-probe mode."""
+    def test_sub_failure_with_dub_available_returns_dub_only(self, client):
+        """SUB has no source but DUB does: 200 with subUrl=null so the player auto-selects DUB."""
         row = _episode_row()
         cfg = _stream_config_dub()
 
@@ -165,6 +165,25 @@ class TestStreamUrlDualProbe:
              patch("db.series.get_stream_config", return_value=cfg), \
              patch(_ROUTE_ORCH, side_effect=NoSourceError("no sub")), \
              patch(_ROUTE_RESOLVE, return_value={"url": _DUB_URL, "error_type": None}):
+            res = client.get("/api/episodes/watch/ep1/stream-url")
+
+        assert res.status_code == 200
+        data = json.loads(res.data)
+        assert data["subUrl"] is None
+        assert data["subSource"] is None
+        assert data["dubUrl"] == _DUB_URL
+
+    def test_sub_and_dub_failure_returns_404(self, client):
+        """SUB has no source and DUB is unavailable: 404 in dual-probe mode."""
+        row = _episode_row()
+        cfg = _stream_config_dub()
+
+        from domain.stream import NoSourceError
+
+        with patch("db.episodes.get_episode_for_watch", return_value=row), \
+             patch("db.series.get_stream_config", return_value=cfg), \
+             patch(_ROUTE_ORCH, side_effect=NoSourceError("no sub")), \
+             patch(_ROUTE_RESOLVE, return_value={"url": None, "error_type": "no_source"}):
             res = client.get("/api/episodes/watch/ep1/stream-url")
 
         assert res.status_code == 404
