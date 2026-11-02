@@ -1,0 +1,50 @@
+[
+  {
+    "slug": "shingeki-no-kyojin",
+    "owner_series_id": "attack-on-titan",
+    "comment": "Series ids are not slugs: the Roar of Awakening row has id 'shingeki-no-kyojin'.",
+    "release": [
+      {"series_id": "shingeki-no-kyojin", "principal_slug": null, "fallback_slug": null,
+       "comment": "Roar of Awakening, owns 1"},
+      {"series_id": "shingeki-no-kyojin-chimi-kyara-gekijou-tondeke", "principal_slug": null, "fallback_slug": null,
+       "comment": "owns 2..10"},
+      {"series_id": "mal-39477", "principal_slug": null, "fallback_slug": null, "comment": "owns 11..17"},
+      {"series_id": "mal-42091", "principal_slug": null, "fallback_slug": null, "comment": "Chronicle, owns 18"}
+    ]
+  },
+  {
+    "slug": "tensei-shitara-slime-datta-ken-2nd-season",
+    "owner_series_id": "mal-41487",
+    "comment": "S2 (keeps 1..12 and its slug) and Part 2 stay on the page; only Veldora's Journal 2 is released.",
+    "release": [
+      {"series_id": "mal-49318", "principal_slug": null, "fallback_slug": null,
+       "comment": "Veldora's Journal 2, owns 13"}
+    ]
+  },
+  {
+    "slug": "gintama-season-1",
+    "owner_series_id": "gintama",
+    "release": [
+      {"series_id": "mal-2951", "principal_slug": null, "fallback_slug": null,
+       "comment": "Jump Festa 2005 Special, owns 50 (duplicate of the owner's 50)"}
+    ]
+  },
+  {
+    "slug": "bleach-sennen-kessen-hen-soukoku-tan",
+    "owner_series_id": "bleach-sennen-kessen-hen-soukoku-tan",
+    "comment": "The Calamity page. TYBW part 1 is recovered later from its own page with a separate simulate_simulcast_refresh.py --series run.",
+    "release": [
+      {"series_id": "bleach-thousand-year-blood-war", "principal_slug": null, "fallback_slug": null,
+       "todo": "set TYBW part 1's correct AnimeAV1 principal_slug before --apply",
+       "comment": "TYBW part 1, owns 1..14"}
+    ]
+  },
+  {
+    "slug": "tate-no-yuusha-no-nariagari-season-4",
+    "owner_series_id": "the-rising-of-the-shield-hero-season-4",
+    "release": [
+      {"series_id": "tate-no-yuusha-no-nariagari-season-4", "principal_slug": null, "fallback_slug": null,
+       "comment": "the 'Season 5' row (count 0), owns 1..12"}
+    ]
+  }
+]
