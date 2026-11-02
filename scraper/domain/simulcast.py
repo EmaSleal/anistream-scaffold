@@ -324,7 +324,7 @@ def classify_recheck(
 def plan_backfill(
     own: set[int],
     expected: int,
-    offset: int,
+    offset: int | None,
     sibling_nums: set[int],
     source_nums: set[int],
     current_max: int,
@@ -338,6 +338,8 @@ def plan_backfill(
 
     Refuses to propose any insert (returning ``skip_reason="ambiguous_offset"``
     instead) when the inputs can't establish a trustworthy boundary:
+        - ``offset`` is ``None`` (undeterminable per ADR-012; see
+          ``domain.shared_slug``),
         - any number in ``own`` falls outside the owned window — the offset
           itself must be wrong, or
         - ``sibling_nums`` is not a clean, contiguous ``1..offset`` prefix —
@@ -352,10 +354,11 @@ def plan_backfill(
             numbering, i.e. already offset-relative to a cour-split sibling
             if one exists).
         expected: This series' own Jikan-expected episode count.
-        offset: Episode numbers claimed by a franchise sibling that shares
-            the same source slug (same semantics as
+        offset: Episode numbers claimed by earlier franchise siblings that
+            share the same source slug (same semantics as
             ``routes/ingest_routes.py::_claimed_episode_offset`` — the
-            sibling's own ingested episode count).
+            earlier siblings' official episode counts), or ``None`` when
+            undeterminable.
         sibling_nums: Episode numbers claimed by that sibling.
         source_nums: Episode numbers currently listed on the shared source
             page.
@@ -368,6 +371,9 @@ def plan_backfill(
         is sorted ascending. ``skip_reason`` is ``"ambiguous_offset"`` or
         ``None``.
     """
+    if offset is None:
+        return {"inserts": [], "skip_reason": "ambiguous_offset"}
+
     own = set(own)
     sibling_nums = set(sibling_nums)
     source_nums = set(source_nums)

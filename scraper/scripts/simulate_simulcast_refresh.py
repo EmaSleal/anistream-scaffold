@@ -272,6 +272,8 @@ def build_backfill_plan_rows(
             )
             missing_inserts = plan["inserts"]
             skip_reason = plan["skip_reason"] or ""
+            if offset is None:
+                offset = ""  # undeterminable (ADR-012): shown blank, skip_reason says why
         elif mode == "expired":
             # Mirrors production: expired rows are surfaced via
             # get_expired_gap_candidates + mark_gap_unresolved, never scraped
@@ -526,11 +528,16 @@ def build_recovery_plan_rows(
             source_nums=source_nums, current_max=current_max,
         )
         skip_reason = plan["skip_reason"] or ""
-        forward_cap = offset + expected  # source of truth: simulcast_check.py:297
+        # Mirrors simulcast_check._process_scraped_episodes: a continuation
+        # (offset > 0) with unknown own count claims nothing (ADR-012).
+        forward_cap = offset + expected if offset is not None else 0  # source of truth: simulcast_check.py
+        if offset and not expected:
+            forward_cap = 0
         forward = sorted(n for n in source_nums if n > current_max and n <= forward_cap)
         backfill = sorted(plan["inserts"])
         if skip_reason == "ambiguous_offset":
             status, forward, backfill = "ambiguous_offset", [], []
+            offset = "" if offset is None else offset
         elif forward or backfill:
             status = "ok"
         else:

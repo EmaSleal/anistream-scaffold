@@ -284,7 +284,8 @@ def _process_scraped_episodes(
     Returns the number of episodes upserted via the forward path only (not
     backfilled inserts — those are reported separately via logs).
     """
-    offset = 0
+    offset: int | None = 0
+    offset_reason: str | None = None
     sibling_nums: set[int] = set()
     need_offset = mode == "grace" or backfill_mode != "off"
     if need_offset and franchise_id is not None and principal_slug is not None:
@@ -292,16 +293,34 @@ def _process_scraped_episodes(
             franchise_id, principal_slug, series_id
         )
         offset = sibling_info["offset"]
+        offset_reason = sibling_info.get("reason")
         sibling_nums = sibling_info["sibling_nums"]
 
-    forward_cap = offset + expected if (mode == "grace" and expected is not None) else None
+    # ADR-012: an undeterminable offset, or a continuation (offset > 0) whose
+    # own official count is unknown, can't be bounded — claim nothing rather
+    # than risk taking a sibling's episodes off the shared page.
+    claims_nothing = offset is None or (
+        mode == "grace" and offset > 0 and not expected
+    )
+    forward_cap = (
+        offset + expected
+        if (mode == "grace" and expected is not None and offset is not None)
+        else None
+    )
 
-    new_episodes = [
+    new_episodes = [] if claims_nothing else [
         ep for ep in scraped_episodes
         if ep.get("episode_number") is not None
         and ep["episode_number"] > current_max_ep
         and (forward_cap is None or ep["episode_number"] <= forward_cap)
     ]
+
+    if offset is None and not (backfill_mode != "off" and expected is not None):
+        # No backfill plan will log the skip, so surface it here.
+        logger.warning(
+            "simulcast_check: ambiguous_offset for series=%r (%s) — no episodes claimed",
+            series_id, offset_reason,
+        )
 
     if not new_episodes:
         logger.debug(
@@ -369,7 +388,7 @@ def _backfill_missing_episodes(
     current_max_ep: int,
     mal_id: int | None,
     backfill_mode: str,
-    offset: int,
+    offset: int | None,
     sibling_nums: set[int],
     expected: int,
 ) -> None:
