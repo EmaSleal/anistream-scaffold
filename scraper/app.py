@@ -17,6 +17,7 @@ from routes.simulcast_routes import simulcast_bp
 from routes.stream_proxy_routes import stream_proxy_bp
 from routes.downloads_routes import downloads_bp
 from routes.jikan_routes import jikan_bp
+from routes.slug_suggestions_routes import slug_suggestions_bp
 
 
 def create_app():
@@ -32,6 +33,7 @@ def create_app():
     app.register_blueprint(stream_proxy_bp)
     app.register_blueprint(downloads_bp)
     app.register_blueprint(jikan_bp)
+    app.register_blueprint(slug_suggestions_bp)
 
     return app
 

@@ -1,3 +1,4 @@
+import logging
 import time
 from flask import Blueprint, request, jsonify
 from werkzeug.exceptions import HTTPException
@@ -14,10 +15,12 @@ from normalizer import normalize
 from storage import upsert_series, upsert_episodes, get_series_by_mal_id, get_episode_count
 from scraper_animeav1 import (
     scrape_animeav1_episodes,
-    find_best_animeav1_match,
+    find_animeav1_candidates,
+    fetch_animeav1_page,
     animeav1_has_dub,
 )
-from scraper_jkanime import find_best_jkanime_match, fetch_jkanime_series_info
+from scraper_jkanime import find_jkanime_candidates, fetch_jkanime_series_info
+from db import slug_suggestions as slug_suggestions_db
 from db.series import (
     get_series_by_id,
     get_series_by_franchise,
@@ -26,6 +29,9 @@ from db.series import (
 )
 from domain.franchise import pick_franchise_id
 from domain.shared_slug import compute_shared_slug_offset
+from domain.source_match import SKIPPED_MEDIA_TYPES, validate_candidate
+
+logger = logging.getLogger(__name__)
 
 bp = Blueprint("api", __name__)
 
@@ -53,8 +59,11 @@ def _detect_av1_dub(animeav1_slug: str) -> bool:
 
 _FRANCHISE_RELATIONS = {
     "Sequel", "Prequel", "Side story", "Parent story",
-    "Alternative version", "Alternative setting", "Summary", "Full story",
+    "Alternative version", "Alternative setting", "Full story",
 }
+# "Summary" and "Other" intentionally excluded (ADR-016): "Summary" links a
+# season to its recap compilation, which has no video source of its own and used
+# to be ingested with the parent's page.
 # "Other" intentionally excluded — MAL tags unrelated crossover promos/CMs
 # (e.g. brand tie-in commercials) with this relation, and following it pulls
 # them into the franchise as if they were real entries.
@@ -104,6 +113,12 @@ def _discover_franchise_jikan(
                 continue
             for entry in rel_group.get("entry", []):
                 if entry.get("type") != "anime":
+                    continue
+                # cm/pv/music are dropped here only if the relation source ever
+                # exposes a media type; MAL v2 related_anime and Jikan relations
+                # carry none today, so they are normally skipped when the member
+                # is fetched (see _ingest_related -> "skipped_media_type").
+                if str(entry.get("media_type") or "").lower() in SKIPPED_MEDIA_TYPES:
                     continue
                 child_mal_id = entry.get("mal_id")
                 if not child_mal_id or child_mal_id in visited:
@@ -228,6 +243,7 @@ def _build_episodes_from_animeav1(
     jikan_titles: dict[int, dict] | None = None,
     episode_offset: int = 0,
     max_episodes: int | None = None,
+    raw_episodes: list[dict] | None = None,
 ) -> list[dict]:
     """Scrape AnimeAV1 episode list and merge with Kitsu + Jikan metadata.
 
@@ -249,10 +265,14 @@ def _build_episodes_from_animeav1(
     unknown (NULL/0) claims nothing: without a cap it would grab episodes that
     belong to later cours (ADR-012). Only a first cour (offset 0) stays
     uncapped while its count is unknown.
+
+    ``raw_episodes`` is the already-fetched page episode list (from
+    fetch_animeav1_page during validation); when None the page is scraped here.
     """
     if episode_offset and not max_episodes:
         return []
-    raw_episodes = scrape_animeav1_episodes(animeav1_slug)
+    if raw_episodes is None:
+        raw_episodes = scrape_animeav1_episodes(animeav1_slug)
     if not raw_episodes:
         return []
     if episode_offset:
@@ -603,6 +623,115 @@ def _build_episodes(
     return episodes
 
 
+def _jikan_facts(series: dict) -> dict:
+    """The Jikan-side facts a source page is validated against (ADR-016)."""
+    return {
+        "media_type": series.get("media_type"),
+        "year": series.get("year"),
+        "episode_count": series.get("episode_count"),
+    }
+
+
+def _suggestion_row(
+    source: str, candidate: dict, page: dict | None, jikan: dict, validation: dict
+) -> dict:
+    """A slug_suggestions row (minus series_id) with the evidence for the admin."""
+    page = page or {}
+    return {
+        "source": source,
+        "slug": candidate["slug"],
+        "page_title": candidate.get("title"),
+        "score": candidate.get("score"),
+        "page_type": page.get("media_type"),
+        "page_year": page.get("year"),
+        "page_episodes": page.get("episode_count"),
+        "jikan_type": jikan.get("media_type"),
+        "jikan_year": jikan.get("year") or None,
+        "jikan_episodes": jikan.get("episode_count") or None,
+        "checks": validation["checks"],
+    }
+
+
+def _validate_page(page: dict | None, jikan: dict) -> dict:
+    """validate_candidate, except a failed page fetch is a failed validation
+    (ADR-016 needs validation to pass): checks.page records why."""
+    validation = validate_candidate(page, jikan)
+    if not page:
+        return {
+            "passed": False,
+            "checks": {**validation["checks"],
+                       "page": {"outcome": "fail", "reason": "fetch_failed"}},
+        }
+    return validation
+
+
+def _decide_source_match(
+    source: str, exacts: list[dict] | None, candidate: dict | None, fetch_page, jikan: dict
+) -> dict:
+    """Apply the ADR-016 rules to one source's search outcome.
+
+    Returns ``{"slug", "page", "suggestion"}``: ``slug`` is set only for an exact
+    title match whose page passes validation; ``suggestion`` is a row to store
+    (exact matches all failing validation, or a non-exact candidate above the
+    minimum score). ``page`` is whatever the page fetch returned, for reuse.
+    Every exact result is validated in search order and the first that passes
+    wins; when none does, the first exact one becomes the suggestion.
+    """
+    first_failed = None
+    for exact in exacts or []:
+        page = fetch_page(exact["slug"])
+        validation = _validate_page(page, jikan)
+        if validation["passed"]:
+            return {"slug": exact["slug"], "page": page, "suggestion": None}
+        if first_failed is None:
+            first_failed = {
+                "slug": None,
+                "page": page,
+                "suggestion": _suggestion_row(
+                    source, {**exact, "score": 30}, page, jikan, validation),
+            }
+    if first_failed:
+        return first_failed
+    if candidate:
+        page = fetch_page(candidate["slug"])
+        validation = _validate_page(page, jikan)
+        return {
+            "slug": None,
+            "page": page,
+            "suggestion": _suggestion_row(source, candidate, page, jikan, validation),
+        }
+    return {"slug": None, "page": None, "suggestion": None}
+
+
+def _match_animeav1(title: str, alt_titles: list[str], jikan: dict) -> dict:
+    """Search AnimeAV1 and decide auto-assignment vs suggestion (ADR-016)."""
+    exacts, candidate = find_animeav1_candidates(title, alt_titles=alt_titles)
+    return _decide_source_match("animeav1", exacts, candidate, fetch_animeav1_page, jikan)
+
+
+def _match_jkanime(title: str, alt_titles: list[str], jikan: dict) -> dict:
+    """Search jkanime and decide auto-assignment vs suggestion (ADR-016).
+
+    ``page`` is the fetch_jkanime_series_info result (episode count, type, year).
+    """
+    exacts, candidate = find_jkanime_candidates(title, alt_titles=alt_titles)
+    return _decide_source_match("jkanime", exacts, candidate, fetch_jkanime_series_info, jikan)
+
+
+def _record_suggestion(series_id: str, suggestion: dict | None) -> None:
+    """Store a pending suggestion; never raises (the table may not exist until
+    migration 006 is applied, and a suggestion must never fail the ingest)."""
+    if not suggestion:
+        return
+    try:
+        slug_suggestions_db.insert_pending({**suggestion, "series_id": series_id})
+    except Exception as exc:
+        logger.warning(
+            "could not record slug suggestion %s/%s for %s: %s",
+            suggestion.get("source"), suggestion.get("slug"), series_id, exc,
+        )
+
+
 def _ingest_related(entry: dict, franchise_id: str) -> dict:
     """Ingest a single franchise member discovered via Jikan relations BFS.
 
@@ -630,6 +759,12 @@ def _ingest_related(entry: dict, franchise_id: str) -> dict:
         if not series:
             return {"status": "normalize_failed", "episodes_ingested": 0}
 
+        # CM / PV / music entries are not series (ADR-016). The relation graph
+        # carries no media type, so this is where it first becomes known: write
+        # nothing and report it so the admin driver can move on.
+        if (series.get("media_type") or "").lower() in SKIPPED_MEDIA_TYPES:
+            return {"status": "skipped_media_type", "episodes_ingested": 0}
+
         existing = get_series_by_mal_id(mal_id)
 
         # Try to auto-match this franchise member on AnimeAV1 by title.
@@ -644,8 +779,12 @@ def _ingest_related(entry: dict, franchise_id: str) -> dict:
         av1_alt_titles = list(series.get("titles") or [])
         if jikan_raw.get("title"):
             av1_alt_titles.append(jikan_raw["title"])
-        av1_match = find_best_animeav1_match(series_title, alt_titles=av1_alt_titles)
-        av1_slug = av1_match["slug"] if av1_match else None
+        # Strict rules (ADR-016): the slug is auto-assigned only on an exact
+        # title match whose page validates against Jikan; anything else becomes
+        # a pending suggestion recorded once the series id is known.
+        jikan_facts = _jikan_facts(series)
+        av1_decision = _match_animeav1(series_title, av1_alt_titles, jikan_facts)
+        av1_slug = av1_decision["slug"]
 
         # Only claim av1_slug as this member's own id when no other franchise
         # member already owns it — otherwise this upsert would silently
@@ -693,6 +832,8 @@ def _ingest_related(entry: dict, franchise_id: str) -> dict:
                 upsert_series(series)
                 return {"status": "already_scraped", "episodes_ingested": ep_count}
 
+        _record_suggestion(canonical_id, av1_decision["suggestion"])
+
         jikan_titles = fetch_jikan_episodes(mal_id)
         episodes = []
         if av1_slug:
@@ -701,6 +842,7 @@ def _ingest_related(entry: dict, franchise_id: str) -> dict:
                 episodes = _build_episodes_from_animeav1(
                     canonical_id, av1_slug, kitsu_eps, jikan_titles,
                     episode_offset=episode_offset, max_episodes=series.get("episode_count"),
+                    raw_episodes=(av1_decision["page"] or {}).get("episodes"),
                 )
         if episodes:
             series["principal_slug"] = av1_slug
@@ -713,12 +855,14 @@ def _ingest_related(entry: dict, franchise_id: str) -> dict:
             # at stream time via fallback_slug (already wired in
             # domain/stream.py::orchestrate_stream); this only needs the
             # right episode count to create playable rows.
-            jkanime_match = find_best_jkanime_match(series_title, alt_titles=av1_alt_titles)
-            if jkanime_match:
-                jkanime_info = fetch_jkanime_series_info(jkanime_match["slug"])
+            jk_decision = _match_jkanime(series_title, av1_alt_titles, jikan_facts)
+            _record_suggestion(canonical_id, jk_decision["suggestion"])
+            jkanime_slug = jk_decision["slug"]
+            jkanime_info = jk_decision["page"]
+            if jkanime_slug:
                 if jkanime_info and jkanime_info.get("episode_count"):
                     jkanime_offset = _claimed_episode_offset(
-                        franchise_id, jkanime_match["slug"], canonical_id, order
+                        franchise_id, jkanime_slug, canonical_id, order
                     )
                     if jkanime_offset is not None:
                         episodes = _build_episodes_from_jkanime(
@@ -726,7 +870,7 @@ def _ingest_related(entry: dict, franchise_id: str) -> dict:
                             max_episodes=series.get("episode_count"), episode_offset=jkanime_offset,
                         )
                     if episodes:
-                        series["fallback_slug"] = jkanime_match["slug"]
+                        series["fallback_slug"] = jkanime_slug
             if not episodes:
                 episodes = _build_episodes_from_metadata(canonical_id, kitsu_eps, jikan_titles, series.get("media_type"))
 
@@ -842,12 +986,14 @@ def ingest():
             jk_alt_titles = list(series.get("titles") or [])
             if raw.get("title"):
                 jk_alt_titles.append(raw["title"])
-            jkanime_match = find_best_jkanime_match(series.get("title", ""), alt_titles=jk_alt_titles)
-            if jkanime_match:
-                jkanime_info = fetch_jkanime_series_info(jkanime_match["slug"])
+            jk_decision = _match_jkanime(series.get("title", ""), jk_alt_titles, _jikan_facts(series))
+            _record_suggestion(canonical_id, jk_decision["suggestion"])
+            jkanime_slug = jk_decision["slug"]
+            jkanime_info = jk_decision["page"]
+            if jkanime_slug:
                 if jkanime_info and jkanime_info.get("episode_count"):
                     jkanime_offset = _claimed_episode_offset(
-                        franchise_id, jkanime_match["slug"], canonical_id, series.get("season_order")
+                        franchise_id, jkanime_slug, canonical_id, series.get("season_order")
                     )
                     if jkanime_offset is not None:
                         main_episodes = _build_episodes_from_jkanime(
@@ -855,7 +1001,7 @@ def ingest():
                             max_episodes=series.get("episode_count"), episode_offset=jkanime_offset,
                         )
                     if main_episodes:
-                        series["fallback_slug"] = jkanime_match["slug"]
+                        series["fallback_slug"] = jkanime_slug
         if not main_episodes:
             media_type = raw.get("type", "")
             main_episodes = _build_episodes_from_metadata(canonical_id, kitsu_eps, jikan_titles, media_type)
