@@ -2,15 +2,12 @@
 
 import { useState, useTransition } from "react";
 import { searchJikan } from "@/app/actions/jikan-search";
-import { ingestSeries } from "@/app/actions/ingest";
 import { checkExistingMalIds } from "@/app/actions/check-mal-ids";
 import type { JikanAnime, JikanPagination, JikanSearchParams } from "@/types/jikan";
-import AnimeFlvSlugSearch from "@/components/admin/AnimeFlvSlugSearch";
+import BrowseIngestCell from "@/components/admin/BrowseIngestCell";
 import styles from "./BrowseTable.module.css";
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
-
-type IngestRowState = "idle" | "loading" | "done" | "error";
 
 export default function BrowseTable() {
   const [filters, setFilters] = useState<JikanSearchParams>({ page: 1, limit: 25 });
@@ -21,19 +18,7 @@ export default function BrowseTable() {
 
   const [existingMalIds, setExistingMalIds] = useState<Set<number>>(new Set());
 
-  const [ingestState, setIngestState] = useState<Map<number, IngestRowState>>(new Map());
-  const [ingestErrors, setIngestErrors] = useState<Map<number, string>>(new Map());
-  const [slugInputs, setSlugInputs] = useState<Map<number, string>>(new Map());
-
   const [isPending, startTransition] = useTransition();
-
-  function setIngestRowState(malId: number, state: IngestRowState) {
-    setIngestState((prev) => new Map(prev).set(malId, state));
-  }
-
-  function setIngestRowError(malId: number, msg: string) {
-    setIngestErrors((prev) => new Map(prev).set(malId, msg));
-  }
 
   function handleSearch(overrides?: Partial<JikanSearchParams>) {
     const merged = { ...filters, ...overrides };
@@ -81,26 +66,6 @@ export default function BrowseTable() {
       setPagination(null);
       setExistingMalIds(new Set());
     });
-  }
-
-  function setSlug(malId: number, value: string) {
-    setSlugInputs((prev) => new Map(prev).set(malId, value));
-  }
-
-  async function handleIngest(malId: number) {
-    const slug = slugInputs.get(malId)?.trim();
-    if (!slug) return;
-    setIngestRowState(malId, "loading");
-    try {
-      await ingestSeries(malId, undefined, slug);
-      setIngestRowState(malId, "done");
-    } catch (err) {
-      setIngestRowState(malId, "error");
-      setIngestRowError(
-        malId,
-        err instanceof Error ? err.message : "Ingest failed"
-      );
-    }
   }
 
   function handleFilterChange(
@@ -290,9 +255,6 @@ export default function BrowseTable() {
           </thead>
           <tbody>
             {results.filter((a) => !existingMalIds.has(a.mal_id)).map((anime) => {
-              const rowState = ingestState.get(anime.mal_id) ?? "idle";
-              const rowError = ingestErrors.get(anime.mal_id);
-
               return (
                 <tr key={anime.mal_id}>
                   <td>
@@ -332,33 +294,7 @@ export default function BrowseTable() {
                     {anime.mal_id}
                   </td>
                   <td>
-                    <div style={{ display: "flex", flexDirection: "column", gap: "4px", alignItems: "flex-start" }}>
-                      <AnimeFlvSlugSearch
-                        onSelect={(slug) => setSlug(anime.mal_id, slug)}
-                        disabled={rowState === "loading" || rowState === "done"}
-                      />
-                      {slugInputs.get(anime.mal_id) && (
-                        <span className={styles.slugLabel}>
-                          {slugInputs.get(anime.mal_id)}
-                        </span>
-                      )}
-                      <button
-                        className={styles.ingestBtn}
-                        disabled={rowState === "loading" || rowState === "done" || !slugInputs.get(anime.mal_id)?.trim()}
-                        onClick={() => void handleIngest(anime.mal_id)}
-                      >
-                        {rowState === "loading"
-                          ? "Ingesting…"
-                          : rowState === "done"
-                          ? "Ingested"
-                          : "Ingest"}
-                      </button>
-                      {rowState === "error" && (
-                        <span className={styles.statusError}>
-                          {rowError ?? "Error"}
-                        </span>
-                      )}
-                    </div>
+                    <BrowseIngestCell malId={anime.mal_id} />
                   </td>
                 </tr>
               );
