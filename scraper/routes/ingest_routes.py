@@ -1,7 +1,7 @@
 import time
 from flask import Blueprint, request, jsonify
 from werkzeug.exceptions import HTTPException
-from config import REQUEST_DELAY
+from config import MAX_FRANCHISE_MEMBERS
 from fetcher import (
     fetch_anime_by_id,
     fetch_jikan_episodes,
@@ -60,7 +60,9 @@ _FRANCHISE_RELATIONS = {
 # them into the franchise as if they were real entries.
 
 
-def _discover_franchise_jikan(start_mal_id: int) -> list[dict]:
+def _discover_franchise_jikan(
+    start_mal_id: int, max_members: int = MAX_FRANCHISE_MEMBERS
+) -> list[dict]:
     """BFS-discover all related series via Jikan relations API.
 
     Returns a list of {mal_id, title, relation, order} sorted by season_order (1-based).
@@ -69,6 +71,9 @@ def _discover_franchise_jikan(start_mal_id: int) -> list[dict]:
     Order heuristic: Prequel entries get order - 1, Sequel entries get order + 1,
     all others keep the parent order.  After traversal the list is normalized to
     1-based so callers can use season_order directly.
+
+    Discovery stops once ``max_members`` entries were collected (a log line is
+    printed) so a pathological relation graph cannot grow the request unbounded.
     """
     visited: set[int] = set()
     # queue entries: (mal_id, relation, order, title)
@@ -79,6 +84,12 @@ def _discover_franchise_jikan(start_mal_id: int) -> list[dict]:
         mal_id, relation, order, title = queue.pop(0)
         if mal_id in visited:
             continue
+        if len(results) >= max_members:
+            print(
+                f"  Franchise discovery capped at {max_members} entries "
+                f"(start mal_id={start_mal_id}); {len(queue) + 1} queued entries dropped"
+            )
+            break
         visited.add(mal_id)
         results.append({"mal_id": mal_id, "relation": relation, "order": order, "title": title})
 
@@ -360,6 +371,19 @@ def _resolve_canonical_id(mal_id: int, existing: dict | None, candidates: list) 
     return f"mal-{mal_id}"
 
 
+def _franchise_rows(entries: list[dict], mal_id: int) -> list[dict]:
+    """Stored identity rows (mal_id, franchise_id, ...) of the discovered entries."""
+    mal_ids = sorted({e["mal_id"] for e in entries} | {mal_id})
+    return get_series_identities_by_mal_ids(mal_ids)
+
+
+def _pick_resolved_franchise_id(rows: list[dict], entries: list[dict], mal_id: int) -> str:
+    resolved = pick_franchise_id([r.get("franchise_id") for r in rows])
+    if resolved:
+        return resolved
+    return str(entries[0]["mal_id"]) if entries else f"mal-{mal_id}"
+
+
 def _resolve_franchise_id(entries: list[dict], mal_id: int) -> str:
     """Resolve the franchise_id for an ingest run (ADR-014).
 
@@ -367,12 +391,7 @@ def _resolve_franchise_id(entries: list[dict], mal_id: int) -> str:
     discovered entries; only when none exist is a new id minted from the BFS
     root (``entries[0]``), or ``mal-{mal_id}`` when discovery found nothing.
     """
-    mal_ids = sorted({e["mal_id"] for e in entries} | {mal_id})
-    rows = get_series_identities_by_mal_ids(mal_ids)
-    resolved = pick_franchise_id([r.get("franchise_id") for r in rows])
-    if resolved:
-        return resolved
-    return str(entries[0]["mal_id"]) if entries else f"mal-{mal_id}"
+    return _pick_resolved_franchise_id(_franchise_rows(entries, mal_id), entries, mal_id)
 
 
 def _effective_franchise_id(existing: dict | None, resolved: str, mal_id: int) -> str:
@@ -760,7 +779,8 @@ def ingest():
     # Discover full franchise (BFS) via Jikan relations
     print(f"  Discovering franchise via Jikan for mal_id={mal_id_int}...")
     franchise_entries = _discover_franchise_jikan(mal_id_int)
-    resolved_franchise_id = _resolve_franchise_id(franchise_entries, mal_id_int)
+    stored_rows = _franchise_rows(franchise_entries, mal_id_int)
+    resolved_franchise_id = _pick_resolved_franchise_id(stored_rows, franchise_entries, mal_id_int)
     franchise_id = _effective_franchise_id(existing, resolved_franchise_id, mal_id_int)
     main_entry = next((e for e in franchise_entries if e["mal_id"] == mal_id_int), None)
     series["season_order"] = main_entry["order"] if main_entry else 1
@@ -843,21 +863,20 @@ def ingest():
     upsert_series(series)
     main_count = upsert_episodes(main_episodes)
 
-    # Ingest each related franchise member (skip the root entry)
-    franchise_results = []
-    for entry in franchise_entries:
-        if entry["mal_id"] == mal_id_int:
-            continue
-        print(f"  Ingesting related [{entry['relation']}]: mal_id={entry['mal_id']} {entry.get('title', '')}")
-        result = _ingest_related(entry, resolved_franchise_id)
-        franchise_results.append({
-            "mal_id": entry["mal_id"],
-            "title": entry.get("title", ""),
-            "relation": entry["relation"],
-            "season_order": entry["order"],
-            **result,
-        })
-        time.sleep(REQUEST_DELAY)
+    # Related members are NOT ingested here (ADR-015): the caller ingests them
+    # one by one through POST /api/ingest/member. Only report them.
+    stored_mal_ids = {r.get("mal_id") for r in stored_rows}
+    franchise_members = [
+        {
+            "mal_id": e["mal_id"],
+            "title": e.get("title", ""),
+            "relation": e["relation"],
+            "season_order": e["order"],
+            "already_in_catalog": e["mal_id"] in stored_mal_ids,
+        }
+        for e in franchise_entries
+        if e["mal_id"] != mal_id_int
+    ]
 
     return jsonify({
         "series_id": canonical_id,
@@ -867,7 +886,54 @@ def ingest():
         "kitsu_id": kitsu_id,
         "kitsu_episodes_matched": len(kitsu_eps),
         "franchise_id": resolved_franchise_id,
-        "franchise": franchise_results,
+        "franchise_members": franchise_members,
+    }), 200
+
+
+@bp.route("/ingest/member", methods=["POST"])
+def ingest_member():
+    """Ingest exactly one franchise member (ADR-015).
+
+    Body: {mal_id: int, franchise_id: str, season_order: int, relation: str, title?: str}.
+    Always 200 with {mal_id, status, episodes_ingested, principal_slug} once the
+    body is valid, including when status is "error: ..." / "jikan_not_found"
+    (_ingest_related swallows failures into the status string); the caller
+    decides from ``status``. Invalid body -> 400; unexpected exception -> JSON 500.
+    """
+    body = request.get_json(force=True, silent=True)
+    if not isinstance(body, dict):
+        return jsonify({"error": "Request body must be a JSON object"}), 400
+
+    def _is_int(v) -> bool:
+        return isinstance(v, int) and not isinstance(v, bool)
+
+    mal_id = body.get("mal_id")
+    franchise_id = body.get("franchise_id")
+    season_order = body.get("season_order")
+    relation = body.get("relation")
+    title = body.get("title", "")
+    if not _is_int(mal_id) or mal_id <= 0:
+        return jsonify({"error": "mal_id must be a positive integer"}), 400
+    if not isinstance(franchise_id, str) or not franchise_id.strip():
+        return jsonify({"error": "franchise_id must be a non-empty string"}), 400
+    if not _is_int(season_order):
+        return jsonify({"error": "season_order must be an integer"}), 400
+    if not isinstance(relation, str) or not relation.strip():
+        return jsonify({"error": "relation must be a non-empty string"}), 400
+    if title is None:
+        title = ""
+    if not isinstance(title, str):
+        return jsonify({"error": "title must be a string"}), 400
+
+    result = _ingest_related(
+        {"mal_id": mal_id, "relation": relation, "order": season_order, "title": title},
+        franchise_id,
+    )
+    return jsonify({
+        "mal_id": mal_id,
+        "status": result.get("status"),
+        "episodes_ingested": result.get("episodes_ingested", 0),
+        "principal_slug": result.get("principal_slug"),
     }), 200
 
 

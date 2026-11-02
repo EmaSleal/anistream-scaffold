@@ -8,6 +8,7 @@ SUPABASE_KEY = os.environ["SUPABASE_SERVICE_ROLE_KEY"]
 
 JIKAN_BASE = "https://api.jikan.moe/v4"
 REQUEST_DELAY = 0.5  # seconds between requests (Jikan: max 3 req/s)
+MAX_FRANCHISE_MEMBERS = 80  # hard cap on franchise BFS size (bounds /api/ingest discovery)
 
 ANIMEAV1_BASE = "https://animeav1.com"
 KITSU_BASE = "https://kitsu.io/api/edge"

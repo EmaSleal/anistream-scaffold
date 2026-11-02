@@ -1,17 +1,11 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { ingestSeries, searchSeries, type SeriesResult } from "@/app/actions/ingest";
+import { searchSeries, type SeriesResult } from "@/app/actions/ingest";
+import { useFranchiseIngest } from "@/hooks/useFranchiseIngest";
+import FranchiseIngestProgress from "@/components/admin/FranchiseIngestProgress";
 import AnimeFlvSlugSearch from "@/components/admin/AnimeFlvSlugSearch";
 import styles from "@/app/(app)/admin/admin.module.css";
-
-interface IngestResult {
-  series_id: string;
-  series_title: string;
-  episodes_ingested: number;
-  kitsu_id: string | null;
-  kitsu_episodes_matched: number;
-}
 
 export default function IngestForm() {
   const [fallbackSlug, setFallbackSlug] = useState("");
@@ -21,8 +15,10 @@ export default function IngestForm() {
   const [selected, setSelected] = useState<SeriesResult | null>(null);
   const [candidates, setCandidates] = useState<SeriesResult[]>([]);
   const [open, setOpen] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<IngestResult | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const franchise = useFranchiseIngest();
+  const result = franchise.main;
+  const loading = submitting || franchise.running;
   const [error, setError] = useState<string | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -57,21 +53,19 @@ export default function IngestForm() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!malId) return;
-    setLoading(true);
-    setResult(null);
+    setSubmitting(true);
     setError(null);
 
     try {
-      const data = await ingestSeries(
+      await franchise.start(
         malId,
         fallbackSlug.trim() || undefined,
         principalSlug.trim() || undefined
       );
-      setResult(data);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unknown error");
     } finally {
-      setLoading(false);
+      setSubmitting(false);
     }
   }
 
@@ -186,6 +180,8 @@ export default function IngestForm() {
           </div>
         </div>
       )}
+
+      <FranchiseIngestProgress controller={franchise} />
     </form>
   );
 }

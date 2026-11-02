@@ -151,8 +151,13 @@ class FakeCatalog:
         self.rows.setdefault(series["id"], {}).update(series)
 
 
-def _run_ingest(client, catalog, entries, *, mal_id, av1_slug, related_slug=None, body_extra=None):
-    """POST /api/ingest with all network edges mocked and the catalog faked."""
+def _run_ingest(client, catalog, entries, *, mal_id, av1_slug, related_slug=None, body_extra=None,
+            drive_members=True):
+    """POST /api/ingest, then drive every returned member through POST /api/ingest/member.
+
+    All network edges are mocked and the catalog faked. The member responses are
+    exposed as ``resp.member_responses`` (ADR-015: members are ingested one by one).
+    """
     def fetch(mid):
         return {"mal_id": mid, "title": f"T{mid}", "type": "TV"}
 
@@ -188,7 +193,17 @@ def _run_ingest(client, catalog, entries, *, mal_id, av1_slug, related_slug=None
         p.start()
     try:
         body = {"mal_id": mal_id, "animeav1_slug": av1_slug, **(body_extra or {})}
-        return client.post("/api/ingest", json=body)
+        resp = client.post("/api/ingest", json=body)
+        resp.member_responses = []
+        if resp.status_code == 200 and drive_members:
+            data = resp.get_json()
+            for m in data["franchise_members"]:
+                resp.member_responses.append(client.post("/api/ingest/member", json={
+                    "mal_id": m["mal_id"], "franchise_id": data["franchise_id"],
+                    "season_order": m["season_order"], "relation": m["relation"],
+                    "title": m["title"],
+                }))
+        return resp
     finally:
         for p in patches:
             p.stop()
@@ -239,7 +254,7 @@ class TestSharedSlugIncident:
         )
 
         assert resp.status_code == 200
-        assert resp.get_json()["franchise"][0]["status"] == "ok"
+        assert resp.member_responses[0].get_json()["status"] == "ok"
         assert catalog.rows["shared-slug"] == before["shared-slug"]
         assert "mal-222" in catalog.rows
         assert all(u["id"] != "shared-slug" for u in catalog.upserts)
