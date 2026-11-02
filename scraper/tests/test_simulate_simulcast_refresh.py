@@ -50,6 +50,20 @@ def _row(**overrides):
 # ---------------------------------------------------------------------------
 
 
+class TestBuildBackfillPlanRowsUndeterminableOffset:
+    def test_none_offset_reports_ambiguous_offset(self):
+        row = _row(franchise_id="franchise-1")
+        with patch.object(sim, "get_slug_sibling_episodes",
+                          return_value={"offset": None, "sibling_nums": set(), "reason": "x"}), \
+             patch.object(sim, "scrape_animeav1_episodes",
+                          return_value=[{"episode_number": n} for n in range(1, 13)]):
+            rows = sim.build_backfill_plan_rows(
+                [row], {"series-1": {13}}, {"series-1": NOW - timedelta(days=5)}, now_utc=NOW,
+            )
+        assert rows[0]["skip_reason"] == "ambiguous_offset"
+        assert rows[0]["missing_inserts"] == ""
+
+
 class TestBuildBackfillPlanRowsUsesRealDomainFunctions:
     def test_calls_classify_recheck_and_plan_backfill_not_duplicated(self):
         """Spies on the real domain functions to prove this script calls them
@@ -337,6 +351,20 @@ class TestBuildRecoveryPlanRows:
         assert r["status"] == "ambiguous_offset"
         assert r["skip_reason"] == "ambiguous_offset"
         assert r["forward_inserts"] == [] and r["backfill_inserts"] == []
+
+    def test_undeterminable_offset_is_ambiguous_with_no_plan(self):
+        row = _row(id="s2", franchise_id="f1")
+        siblings = {"offset": None, "sibling_nums": set(), "reason": "tied season_order"}
+        r = _plan({"s2": row}, {"s2": {13, 14}}, ["s2"], range(1, 25), siblings)[0]
+        assert r["status"] == "ambiguous_offset"
+        assert r["skip_reason"] == "ambiguous_offset"
+        assert r["forward_inserts"] == [] and r["backfill_inserts"] == []
+
+    def test_continuation_with_zero_expected_plans_nothing_forward(self):
+        row = _row(id="p2", franchise_id="f1", episode_count=0)
+        siblings = {"offset": 24, "sibling_nums": set(range(1, 25))}
+        r = _plan({"p2": row}, {"p2": set()}, ["p2"], range(1, 25), siblings)[0]
+        assert r["forward_inserts"] == []
 
     def test_nothing_to_do(self):
         r = _plan({"s1": _row(id="s1")}, {"s1": set(range(1, 13))}, ["s1"], range(1, 13))[0]

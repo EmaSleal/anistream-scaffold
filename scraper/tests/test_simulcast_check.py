@@ -824,6 +824,55 @@ class TestProcessScrapedEpisodesForwardCapAndBackfill:
 
         mock_insert.assert_not_called()
 
+    def test_undeterminable_offset_writes_nothing(self):
+        """ADR-012: offset None -> no forward upsert and no backfill insert."""
+        from simulcast_check import _process_scraped_episodes
+
+        scraped = [{"episode_number": n, "title": None, "thumbnail_url": None} for n in range(1, 5)]
+
+        with (
+            patch("simulcast_check.storage.upsert_episode") as mock_upsert,
+            patch("simulcast_check.storage.insert_episode_if_absent") as mock_insert,
+            patch("simulcast_check.db_progress.refresh_simulcast_next_episodes"),
+            patch(
+                "simulcast_check.db_simulcast.get_slug_sibling_episodes",
+                return_value={"offset": None, "sibling_nums": set(), "reason": "tied"},
+            ),
+            patch("simulcast_check.db_episodes.get_episodes_by_series", return_value=[]),
+        ):
+            added = _process_scraped_episodes(
+                scraped_episodes=scraped, series_id="s1", user_id=None, current_max_ep=0,
+                mal_id=None, mode="grace", backfill_mode="write", franchise_id="fr-1",
+                principal_slug="slug-1", expected=4,
+            )
+
+        assert added == 0
+        mock_upsert.assert_not_called()
+        mock_insert.assert_not_called()
+
+    def test_grace_continuation_with_unknown_expected_claims_nothing(self):
+        """offset > 0 and expected NULL/0 -> no uncapped forward grab."""
+        from simulcast_check import _process_scraped_episodes
+
+        scraped = [{"episode_number": n, "title": None, "thumbnail_url": None} for n in range(1, 25)]
+
+        for expected in (None, 0):
+            with (
+                patch("simulcast_check.storage.upsert_episode") as mock_upsert,
+                patch("simulcast_check.db_progress.refresh_simulcast_next_episodes"),
+                patch(
+                    "simulcast_check.db_simulcast.get_slug_sibling_episodes",
+                    return_value={"offset": 24, "sibling_nums": set(range(1, 25))},
+                ),
+            ):
+                added = _process_scraped_episodes(
+                    scraped_episodes=scraped, series_id="p2", user_id=None, current_max_ep=22,
+                    mal_id=None, mode="grace", backfill_mode="off", franchise_id="fr-1",
+                    principal_slug="slug-1", expected=expected,
+                )
+            assert added == 0
+            mock_upsert.assert_not_called()
+
 
 # ---------------------------------------------------------------------------
 # Phase 2, task 2.15 — series_routes.py (page-visit path) stays untouched:

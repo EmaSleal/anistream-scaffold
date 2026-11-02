@@ -18,6 +18,7 @@ from scraper_animeav1 import (
 )
 from scraper_jkanime import find_best_jkanime_match, fetch_jkanime_series_info
 from db.series import get_series_by_id, get_series_by_franchise
+from domain.shared_slug import compute_shared_slug_offset
 
 bp = Blueprint("api", __name__)
 
@@ -166,9 +167,14 @@ def _build_episodes_from_jkanime(
     already claimed by a sibling — via either AnimeAV1 or jkanime — on a
     same-named shared page, so a Part 2 sourced here doesn't duplicate a
     Part 1 sourced from AnimeAV1 (confirmed live for Slime Season 4 Part 2).
+    As on the AnimeAV1 path, a continuation (``episode_offset > 0``) with no
+    known own ``max_episodes`` (NULL/0) claims nothing (ADR-012).
     """
+    if episode_offset and not max_episodes:
+        return []
     if max_episodes:
-        episode_count = min(episode_count, max_episodes)
+        # The cap counts this member's OWN episodes, which start after the offset.
+        episode_count = min(episode_count, episode_offset + max_episodes)
     episodes = []
     for num in range(episode_offset + 1, episode_count + 1):
         rel_num = num - episode_offset
@@ -211,7 +217,14 @@ def _build_episodes_from_animeav1(
     never grabs episodes belonging to a not-yet-ingested later sibling.
     Kitsu/Jikan lookups are rebased to this member's own numbering (which
     restarts at 1 per MAL entry) via ``num - episode_offset``.
+
+    A continuation (``episode_offset > 0``) whose own official episode count is
+    unknown (NULL/0) claims nothing: without a cap it would grab episodes that
+    belong to later cours (ADR-012). Only a first cour (offset 0) stays
+    uncapped while its count is unknown.
     """
+    if episode_offset and not max_episodes:
+        return []
     raw_episodes = scrape_animeav1_episodes(animeav1_slug)
     if not raw_episodes:
         return []
@@ -244,33 +257,51 @@ def _build_episodes_from_animeav1(
     return episodes
 
 
-def _claimed_episode_offset(franchise_id: str | None, slug: str, exclude_id: str) -> int:
-    """Return how many leading episodes on ``slug`` are already claimed by
-    another member of this franchise.
+def _claimed_episode_offset(
+    franchise_id: str | None,
+    slug: str,
+    exclude_id: str,
+    season_order: int | None = None,
+) -> int | None:
+    """Return how many leading episodes on ``slug`` belong to EARLIER members
+    of this franchise, or ``None`` when that can't be determined (ADR-012).
 
     AnimeAV1/jkanime sometimes don't split a MAL cour split ("Part 1"/
     "Part 2") into separate pages, so both parts' title search resolve to
     the same slug (confirmed against the live site for e.g. Slime Season 4
-    Part 2). The sibling ingested first claims the leading episodes on that
-    shared page; this offset tells the next one where to continue.
+    Part 2). Each cour owns a slice of that page after the official episode
+    counts of the cours before it; later cours never shift the slice, so a
+    Part 2 ingested while Season 4 is still incomplete can't take its
+    episodes. Delegates to ``domain.shared_slug.compute_shared_slug_offset``
+    (kept in parity with ``db.simulcast.get_slug_sibling_episodes``).
 
     Checks both ``principal_slug`` (AnimeAV1) and ``fallback_slug``
     (jkanime) — a sibling sourced from either can claim the same slug name,
     e.g. Part 1 resolved via AnimeAV1 and Part 2 via jkanime both landing on
     a page named after the same season (confirmed live: Slime Season 4
     Part 2 duplicated Part 1's episodes this way before this checked both).
+
+    ``season_order`` is the evaluated series' own order (it may not be in the
+    DB yet during ingest); when omitted it is read from the persisted row.
+    Returns ``None`` (and logs the reason) when the offset is undeterminable;
+    callers must then claim no episodes from the shared page.
     """
     if not franchise_id:
         return 0
     siblings = get_series_by_franchise(franchise_id)
-    claimed = 0
-    for s in siblings:
-        if s.get("id") == exclude_id:
-            continue
-        if s.get("principal_slug") != slug and s.get("fallback_slug") != slug:
-            continue
-        claimed += get_episode_count(s["id"])
-    return claimed
+    if season_order is None:
+        season_order = next(
+            (s.get("season_order") for s in siblings if s.get("id") == exclude_id), None
+        )
+    result = compute_shared_slug_offset(
+        siblings, {"id": exclude_id, "season_order": season_order}, slug
+    )
+    if result["offset"] is None:
+        print(
+            f"  Ambiguous shared-slug offset for {exclude_id!r} on {slug!r}: "
+            f"{result['reason']} - claiming no episodes from the shared page"
+        )
+    return result["offset"]
 
 
 def _slug_claimed_by_sibling(franchise_id: str, av1_slug: str, mal_id: int) -> bool:
@@ -322,11 +353,16 @@ def backfill_episode_metadata(series_id: str) -> int:
     back to Jikan-only metadata (AnimeAV1 title-search miss at ingest time, or
     a principal_slug that was only set afterwards via the admin editor, which
     never rebuilds episodes). Reuses the same Kitsu > AnimeAV1 merge priority
-    as ingest and upserts on the existing episode ids — refreshes titles/dates
-    too, but never creates or removes episodes.
+    as ingest, but only updates episodes that already exist for the series
+    (matched by id or native episode_number; a number match is upserted under
+    the existing row's id) — refreshes titles/dates too, but never creates or
+    removes episodes. When the slug is shared with earlier cours the page is
+    read in its native numbering using the ADR-012 offset and capped at the
+    series' own episode_count; an undeterminable offset skips the update.
 
-    Returns the number of episodes upserted, or 0 if nothing could be resolved
-    (no principal_slug, or the AnimeAV1 scrape came back empty).
+    Returns the number of episodes updated, or 0 if nothing could be resolved
+    (no principal_slug, ambiguous shared-slug offset, or the AnimeAV1 scrape
+    came back empty).
     """
     from db.series import get_series_by_id
 
@@ -342,7 +378,32 @@ def backfill_episode_metadata(series_id: str) -> int:
     kitsu_eps = fetch_kitsu_episodes(kitsu_id) if kitsu_id else {}
     jikan_titles = fetch_jikan_episodes(mal_id) if mal_id else {}
 
-    episodes = _build_episodes_from_animeav1(series_id, principal_slug, kitsu_eps, jikan_titles)
+    offset = _claimed_episode_offset(
+        row.get("franchise_id"), principal_slug, series_id, row.get("season_order")
+    )
+    if offset is None:
+        return 0
+
+    episodes = _build_episodes_from_animeav1(
+        series_id, principal_slug, kitsu_eps, jikan_titles,
+        episode_offset=offset, max_episodes=row.get("episode_count"),
+    )
+    if not episodes:
+        return 0
+
+    from db.episodes import get_episodes_by_series
+
+    existing = get_episodes_by_series(series_id)
+    existing_ids = {e.get("id") for e in existing}
+    id_by_num = {e.get("episode_number"): e.get("id") for e in existing}
+    matched = []
+    for e in episodes:
+        if e["id"] in existing_ids:
+            matched.append(e)
+        elif e["episode_number"] in id_by_num:
+            # Remap to the stored id so the upsert updates instead of inserting.
+            matched.append({**e, "id": id_by_num[e["episode_number"]]})
+    episodes = matched
     if not episodes:
         return 0
     return upsert_episodes(episodes)
@@ -378,8 +439,15 @@ def backfill_episodes_from_jkanime(series_id: str, jkanime_slug: str) -> int:
     kitsu_eps = fetch_kitsu_episodes(kitsu_id) if kitsu_id else {}
     jikan_titles = fetch_jikan_episodes(mal_id) if mal_id else {}
 
+    offset = _claimed_episode_offset(
+        row.get("franchise_id"), jkanime_slug, series_id, row.get("season_order")
+    )
+    if offset is None:
+        return 0
+
     episodes = _build_episodes_from_jkanime(
         series_id, jkanime_info["episode_count"], kitsu_eps, jikan_titles,
+        max_episodes=row.get("episode_count"), episode_offset=offset,
     )
     if not episodes:
         return 0
@@ -545,11 +613,12 @@ def _ingest_related(entry: dict, franchise_id: str) -> dict:
         jikan_titles = fetch_jikan_episodes(mal_id)
         episodes = []
         if av1_slug:
-            episode_offset = _claimed_episode_offset(franchise_id, av1_slug, canonical_id)
-            episodes = _build_episodes_from_animeav1(
-                canonical_id, av1_slug, kitsu_eps, jikan_titles,
-                episode_offset=episode_offset, max_episodes=series.get("episode_count"),
-            )
+            episode_offset = _claimed_episode_offset(franchise_id, av1_slug, canonical_id, order)
+            if episode_offset is not None:
+                episodes = _build_episodes_from_animeav1(
+                    canonical_id, av1_slug, kitsu_eps, jikan_titles,
+                    episode_offset=episode_offset, max_episodes=series.get("episode_count"),
+                )
         if episodes:
             series["principal_slug"] = av1_slug
             # Detect DUB availability and persist to audio_formats.
@@ -565,11 +634,14 @@ def _ingest_related(entry: dict, franchise_id: str) -> dict:
             if jkanime_match:
                 jkanime_info = fetch_jkanime_series_info(jkanime_match["slug"])
                 if jkanime_info and jkanime_info.get("episode_count"):
-                    jkanime_offset = _claimed_episode_offset(franchise_id, jkanime_match["slug"], canonical_id)
-                    episodes = _build_episodes_from_jkanime(
-                        canonical_id, jkanime_info["episode_count"], kitsu_eps, jikan_titles,
-                        max_episodes=series.get("episode_count"), episode_offset=jkanime_offset,
+                    jkanime_offset = _claimed_episode_offset(
+                        franchise_id, jkanime_match["slug"], canonical_id, order
                     )
+                    if jkanime_offset is not None:
+                        episodes = _build_episodes_from_jkanime(
+                            canonical_id, jkanime_info["episode_count"], kitsu_eps, jikan_titles,
+                            max_episodes=series.get("episode_count"), episode_offset=jkanime_offset,
+                        )
                     if episodes:
                         series["fallback_slug"] = jkanime_match["slug"]
             if not episodes:
@@ -659,7 +731,16 @@ def ingest():
     # an unverified guess (e.g. the series' own canonical slug, as IngestTrigger
     # sends on first load) that scrapes empty must not be saved, or stream
     # resolution will silently 404 on it later.
-    main_episodes = _build_episodes_from_animeav1(canonical_id, animeav1_slug, kitsu_eps, jikan_titles) if animeav1_slug else []
+    main_episodes = []
+    if animeav1_slug:
+        av1_offset = _claimed_episode_offset(
+            franchise_id, animeav1_slug, canonical_id, series.get("season_order")
+        )
+        if av1_offset is not None:
+            main_episodes = _build_episodes_from_animeav1(
+                canonical_id, animeav1_slug, kitsu_eps, jikan_titles,
+                episode_offset=av1_offset, max_episodes=series.get("episode_count"),
+            )
     if main_episodes:
         series["principal_slug"] = animeav1_slug
         # Detect DUB availability and persist to audio_formats.
@@ -678,11 +759,14 @@ def ingest():
             if jkanime_match:
                 jkanime_info = fetch_jkanime_series_info(jkanime_match["slug"])
                 if jkanime_info and jkanime_info.get("episode_count"):
-                    jkanime_offset = _claimed_episode_offset(franchise_id, jkanime_match["slug"], canonical_id)
-                    main_episodes = _build_episodes_from_jkanime(
-                        canonical_id, jkanime_info["episode_count"], kitsu_eps, jikan_titles,
-                        max_episodes=series.get("episode_count"), episode_offset=jkanime_offset,
+                    jkanime_offset = _claimed_episode_offset(
+                        franchise_id, jkanime_match["slug"], canonical_id, series.get("season_order")
                     )
+                    if jkanime_offset is not None:
+                        main_episodes = _build_episodes_from_jkanime(
+                            canonical_id, jkanime_info["episode_count"], kitsu_eps, jikan_titles,
+                            max_episodes=series.get("episode_count"), episode_offset=jkanime_offset,
+                        )
                     if main_episodes:
                         series["fallback_slug"] = jkanime_match["slug"]
         if not main_episodes:
