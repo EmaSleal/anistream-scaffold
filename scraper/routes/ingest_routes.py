@@ -353,11 +353,16 @@ def backfill_episode_metadata(series_id: str) -> int:
     back to Jikan-only metadata (AnimeAV1 title-search miss at ingest time, or
     a principal_slug that was only set afterwards via the admin editor, which
     never rebuilds episodes). Reuses the same Kitsu > AnimeAV1 merge priority
-    as ingest and upserts on the existing episode ids — refreshes titles/dates
-    too, but never creates or removes episodes.
+    as ingest, but only updates episodes that already exist for the series
+    (matched by id or native episode_number; a number match is upserted under
+    the existing row's id) — refreshes titles/dates too, but never creates or
+    removes episodes. When the slug is shared with earlier cours the page is
+    read in its native numbering using the ADR-012 offset and capped at the
+    series' own episode_count; an undeterminable offset skips the update.
 
-    Returns the number of episodes upserted, or 0 if nothing could be resolved
-    (no principal_slug, or the AnimeAV1 scrape came back empty).
+    Returns the number of episodes updated, or 0 if nothing could be resolved
+    (no principal_slug, ambiguous shared-slug offset, or the AnimeAV1 scrape
+    came back empty).
     """
     from db.series import get_series_by_id
 
@@ -373,7 +378,32 @@ def backfill_episode_metadata(series_id: str) -> int:
     kitsu_eps = fetch_kitsu_episodes(kitsu_id) if kitsu_id else {}
     jikan_titles = fetch_jikan_episodes(mal_id) if mal_id else {}
 
-    episodes = _build_episodes_from_animeav1(series_id, principal_slug, kitsu_eps, jikan_titles)
+    offset = _claimed_episode_offset(
+        row.get("franchise_id"), principal_slug, series_id, row.get("season_order")
+    )
+    if offset is None:
+        return 0
+
+    episodes = _build_episodes_from_animeav1(
+        series_id, principal_slug, kitsu_eps, jikan_titles,
+        episode_offset=offset, max_episodes=row.get("episode_count"),
+    )
+    if not episodes:
+        return 0
+
+    from db.episodes import get_episodes_by_series
+
+    existing = get_episodes_by_series(series_id)
+    existing_ids = {e.get("id") for e in existing}
+    id_by_num = {e.get("episode_number"): e.get("id") for e in existing}
+    matched = []
+    for e in episodes:
+        if e["id"] in existing_ids:
+            matched.append(e)
+        elif e["episode_number"] in id_by_num:
+            # Remap to the stored id so the upsert updates instead of inserting.
+            matched.append({**e, "id": id_by_num[e["episode_number"]]})
+    episodes = matched
     if not episodes:
         return 0
     return upsert_episodes(episodes)
@@ -409,8 +439,15 @@ def backfill_episodes_from_jkanime(series_id: str, jkanime_slug: str) -> int:
     kitsu_eps = fetch_kitsu_episodes(kitsu_id) if kitsu_id else {}
     jikan_titles = fetch_jikan_episodes(mal_id) if mal_id else {}
 
+    offset = _claimed_episode_offset(
+        row.get("franchise_id"), jkanime_slug, series_id, row.get("season_order")
+    )
+    if offset is None:
+        return 0
+
     episodes = _build_episodes_from_jkanime(
         series_id, jkanime_info["episode_count"], kitsu_eps, jikan_titles,
+        max_episodes=row.get("episode_count"), episode_offset=offset,
     )
     if not episodes:
         return 0
@@ -694,7 +731,16 @@ def ingest():
     # an unverified guess (e.g. the series' own canonical slug, as IngestTrigger
     # sends on first load) that scrapes empty must not be saved, or stream
     # resolution will silently 404 on it later.
-    main_episodes = _build_episodes_from_animeav1(canonical_id, animeav1_slug, kitsu_eps, jikan_titles) if animeav1_slug else []
+    main_episodes = []
+    if animeav1_slug:
+        av1_offset = _claimed_episode_offset(
+            franchise_id, animeav1_slug, canonical_id, series.get("season_order")
+        )
+        if av1_offset is not None:
+            main_episodes = _build_episodes_from_animeav1(
+                canonical_id, animeav1_slug, kitsu_eps, jikan_titles,
+                episode_offset=av1_offset, max_episodes=series.get("episode_count"),
+            )
     if main_episodes:
         series["principal_slug"] = animeav1_slug
         # Detect DUB availability and persist to audio_formats.

@@ -26,7 +26,7 @@ from db.series import get_series_list, get_series_by_id, upsert_series_stub
 from db.simulcast import get_series_simulcast_data, update_simulcast_fields, get_unresolved_gaps
 from domain.jikan_refresh import refresh_series_from_jikan
 from fetcher import fetch_kitsu_series_status, fetch_kitsu_episodes, fetch_jikan_episodes, fetch_simulcasts
-from routes.ingest_routes import _build_episodes_from_animeav1
+from routes.ingest_routes import _build_episodes_from_animeav1, _claimed_episode_offset
 from storage import get_series_by_mal_id, get_client, upsert_episodes
 
 simulcast_bp = Blueprint("simulcast", __name__, url_prefix="/api/simulcast")
@@ -124,16 +124,21 @@ def refresh_simulcast(series_id: str):
     # 4. Resolve mal_id — stored on the series row (previously done inline inside
     #    the Jikan fetch block; lifted here so it can be passed to the domain helper).
     mal_id: int | None = None
+    franchise_id = None
+    season_order = None
     try:
         mal_result = (
             get_client()
             .table("series")
-            .select("mal_id")
+            .select("mal_id, franchise_id, season_order")
             .eq("id", series_id)
             .maybe_single()
             .execute()
         )
-        mal_id_raw = (mal_result.data or {}).get("mal_id") if mal_result else None
+        mal_data = (mal_result.data or {}) if mal_result else {}
+        mal_id_raw = mal_data.get("mal_id")
+        franchise_id = mal_data.get("franchise_id")
+        season_order = mal_data.get("season_order")
         if mal_id_raw:
             mal_id = int(mal_id_raw)
     except Exception:
@@ -163,7 +168,16 @@ def refresh_simulcast(series_id: str):
         try:
             kitsu_eps = fetch_kitsu_episodes(kitsu_id) if kitsu_id else {}
             jikan_titles = fetch_jikan_episodes(mal_id)
-            new_episodes = _build_episodes_from_animeav1(series_id, principal_slug, kitsu_eps, jikan_titles)
+            # ADR-012: skip the earlier cours' episodes on a shared page; an
+            # undeterminable offset (None) ingests nothing.
+            offset = _claimed_episode_offset(franchise_id, principal_slug, series_id, season_order)
+            if offset is None:
+                new_episodes = []
+            else:
+                new_episodes = _build_episodes_from_animeav1(
+                    series_id, principal_slug, kitsu_eps, jikan_titles,
+                    episode_offset=offset, max_episodes=jikan_episode_count,
+                )
             _fill_aired_at_from_cadence(new_episodes)
             if new_episodes:
                 episodes_ingested = upsert_episodes(new_episodes)
