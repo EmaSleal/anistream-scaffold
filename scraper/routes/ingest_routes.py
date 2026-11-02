@@ -1,5 +1,6 @@
 import time
 from flask import Blueprint, request, jsonify
+from werkzeug.exceptions import HTTPException
 from config import REQUEST_DELAY
 from fetcher import (
     fetch_anime_by_id,
@@ -17,10 +18,25 @@ from scraper_animeav1 import (
     animeav1_has_dub,
 )
 from scraper_jkanime import find_best_jkanime_match, fetch_jkanime_series_info
-from db.series import get_series_by_id, get_series_by_franchise
+from db.series import (
+    get_series_by_id,
+    get_series_by_franchise,
+    get_series_identity_by_id,
+    get_series_identities_by_mal_ids,
+)
+from domain.franchise import pick_franchise_id
 from domain.shared_slug import compute_shared_slug_offset
 
 bp = Blueprint("api", __name__)
+
+
+@bp.errorhandler(Exception)
+def _json_error(exc):
+    """Every error from these routes is JSON, never Werkzeug's HTML page (ADR-014)."""
+    if isinstance(exc, HTTPException):
+        return jsonify({"error": exc.description or exc.name}), exc.code
+    print(f"  Unexpected ingest error: {exc!r}")
+    return jsonify({"error": f"Internal error: {exc}"}), 500
 
 
 def _detect_av1_dub(animeav1_slug: str) -> bool:
@@ -324,6 +340,53 @@ def _slug_claimed_by_sibling(franchise_id: str, av1_slug: str, mal_id: int) -> b
     return False
 
 
+def _resolve_canonical_id(mal_id: int, existing: dict | None, candidates: list) -> str:
+    """Pick the series id to write for ``mal_id`` without clobbering another entry.
+
+    The series' own row (found by mal_id) always wins. Otherwise the first
+    candidate (AnimeAV1 slug, fallback slug, ...) is used only when no series
+    row has that id, or the row that has it carries the same mal_id; anything
+    else would make ``upsert_series(on_conflict="id")`` overwrite a different
+    MAL entry (ADR-014), so it falls back to ``mal-{mal_id}``.
+    """
+    if existing:
+        return existing["id"]
+    for candidate in candidates:
+        if not candidate:
+            continue
+        row = get_series_identity_by_id(candidate)
+        if row is None or row.get("mal_id") == mal_id:
+            return candidate
+    return f"mal-{mal_id}"
+
+
+def _resolve_franchise_id(entries: list[dict], mal_id: int) -> str:
+    """Resolve the franchise_id for an ingest run (ADR-014).
+
+    Uses the most frequent franchise_id among already-stored rows of the
+    discovered entries; only when none exist is a new id minted from the BFS
+    root (``entries[0]``), or ``mal-{mal_id}`` when discovery found nothing.
+    """
+    mal_ids = sorted({e["mal_id"] for e in entries} | {mal_id})
+    rows = get_series_identities_by_mal_ids(mal_ids)
+    resolved = pick_franchise_id([r.get("franchise_id") for r in rows])
+    if resolved:
+        return resolved
+    return str(entries[0]["mal_id"]) if entries else f"mal-{mal_id}"
+
+
+def _effective_franchise_id(existing: dict | None, resolved: str, mal_id: int) -> str:
+    """Franchise id to write for a row: an existing row's own value is never rewritten."""
+    current = (existing or {}).get("franchise_id")
+    if current and current != resolved:
+        print(
+            f"  Keeping franchise_id {current!r} for mal_id={mal_id} "
+            f"(ingest resolved {resolved!r}) - existing rows are never re-parented"
+        )
+        return current
+    return resolved
+
+
 def _kitsu_id_claimed_by_sibling(franchise_id: str, kitsu_id: str, mal_id: int) -> bool:
     """True if another franchise member already stored this same kitsu_id.
 
@@ -568,9 +631,10 @@ def _ingest_related(entry: dict, franchise_id: str) -> dict:
         # Only claim av1_slug as this member's own id when no other franchise
         # member already owns it — otherwise this upsert would silently
         # overwrite that sibling's row (see _slug_claimed_by_sibling).
+        franchise_id = _effective_franchise_id(existing, franchise_id, mal_id)
         slug_taken = bool(av1_slug) and _slug_claimed_by_sibling(franchise_id, av1_slug, mal_id)
-        canonical_id = existing["id"] if existing else (
-            f"mal-{mal_id}" if slug_taken else (av1_slug or f"mal-{mal_id}")
+        canonical_id = _resolve_canonical_id(
+            mal_id, existing, [] if slug_taken else [av1_slug]
         )
 
         series["id"] = canonical_id
@@ -659,6 +723,8 @@ def _ingest_related(entry: dict, franchise_id: str) -> dict:
 @bp.route("/ingest", methods=["POST"])
 def ingest():
     body = request.get_json(force=True) or {}
+    if not isinstance(body, dict):
+        return jsonify({"error": "Request body must be a JSON object"}), 400
     mal_id = body.get("mal_id")
     fallback_slug = body.get("fallback_slug")
     animeav1_slug = body.get("animeav1_slug")
@@ -684,7 +750,7 @@ def ingest():
         return jsonify({"error": "Could not normalize series data"}), 502
 
     existing = get_series_by_mal_id(mal_id_int)
-    canonical_id = existing["id"] if existing else (animeav1_slug or fallback_slug or f"mal-{mal_id_int}")
+    canonical_id = _resolve_canonical_id(mal_id_int, existing, [animeav1_slug, fallback_slug])
 
     series["id"] = canonical_id
     series["slug"] = canonical_id
@@ -694,7 +760,8 @@ def ingest():
     # Discover full franchise (BFS) via Jikan relations
     print(f"  Discovering franchise via Jikan for mal_id={mal_id_int}...")
     franchise_entries = _discover_franchise_jikan(mal_id_int)
-    franchise_id = str(franchise_entries[0]["mal_id"]) if franchise_entries else f"mal-{mal_id_int}"
+    resolved_franchise_id = _resolve_franchise_id(franchise_entries, mal_id_int)
+    franchise_id = _effective_franchise_id(existing, resolved_franchise_id, mal_id_int)
     main_entry = next((e for e in franchise_entries if e["mal_id"] == mal_id_int), None)
     series["season_order"] = main_entry["order"] if main_entry else 1
     series["franchise_relation"] = main_entry["relation"] if main_entry else "root"
@@ -782,7 +849,7 @@ def ingest():
         if entry["mal_id"] == mal_id_int:
             continue
         print(f"  Ingesting related [{entry['relation']}]: mal_id={entry['mal_id']} {entry.get('title', '')}")
-        result = _ingest_related(entry, franchise_id)
+        result = _ingest_related(entry, resolved_franchise_id)
         franchise_results.append({
             "mal_id": entry["mal_id"],
             "title": entry.get("title", ""),
@@ -799,7 +866,7 @@ def ingest():
         "principal_slug": series.get("principal_slug"),
         "kitsu_id": kitsu_id,
         "kitsu_episodes_matched": len(kitsu_eps),
-        "franchise_id": franchise_id,
+        "franchise_id": resolved_franchise_id,
         "franchise": franchise_results,
     }), 200
 

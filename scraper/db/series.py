@@ -247,6 +247,33 @@ def upsert_series_stub(mal_id: int, entry: dict | None = None) -> None:
         logging.exception("upsert_series_stub failed for mal_id=%s", mal_id)
 
 
+def get_series_identity_by_id(series_id: str) -> dict | None:
+    """Return ``{id, mal_id, franchise_id}`` for the series row with this id, or ``None``."""
+    client = storage.get_client()
+    result = (
+        client.table("series")
+        .select("id, mal_id, franchise_id")
+        .eq("id", series_id)
+        .maybe_single()
+        .execute()
+    )
+    return result.data if result else None
+
+
+def get_series_identities_by_mal_ids(mal_ids: list[int]) -> list[dict]:
+    """Return ``{id, mal_id, franchise_id}`` for every stored row whose mal_id is in ``mal_ids``."""
+    if not mal_ids:
+        return []
+    from db._paging import fetch_all
+    client = storage.get_client()
+    return fetch_all(
+        lambda: client.table("series")
+        .select("id, mal_id, franchise_id")
+        .in_("mal_id", mal_ids)
+        .order("id", desc=False)
+    )
+
+
 def get_series_by_franchise(franchise_id: str) -> list[dict]:
     """Return all members of a franchise ordered by season_order ascending."""
     client = storage.get_client()

@@ -93,11 +93,11 @@ def upsert_episodes(episodes: list[dict]) -> int:
 
 
 def get_series_by_mal_id(mal_id: int) -> dict | None:
-    """Return the series row matching ``mal_id``, or ``None`` if absent."""
+    """Return ``{id, franchise_id}`` of the series row matching ``mal_id``, or ``None``."""
     client = get_client()
     result = (
         client.table("series")
-        .select("id")
+        .select("id, franchise_id")
         .eq("mal_id", mal_id)
         .maybe_single()
         .execute()
