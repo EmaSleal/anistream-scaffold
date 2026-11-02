@@ -73,6 +73,23 @@ def require_auth(f):
     return decorated
 
 
+def is_verified_admin() -> bool:
+    """True only when the request carries a valid, unexpired internal HS256 JWT
+    with role ADMIN. Non-enforcing: a missing, malformed, expired or invalid
+    token (or any other role) simply returns False and never raises, so routes
+    that stay open can gate an extra privilege on it (ADR-016 slug bypass)."""
+    auth_header = request.headers.get("Authorization", "")
+    if not auth_header.startswith("Bearer "):
+        return False
+    try:
+        payload = jwt.decode(
+            auth_header[len("Bearer "):], _INTERNAL_JWT_SECRET, algorithms=["HS256"]
+        )
+    except jwt.InvalidTokenError:
+        return False
+    return payload.get("role") == "ADMIN"
+
+
 def require_service(f):
     """Decorator: validates the X-Service-Key header against SERVICE_SECRET.
 

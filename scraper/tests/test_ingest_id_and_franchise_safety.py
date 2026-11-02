@@ -13,6 +13,7 @@ os.environ.setdefault("INTERNAL_JWT_SECRET", "test-internal-secret-for-tests-onl
 os.environ.setdefault("SERVICE_SECRET", "test-service-secret-for-tests-only")
 
 import pytest
+from tests.admin_origin import admin_post
 from unittest.mock import patch
 
 from domain.franchise import pick_franchise_id
@@ -165,7 +166,7 @@ def _run_ingest(client, catalog, entries, *, mal_id, av1_slug, related_slug=None
         return {"mal_id": raw["mal_id"], "title": raw["title"], "media_type": "tv"}
 
     def match(*_a, **_kw):
-        return {"slug": related_slug, "title": "x"} if related_slug else None
+        return ([{"slug": related_slug, "title": "x"}] if related_slug else []), None
 
     patches = [
         patch(f"{MODULE}.fetch_anime_by_id", side_effect=fetch),
@@ -177,8 +178,9 @@ def _run_ingest(client, catalog, entries, *, mal_id, av1_slug, related_slug=None
         patch(f"{MODULE}.get_series_by_franchise", side_effect=catalog.by_franchise),
         patch(f"{MODULE}.get_series_by_id", return_value=None),
         patch(f"{MODULE}.get_episode_count", return_value=0),
-        patch(f"{MODULE}.find_best_animeav1_match", side_effect=match),
-        patch(f"{MODULE}.find_best_jkanime_match", return_value=None),
+        patch(f"{MODULE}.find_animeav1_candidates", side_effect=match),
+        patch(f"{MODULE}.fetch_animeav1_page", return_value={"title": "x"}),
+        patch(f"{MODULE}.find_jkanime_candidates", return_value=([], None)),
         patch(f"{MODULE}.scrape_animeav1_episodes", return_value=[]),
         patch(f"{MODULE}.search_kitsu_anime", return_value=None),
         patch(f"{MODULE}.fetch_kitsu_episodes", return_value={}),
@@ -193,7 +195,7 @@ def _run_ingest(client, catalog, entries, *, mal_id, av1_slug, related_slug=None
         p.start()
     try:
         body = {"mal_id": mal_id, "animeav1_slug": av1_slug, **(body_extra or {})}
-        resp = client.post("/api/ingest", json=body)
+        resp = admin_post(client, "/api/ingest", body)
         resp.member_responses = []
         if resp.status_code == 200 and drive_members:
             data = resp.get_json()

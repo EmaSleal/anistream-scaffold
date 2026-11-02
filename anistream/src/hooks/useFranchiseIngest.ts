@@ -2,7 +2,7 @@
 
 import { useCallback, useRef, useState } from "react";
 import {
-  ingestSeries,
+  ingestSeriesAsAdmin,
   ingestFranchiseMember,
   type IngestResult,
 } from "@/app/actions/ingest";
@@ -58,7 +58,7 @@ export function useFranchiseIngest() {
       setStates(statesRef.current);
       let main: IngestResult;
       try {
-        main = await ingestSeries(malId, fallbackSlug, animeav1Slug);
+        main = await ingestSeriesAsAdmin(malId, fallbackSlug, animeav1Slug);
       } catch (err) {
         setRunning(false);
         throw err;

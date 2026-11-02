@@ -3,6 +3,7 @@
 import type { JWT } from "next-auth/jwt";
 import { auth } from "@/auth";
 import { flaskFetch } from "@/lib/flask-client";
+import { mintInternalToken } from "@/lib/internal-token";
 
 export interface SeriesResult {
   id: string;
@@ -98,17 +99,34 @@ export interface IngestMemberResult {
   principal_slug: string | null;
 }
 
-async function postFlaskAsAdmin<T>(path: string, payload: unknown): Promise<T> {
+async function postFlaskAsAdmin<T>(
+  path: string,
+  payload: unknown,
+  opts: { adminOrigin?: boolean } = {}
+): Promise<T> {
   const session = await auth();
   if (session?.user?.role !== "ADMIN") {
     throw new Error("Unauthorized");
   }
 
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  let body = payload;
+  if (opts.adminOrigin) {
+    // ADR-016: only an admin-provided slug may bypass match validation. Flask
+    // honors `slug_source: "admin"` only together with a verified admin token.
+    const internalToken = await mintInternalToken({
+      sub: session.user?.email || "unknown",
+      role: "ADMIN",
+    });
+    headers.Authorization = `Bearer ${internalToken}`;
+    body = { ...(payload as object), slug_source: "admin" };
+  }
+
   const flaskUrl = process.env.FLASK_URL ?? "http://localhost:5000";
   const res = await fetch(`${flaskUrl}${path}`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
+    headers,
+    body: JSON.stringify(body),
     cache: "no-store",
   });
 
@@ -128,17 +146,42 @@ async function postFlaskAsAdmin<T>(path: string, payload: unknown): Promise<T> {
   return data as T;
 }
 
-/** Ingests only the requested series; related members come back in `franchise_members`. */
+function ingestPayload(malId: number, fallbackSlug?: string, animeav1Slug?: string) {
+  return {
+    mal_id: malId,
+    fallback_slug: fallbackSlug || undefined,
+    animeav1_slug: animeav1Slug || undefined,
+  };
+}
+
+/**
+ * Ingests only the requested series; related members come back in
+ * `franchise_members`. Used by IngestTrigger: any slug it sends is a guess, so
+ * it carries NO admin-origin marker or token and Flask validates it (ADR-016).
+ */
 export async function ingestSeries(
   malId: number,
   fallbackSlug?: string,
   animeav1Slug?: string
 ): Promise<IngestResult> {
-  return postFlaskAsAdmin<IngestResult>("/api/ingest", {
-    mal_id: malId,
-    fallback_slug: fallbackSlug || undefined,
-    animeav1_slug: animeav1Slug || undefined,
-  });
+  return postFlaskAsAdmin<IngestResult>("/api/ingest", ingestPayload(malId, fallbackSlug, animeav1Slug));
+}
+
+/**
+ * Same as ingestSeries, for the admin Ingest/Browse forms: marks the slugs as
+ * an admin decision (`slug_source: "admin"` + internal admin token), so Flask
+ * skips the exact-match/validation rules for them.
+ */
+export async function ingestSeriesAsAdmin(
+  malId: number,
+  fallbackSlug?: string,
+  animeav1Slug?: string
+): Promise<IngestResult> {
+  return postFlaskAsAdmin<IngestResult>(
+    "/api/ingest",
+    ingestPayload(malId, fallbackSlug, animeav1Slug),
+    { adminOrigin: true }
+  );
 }
 
 /** Ingests exactly one franchise member (ADR-015). */

@@ -79,5 +79,31 @@
         "comment": "the 'Season 5' row (count 0), owns 1..12"
       }
     ]
+  },
+  {
+    "slug": "owarimonogatari",
+    "owner_series_id": "owarimonogatari",
+    "comment": "Owarimonogatari TV (2015), 13 eps on AnimeAV1 (MAL says 12). Recap claimed ep 13.",
+    "release": [
+      {
+        "series_id": "mal-36796",
+        "principal_slug": null,
+        "fallback_slug": null,
+        "comment": "Owarimonogatari Second Season Recaps, owned 13"
+      }
+    ]
+  },
+  {
+    "slug": "one-punch-man-2nd-season",
+    "owner_series_id": "one-punch-man-2nd-season",
+    "comment": "One Punch Man 2nd Season, 12 eps on AnimeAV1. Specials have their own page.",
+    "release": [
+      {
+        "series_id": "mal-39652",
+        "principal_slug": null,
+        "fallback_slug": null,
+        "comment": "OPM S2 Commemorative Special, owned S2 ep 1"
+      }
+    ]
   }
 ]

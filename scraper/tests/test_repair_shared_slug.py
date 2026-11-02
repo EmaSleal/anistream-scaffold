@@ -223,7 +223,7 @@ def test_malformed_json_exit_2(tmp_path):
 
 def test_shipped_plan_is_valid_and_sets_bleach_principal_slug():
     pages = rep.load_plan(PLAN_FILE)
-    assert len(pages) == 5
+    assert len(pages) == 7
     bleach = next(p for p in pages if p["slug"] == "bleach-sennen-kessen-hen-soukoku-tan")
     rel = bleach["release"][0]
     assert rel["principal_slug"] == "bleach-sennen-kessen-hen" and "todo" not in rel
