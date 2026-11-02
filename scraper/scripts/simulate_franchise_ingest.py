@@ -52,7 +52,17 @@ def _fake_get_series_by_franchise(franchise_id: str) -> list[dict]:
     return [s for s in _series_store.values() if s.get("franchise_id") == franchise_id]
 
 
+def _fake_get_series_identity_by_id(series_id: str) -> dict | None:
+    return _series_store.get(series_id)
+
+
+def _fake_get_series_identities_by_mal_ids(mal_ids: list[int]) -> list[dict]:
+    return [s for s in _series_store.values() if s.get("mal_id") in mal_ids]
+
+
 def _patch() -> None:
+    ingest_routes.get_series_identity_by_id = _fake_get_series_identity_by_id
+    ingest_routes.get_series_identities_by_mal_ids = _fake_get_series_identities_by_mal_ids
     ingest_routes.upsert_series = _fake_upsert_series
     ingest_routes.upsert_episodes = _fake_upsert_episodes
     ingest_routes.get_series_by_mal_id = _fake_get_series_by_mal_id

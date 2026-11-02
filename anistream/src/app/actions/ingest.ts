@@ -95,9 +95,17 @@ export async function ingestSeries(
     cache: "no-store",
   });
 
-  const data = await res.json();
+  // Flask answers JSON, but a gateway/gunicorn timeout answers HTML. Parse
+  // defensively so the admin sees a readable message instead of a SyntaxError.
+  let data: unknown = null;
+  try {
+    data = JSON.parse(await res.text());
+  } catch {
+    throw new Error(`Ingest failed (${res.status}): upstream timeout or non-JSON response`);
+  }
   if (!res.ok) {
-    throw new Error((data as { error?: string }).error ?? "Ingest failed");
+    const message = (data as { error?: string } | null)?.error ?? "unknown error";
+    throw new Error(`Ingest failed (${res.status}): ${message}`);
   }
 
   return data as IngestResult;
