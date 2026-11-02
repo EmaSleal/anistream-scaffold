@@ -8,6 +8,7 @@ os.environ.setdefault("INTERNAL_JWT_SECRET", "test-internal-secret-for-tests-onl
 os.environ.setdefault("SERVICE_SECRET", "test-service-secret-for-tests-only")
 
 import pytest
+from tests.admin_origin import admin_headers, admin_post
 from unittest.mock import MagicMock, patch
 
 from db import slug_suggestions as sdb
@@ -39,7 +40,7 @@ def _av1_page(title, media_type="TV Anime", year=2018, count=12):
 
 
 def _run(client, path, body, series, av1_results=(), av1_page=None, jk_results=(), jk_info=None,
-         insert_side_effect=None):
+         insert_side_effect=None, post=None):
     """POST ``path`` with all I/O patched; returns (resp, upserted_series, suggestions, ctx)."""
     upserted, suggestions = [], []
     ctx = {}
@@ -74,7 +75,7 @@ def _run(client, path, body, series, av1_results=(), av1_page=None, jk_results=(
     with ExitStack() as stack:
         for p in patches:
             stack.enter_context(p)
-        resp = client.post(path, json=body)
+        resp = post(client, path, body) if post else client.post(path, json=body)
     return resp, upserted, suggestions
 
 
@@ -203,26 +204,28 @@ class TestMultipleExactAndFetchFailure:
 
 
 class TestExplicitAdminSlugBypass:
+    """slug_source=admin + a verified admin token bypasses matching (ADR-016)."""
+
+    def _admin_run(self, client, body, series, **kw):
+        post = lambda c, path, b: admin_post(c, path, b)
+        return _run(client, "/api/ingest", body, series, post=post, **kw)
+
     def test_explicit_animeav1_slug_skips_matching_and_validation(self, client):
         page = _av1_page("Totally Different", media_type="Película", year=1999, count=99)
         with patch(f"{MODULE}.scrape_animeav1_episodes",
                    return_value=page["episodes"][:12]) as scrape, \
              patch(f"{MODULE}.find_animeav1_candidates", side_effect=AssertionError("no matching")), \
              patch(f"{MODULE}.validate_candidate", side_effect=AssertionError("no validation")):
-            resp, upserted, suggestions = _run(
-                client, "/api/ingest", {"mal_id": 500, "animeav1_slug": "admin-slug"},
-                _series("Show"),
-            )
+            resp, upserted, suggestions = self._admin_run(
+                client, {"mal_id": 500, "animeav1_slug": "admin-slug"}, _series("Show"))
         assert resp.status_code == 200
         assert upserted[-1]["principal_slug"] == "admin-slug"
         assert suggestions == [] and scrape.called
 
     def test_explicit_fallback_slug_skips_jkanime_matching(self, client):
         with patch(f"{MODULE}.find_jkanime_candidates", side_effect=AssertionError("no matching")):
-            resp, upserted, suggestions = _run(
-                client, "/api/ingest", {"mal_id": 500, "fallback_slug": "admin-jk"},
-                _series("Show"),
-            )
+            resp, upserted, suggestions = self._admin_run(
+                client, {"mal_id": 500, "fallback_slug": "admin-jk"}, _series("Show"))
         assert resp.status_code == 200
         assert upserted[-1]["fallback_slug"] == "admin-jk" and suggestions == []
 
@@ -288,3 +291,78 @@ class TestSuggestionStorage:
             assert sdb.mark_decided("id-1", "denied") is False
         client.table.return_value.update.return_value.eq.assert_called_with("id", "id-1")
         client.table.return_value.update.return_value.eq.return_value.eq.assert_called_with("status", "pending")
+
+
+class TestUnverifiedExplicitSlug:
+    """IngestTrigger-style requests: the body slug is a candidate, not a decision."""
+
+    BODY = {"mal_id": 500, "animeav1_slug": "own-slug"}
+
+    def test_non_matching_title_is_suggestion_and_ingest_continues(self, client):
+        page = _av1_page("Some Other Show", count=12)
+        resp, upserted, suggestions = _run(
+            client, "/api/ingest", self.BODY, _series("Show"), av1_page=page,
+            jk_results=[{"title": "Show", "slug": "show-jk"}],
+            jk_info={"episode_count": 12, "status": "x", "media_type": "Serie", "year": 2018})
+        body = resp.get_json()
+        assert resp.status_code == 200 and body["principal_slug"] is None
+        assert "principal_slug" not in upserted[-1]
+        assert upserted[-1]["fallback_slug"] == "show-jk"  # waterfall still runs
+        assert [(s["source"], s["slug"]) for s in suggestions] == [("animeav1", "own-slug")]
+        assert set(body) >= {"series_id", "episodes_ingested", "franchise_members"}
+
+    def test_exact_valid_page_is_assigned_as_today(self, client):
+        page = _av1_page("Show", count=13)
+        resp, upserted, suggestions = _run(
+            client, "/api/ingest", self.BODY, _series("Show"), av1_page=page)
+        assert resp.get_json()["principal_slug"] == "own-slug"
+        assert resp.get_json()["episodes_ingested"] == 12
+        assert upserted[-1]["principal_slug"] == "own-slug" and suggestions == []
+
+    def test_exact_but_invalid_page_is_suggestion(self, client):
+        page = _av1_page("Show", media_type="Película", count=1)
+        resp, upserted, suggestions = _run(
+            client, "/api/ingest", self.BODY, _series("Show"), av1_page=page)
+        assert "principal_slug" not in upserted[-1]
+        assert suggestions[0]["score"] == 30
+
+    def test_failed_fetch_is_suggestion(self, client):
+        resp, upserted, suggestions = _run(
+            client, "/api/ingest", self.BODY, _series("Show"), av1_page=None)
+        assert "principal_slug" not in upserted[-1]
+        assert suggestions[0]["checks"]["page"]["reason"] == "fetch_failed"
+
+    def test_unverified_fallback_slug_is_validated_too(self, client):
+        bad = {"episode_count": 12, "status": "x", "media_type": "Serie", "year": 2018,
+               "title": "Show Recap"}
+        resp, upserted, suggestions = _run(
+            client, "/api/ingest", {"mal_id": 500, "fallback_slug": "jk"}, _series("Show"),
+            jk_info=bad)
+        assert "fallback_slug" not in upserted[-1]
+        assert [(s["source"], s["slug"]) for s in suggestions] == [("jkanime", "jk")]
+        good = {**bad, "title": "Show"}
+        resp, upserted, suggestions = _run(
+            client, "/api/ingest", {"mal_id": 500, "fallback_slug": "jk"}, _series("Show"),
+            jk_info=good)
+        assert upserted[-1]["fallback_slug"] == "jk" and suggestions == []
+
+    @pytest.mark.parametrize("headers", [
+        {},                                   # no token at all
+        admin_headers("USER"),                # valid token, wrong role
+        admin_headers(expires_in=-10),        # expired admin token
+        {"Authorization": "Bearer garbage"},  # invalid token
+    ])
+    def test_admin_marker_without_valid_admin_token_is_ignored(self, client, headers):
+        page = _av1_page("Some Other Show", count=12)
+        post = lambda c, path, b: c.post(path, json={**b, "slug_source": "admin"}, headers=headers)
+        resp, upserted, suggestions = _run(
+            client, "/api/ingest", self.BODY, _series("Show"), av1_page=page, post=post)
+        assert "principal_slug" not in upserted[-1]
+        assert [s["slug"] for s in suggestions] == ["own-slug"]
+
+    def test_valid_admin_token_without_marker_is_not_a_bypass(self, client):
+        page = _av1_page("Some Other Show", count=12)
+        post = lambda c, path, b: c.post(path, json=b, headers=admin_headers())
+        resp, upserted, suggestions = _run(
+            client, "/api/ingest", self.BODY, _series("Show"), av1_page=page, post=post)
+        assert "principal_slug" not in upserted[-1] and suggestions

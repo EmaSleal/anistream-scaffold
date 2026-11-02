@@ -9,9 +9,12 @@ vi.mock("@/auth", () => ({
 }));
 
 vi.mock("@/lib/flask-client", () => ({ flaskFetch: vi.fn() }));
+vi.mock("@/lib/internal-token", () => ({
+  mintInternalToken: vi.fn().mockResolvedValue("minted-admin-token"),
+}));
 
 import { auth } from "@/auth";
-import { ingestSeries, ingestFranchiseMember } from "./ingest";
+import { ingestSeries, ingestSeriesAsAdmin, ingestFranchiseMember } from "./ingest";
 
 function stubFetch(res: Partial<Response> & { json?: () => Promise<unknown>; text?: () => Promise<string> }) {
   vi.stubGlobal("fetch", vi.fn().mockResolvedValue(res));
@@ -112,5 +115,47 @@ describe("ingestFranchiseMember", () => {
     vi.stubGlobal("fetch", fetchMock);
     await expect(ingestFranchiseMember(input)).rejects.toThrow("Unauthorized");
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("slug origin (ADR-016)", () => {
+  const okRes = {
+    ok: true,
+    status: 200,
+    text: async () => "{}",
+    json: async () => ({}),
+  };
+
+  function lastCall() {
+    const [, init] = (fetch as unknown as ReturnType<typeof vi.fn>).mock.calls[0];
+    return { headers: init.headers as Record<string, string>, body: JSON.parse(init.body) };
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(auth).mockResolvedValue({ user: { role: "ADMIN", email: "a@b.c" } } as never);
+    stubFetch(okRes);
+  });
+
+  it("admin action sends slug_source=admin and the internal admin token", async () => {
+    await ingestSeriesAsAdmin(21, "jk", "av1");
+    const { headers, body } = lastCall();
+    expect(headers.Authorization).toBe("Bearer minted-admin-token");
+    expect(body).toMatchObject({ mal_id: 21, fallback_slug: "jk", animeav1_slug: "av1", slug_source: "admin" });
+  });
+
+  it("ingestSeries (IngestTrigger path) sends neither marker nor token", async () => {
+    await ingestSeries(21, undefined, "own-canonical-slug");
+    const { headers, body } = lastCall();
+    expect(headers.Authorization).toBeUndefined();
+    expect(body).not.toHaveProperty("slug_source");
+    expect(body.animeav1_slug).toBe("own-canonical-slug");
+  });
+
+  it("member ingest sends no marker or token", async () => {
+    await ingestFranchiseMember({ mal_id: 1, franchise_id: "f", season_order: 1, relation: "Sequel" });
+    const { headers, body } = lastCall();
+    expect(headers.Authorization).toBeUndefined();
+    expect(body).not.toHaveProperty("slug_source");
   });
 });

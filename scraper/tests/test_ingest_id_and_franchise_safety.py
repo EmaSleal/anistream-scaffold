@@ -13,6 +13,7 @@ os.environ.setdefault("INTERNAL_JWT_SECRET", "test-internal-secret-for-tests-onl
 os.environ.setdefault("SERVICE_SECRET", "test-service-secret-for-tests-only")
 
 import pytest
+from tests.admin_origin import admin_post
 from unittest.mock import patch
 
 from domain.franchise import pick_franchise_id
@@ -194,7 +195,7 @@ def _run_ingest(client, catalog, entries, *, mal_id, av1_slug, related_slug=None
         p.start()
     try:
         body = {"mal_id": mal_id, "animeav1_slug": av1_slug, **(body_extra or {})}
-        resp = client.post("/api/ingest", json=body)
+        resp = admin_post(client, "/api/ingest", body)
         resp.member_responses = []
         if resp.status_code == 200 and drive_members:
             data = resp.get_json()

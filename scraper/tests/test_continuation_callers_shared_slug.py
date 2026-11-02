@@ -12,6 +12,7 @@ os.environ.setdefault("INTERNAL_JWT_SECRET", "test-internal-secret-for-tests-onl
 os.environ.setdefault("SERVICE_SECRET", "test-service-secret-for-tests-only")
 
 import json
+from tests.admin_origin import admin_post
 from unittest.mock import patch, MagicMock
 
 import pytest
@@ -91,7 +92,7 @@ def _post_ingest(client, page, earlier_count, own_count=12):
          patch("routes.ingest_routes.find_jkanime_candidates", return_value=(None, None)), \
          patch("routes.ingest_routes.upsert_series") as up_series, \
          patch("routes.ingest_routes.upsert_episodes", return_value=0) as up_eps:
-        res = client.post("/api/ingest", json={"mal_id": 21, "animeav1_slug": "shared"})
+        res = admin_post(client, "/api/ingest", {"mal_id": 21, "animeav1_slug": "shared"})
     assert res.status_code == 200
     return up_series, up_eps
 

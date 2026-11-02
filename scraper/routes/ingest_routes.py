@@ -29,7 +29,10 @@ from db.series import (
 )
 from domain.franchise import pick_franchise_id
 from domain.shared_slug import compute_shared_slug_offset
-from domain.source_match import SKIPPED_MEDIA_TYPES, validate_candidate
+from auth import is_verified_admin
+from domain.source_match import SKIPPED_MEDIA_TYPES, is_exact_match, validate_candidate
+from scraper_animeav1 import _candidate_score as _av1_score
+from scraper_jkanime import _candidate_score as _jk_score
 
 logger = logging.getLogger(__name__)
 
@@ -718,6 +721,33 @@ def _match_jkanime(title: str, alt_titles: list[str], jikan: dict) -> dict:
     return _decide_source_match("jkanime", exacts, candidate, fetch_jkanime_series_info, jikan)
 
 
+def _decide_explicit_candidate(
+    source: str, slug: str, titles: list[str], fetch_page, jikan: dict, score_fn
+) -> dict:
+    """Judge a slug that did NOT come from a verified admin (ADR-016).
+
+    A slug in the request body is only an admin decision when the request is
+    marked slug_source=admin AND carries a verified admin token; anything else
+    (IngestTrigger's guess of the series' own canonical slug) is a candidate.
+    It is auto-assigned only when its page title exactly matches ``titles`` and
+    the page validates. Otherwise it is recorded as a suggestion; its score is
+    the scraper's scorer applied to the page title (0 when the fetch failed),
+    since a concrete candidate is worth showing the admin either way.
+    Returns the same shape as _decide_source_match.
+    """
+    page = fetch_page(slug)
+    item = {"slug": slug, "title": (page or {}).get("title")}
+    if is_exact_match(item["title"], titles):
+        return _decide_source_match(source, [item], None, lambda _s: page, jikan)
+    validation = _validate_page(page, jikan)
+    item["score"] = score_fn(item, titles[0], titles[1:]) if item["title"] else 0
+    return {
+        "slug": None,
+        "page": page,
+        "suggestion": _suggestion_row(source, item, page, jikan, validation),
+    }
+
+
 def _record_suggestion(series_id: str, suggestion: dict | None) -> None:
     """Store a pending suggestion; never raises (the table may not exist until
     migration 006 is applied, and a suggestion must never fail the ingest)."""
@@ -891,6 +921,9 @@ def ingest():
     mal_id = body.get("mal_id")
     fallback_slug = body.get("fallback_slug")
     animeav1_slug = body.get("animeav1_slug")
+    # ADR-016: the bypass for explicit slugs needs BOTH the marker and a verified
+    # admin token; the route itself stays open (IngestTrigger calls it).
+    admin_origin = body.get("slug_source") == "admin" and is_verified_admin()
 
     if not mal_id:
         return jsonify({"error": "mal_id is required"}), 422
@@ -917,7 +950,11 @@ def ingest():
 
     series["id"] = canonical_id
     series["slug"] = canonical_id
-    if fallback_slug:
+    # Unverified slugs are still offered above as id candidates: that only picks
+    # the row id, which _resolve_canonical_id already guards (ADR-014), and keeps
+    # IngestTrigger's own-slug ids stable. They are persisted as sources only
+    # after the checks below.
+    if fallback_slug and admin_origin:
         series["fallback_slug"] = fallback_slug
 
     # Discover full franchise (BFS) via Jikan relations
@@ -963,6 +1000,25 @@ def ingest():
     # sends on first load) that scrapes empty must not be saved, or stream
     # resolution will silently 404 on it later.
     main_episodes = []
+    av1_raw_episodes = None
+    if not admin_origin and (animeav1_slug or fallback_slug):
+        match_titles = [series.get("title") or "", *(series.get("titles") or [])]
+        if raw.get("title"):
+            match_titles.append(raw["title"])
+        match_titles = [t for t in match_titles if t]
+        jikan_facts = _jikan_facts(series)
+        if animeav1_slug:
+            av1_decision = _decide_explicit_candidate(
+                "animeav1", animeav1_slug, match_titles, fetch_animeav1_page, jikan_facts, _av1_score)
+            _record_suggestion(canonical_id, av1_decision["suggestion"])
+            animeav1_slug = av1_decision["slug"]
+            av1_raw_episodes = (av1_decision["page"] or {}).get("episodes")
+        if fallback_slug:
+            jk_explicit = _decide_explicit_candidate(
+                "jkanime", fallback_slug, match_titles, fetch_jkanime_series_info, jikan_facts, _jk_score)
+            _record_suggestion(canonical_id, jk_explicit["suggestion"])
+            if jk_explicit["slug"]:
+                series["fallback_slug"] = jk_explicit["slug"]
     if animeav1_slug:
         av1_offset = _claimed_episode_offset(
             franchise_id, animeav1_slug, canonical_id, series.get("season_order")
@@ -971,6 +1027,7 @@ def ingest():
             main_episodes = _build_episodes_from_animeav1(
                 canonical_id, animeav1_slug, kitsu_eps, jikan_titles,
                 episode_offset=av1_offset, max_episodes=series.get("episode_count"),
+                raw_episodes=av1_raw_episodes,
             )
     if main_episodes:
         series["principal_slug"] = animeav1_slug

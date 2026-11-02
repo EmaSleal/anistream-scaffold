@@ -14,6 +14,7 @@ os.environ.setdefault("SERVICE_SECRET", "test-service-secret-for-tests-only")
 
 import json
 import pytest
+from tests.admin_origin import admin_post
 from unittest.mock import patch, MagicMock, call
 
 
@@ -94,9 +95,9 @@ class TestIngestDubDetect:
              patches[10], patches[11], \
              patch("routes.ingest_routes.upsert_series", side_effect=capture_upsert), \
              patch("routes.ingest_routes.upsert_episodes", return_value=1):
-            res = client.post(
-                "/api/ingest",
-                json={"mal_id": _MAL_ID, "animeav1_slug": "naruto"},
+            res = admin_post(
+                client, "/api/ingest",
+                {"mal_id": _MAL_ID, "animeav1_slug": "naruto"},
             )
 
         assert res.status_code == 200
@@ -116,9 +117,9 @@ class TestIngestDubDetect:
              patches[10], patches[11], \
              patch("storage.upsert_series", side_effect=capture_upsert), \
              patch("storage.upsert_episodes", return_value=1):
-            res = client.post(
-                "/api/ingest",
-                json={"mal_id": _MAL_ID, "animeav1_slug": "naruto"},
+            res = admin_post(
+                client, "/api/ingest",
+                {"mal_id": _MAL_ID, "animeav1_slug": "naruto"},
             )
 
         assert res.status_code == 200
@@ -133,9 +134,9 @@ class TestIngestDubDetect:
              patches[5], patches[6], patches[7], patches[8], patches[9], \
              patches[10], patches[11] as mock_has_dub, \
              patches[12], patches[13]:
-            res = client.post(
-                "/api/ingest",
-                json={"mal_id": _MAL_ID, "animeav1_slug": "naruto"},
+            res = admin_post(
+                client, "/api/ingest",
+                {"mal_id": _MAL_ID, "animeav1_slug": "naruto"},
             )
 
         assert res.status_code == 200
