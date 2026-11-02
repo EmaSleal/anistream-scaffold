@@ -46,7 +46,9 @@ _AV1_EPISODES = [{"episode_number": 1, "thumbnail_url": None}]
 
 @pytest.fixture
 def client():
-    with patch("storage.get_client"):
+    with patch("storage.get_client"), \
+         patch("routes.ingest_routes.get_series_identity_by_id", return_value=None), \
+         patch("routes.ingest_routes.get_series_identities_by_mal_ids", return_value=[]):
         from app import create_app
         app = create_app()
         app.config["TESTING"] = True
