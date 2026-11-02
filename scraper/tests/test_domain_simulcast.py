@@ -286,6 +286,14 @@ class TestPlanBackfill:
         )
         assert result == {"inserts": [], "skip_reason": "ambiguous_offset"}
 
+    def test_undeterminable_offset_is_ambiguous(self):
+        """offset=None (ADR-012) -> never plans anything."""
+        result = plan_backfill(
+            own={1}, expected=12, offset=None, sibling_nums=set(),
+            source_nums=set(range(1, 13)), current_max=5,
+        )
+        assert result == {"inserts": [], "skip_reason": "ambiguous_offset"}
+
     def test_own_numbers_outside_window_is_ambiguous(self):
         """An own number below the owned window means the offset itself is wrong."""
         result = plan_backfill(

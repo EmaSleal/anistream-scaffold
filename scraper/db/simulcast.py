@@ -11,6 +11,7 @@ from zoneinfo import ZoneInfo
 import storage
 from db._paging import fetch_all
 from db.series import get_series_by_franchise
+from domain.shared_slug import compute_shared_slug_offset
 from domain.simulcast import classify_recheck
 
 _CR_TZ = ZoneInfo("America/Costa_Rica")
@@ -252,53 +253,58 @@ def get_due_simulcast_series() -> list[dict]:
 def get_slug_sibling_episodes(
     franchise_id: str | None, slug: str, exclude_id: str
 ) -> dict:
-    """Return the episode offset and claimed episode numbers for franchise
-    siblings that share ``slug`` as ``principal_slug`` or ``fallback_slug``.
+    """Return the order-aware episode offset and the earlier siblings' claimed
+    episode numbers for ``exclude_id`` on the shared ``slug`` (ADR-012).
 
-    Mirrors ``routes.ingest_routes._claimed_episode_offset``'s selection
-    logic exactly (guarded by a parity test in ``test_db_simulcast.py``) so
-    the two never silently drift apart: franchise members excluding
-    ``exclude_id``, whose ``principal_slug`` or ``fallback_slug`` equals
-    ``slug``.
+    Mirrors ``routes.ingest_routes._claimed_episode_offset`` (guarded by a
+    parity test in ``test_db_simulcast.py``): both delegate to
+    ``domain.shared_slug.compute_shared_slug_offset``, so the two never
+    silently drift apart. Franchise members excluding ``exclude_id`` whose
+    ``principal_slug`` or ``fallback_slug`` equals ``slug`` are "sharing
+    siblings"; only those with a strictly lower ``season_order`` count.
 
     Args:
-        franchise_id: The franchise to scan, or None (no franchise → 0).
+        franchise_id: The franchise to scan, or None (no franchise -> 0).
         slug: The shared AnimeAV1/jkanime slug to match against.
         exclude_id: The series being evaluated — never counted as its own
-            sibling.
+            sibling; its ``season_order`` is read from the franchise rows.
 
     Returns:
-        ``{"offset": int, "sibling_nums": set[int]}``. ``offset`` is the sum
-        of episode counts across matching siblings (same semantics as
-        ``_claimed_episode_offset``). ``sibling_nums`` is the union of those
-        siblings' actual ingested episode numbers, in the shared source's
-        native numbering.
+        ``{"offset": int | None, "sibling_nums": set[int]}``.
+        ``offset`` is the sum of the earlier sharing siblings' official
+        ``episode_count``, or ``None`` when undeterminable (then a ``reason``
+        key explains why; it is absent otherwise).
+        ``sibling_nums`` is the union of the EARLIER sharing siblings' actual
+        ingested episode numbers, in the shared source's native numbering.
     """
     if not franchise_id:
         return {"offset": 0, "sibling_nums": set()}
 
     siblings = get_series_by_franchise(franchise_id)
-    matching_ids = [
-        s["id"]
-        for s in siblings
-        if s.get("id") != exclude_id
-        and (s.get("principal_slug") == slug or s.get("fallback_slug") == slug)
-    ]
-    if not matching_ids:
-        return {"offset": 0, "sibling_nums": set()}
+    self_row = next((s for s in siblings if s.get("id") == exclude_id), {})
+    result = compute_shared_slug_offset(
+        siblings,
+        {"id": exclude_id, "season_order": self_row.get("season_order")},
+        slug,
+    )
+    if result["offset"] is None:
+        return {"offset": None, "sibling_nums": set(), "reason": result["reason"]}
+    if not result["earlier_ids"]:
+        return {"offset": result["offset"], "sibling_nums": set()}
 
     client = storage.get_client()
+    earlier_ids = result["earlier_ids"]
     rows = fetch_all(
         lambda: client.table("episodes")
         .select("series_id, episode_number")
-        .in_("series_id", matching_ids)
+        .in_("series_id", earlier_ids)
         .order("series_id")
         .order("episode_number")
     )
     sibling_nums = {
         r["episode_number"] for r in rows if r.get("episode_number") is not None
     }
-    return {"offset": len(rows), "sibling_nums": sibling_nums}
+    return {"offset": result["offset"], "sibling_nums": sibling_nums}
 
 
 def mark_gap_unresolved(series_id: str, missing_episodes: list[int]) -> None:

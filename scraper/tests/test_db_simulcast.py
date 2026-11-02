@@ -60,13 +60,15 @@ class TestGetSlugSiblingEpisodes:
         assert result == {"offset": 0, "sibling_nums": set()}
 
     def test_sibling_sharing_slug_returns_offset_and_numbers(self):
-        """A franchise sibling sharing principal_slug contributes its own
-        ingested episode numbers to sibling_nums and its count to offset."""
+        """An EARLIER franchise sibling sharing principal_slug contributes its
+        official episode_count to offset and its ingested numbers to sibling_nums."""
         from db.simulcast import get_slug_sibling_episodes
 
         siblings = [
-            {"id": "series-a-part1", "principal_slug": "shared-slug", "fallback_slug": None},
-            {"id": "series-a-part2", "principal_slug": "other-slug", "fallback_slug": None},
+            {"id": "series-a-part1", "principal_slug": "shared-slug", "fallback_slug": None,
+             "season_order": 1, "episode_count": 3},
+            {"id": "series-a-part2", "principal_slug": "other-slug", "fallback_slug": None,
+             "season_order": 2, "episode_count": 3},
         ]
         ep_rows = [
             {"series_id": "series-a-part1", "episode_number": 1},
@@ -88,7 +90,8 @@ class TestGetSlugSiblingEpisodes:
         from db.simulcast import get_slug_sibling_episodes
 
         siblings = [
-            {"id": "series-a", "principal_slug": "shared-slug", "fallback_slug": None},
+            {"id": "series-a", "principal_slug": "shared-slug", "fallback_slug": None,
+             "season_order": 1, "episode_count": 12},
         ]
         mock_client = MagicMock()
         mock_client.table.return_value = _chain_mock([])
@@ -104,7 +107,10 @@ class TestGetSlugSiblingEpisodes:
         from db.simulcast import get_slug_sibling_episodes
 
         siblings = [
-            {"id": "series-b", "principal_slug": None, "fallback_slug": "jk-slug"},
+            {"id": "series-b", "principal_slug": None, "fallback_slug": "jk-slug",
+             "season_order": 1, "episode_count": 1},
+            {"id": "series-c", "principal_slug": None, "fallback_slug": None,
+             "season_order": 2, "episode_count": 12},
         ]
         ep_rows = [{"series_id": "series-b", "episode_number": 1}]
         mock_client = MagicMock()
@@ -122,7 +128,8 @@ class TestGetSlugSiblingEpisodes:
         from db.simulcast import get_slug_sibling_episodes
 
         siblings = [
-            {"id": "series-b", "principal_slug": "unrelated-slug", "fallback_slug": None},
+            {"id": "series-b", "principal_slug": "unrelated-slug", "fallback_slug": None,
+             "season_order": 1, "episode_count": 12},
         ]
         mock_client = MagicMock()
 
@@ -131,6 +138,46 @@ class TestGetSlugSiblingEpisodes:
             result = get_slug_sibling_episodes("fr-1", "shared-slug", "series-a")
 
         assert result == {"offset": 0, "sibling_nums": set()}
+        mock_client.table.assert_not_called()
+
+    def test_later_sibling_never_contributes(self):
+        """Slime S4 (24 eps) evaluated against a later Part 2 sharing its slug -> offset 0."""
+        from db.simulcast import get_slug_sibling_episodes
+
+        siblings = [
+            {"id": "s4", "principal_slug": "slime-4", "fallback_slug": None,
+             "season_order": 5, "episode_count": 24},
+            {"id": "mal-63129", "principal_slug": None, "fallback_slug": "slime-4",
+             "season_order": 6, "episode_count": 0},
+        ]
+        mock_client = MagicMock()
+
+        with patch("db.simulcast.get_series_by_franchise", return_value=siblings), \
+             patch("storage.get_client", return_value=mock_client):
+            result = get_slug_sibling_episodes("fr-1", "slime-4", "s4")
+
+        assert result == {"offset": 0, "sibling_nums": set()}
+        mock_client.table.assert_not_called()
+
+    def test_undeterminable_offset_is_none_with_reason(self):
+        """Earlier sibling with unknown episode_count -> offset None, no episode query."""
+        from db.simulcast import get_slug_sibling_episodes
+
+        siblings = [
+            {"id": "s4", "principal_slug": "slime-4", "fallback_slug": None,
+             "season_order": 5, "episode_count": None},
+            {"id": "p2", "principal_slug": None, "fallback_slug": "slime-4",
+             "season_order": 6, "episode_count": 12},
+        ]
+        mock_client = MagicMock()
+
+        with patch("db.simulcast.get_series_by_franchise", return_value=siblings), \
+             patch("storage.get_client", return_value=mock_client):
+            result = get_slug_sibling_episodes("fr-1", "slime-4", "p2")
+
+        assert result["offset"] is None
+        assert result["sibling_nums"] == set()
+        assert result["reason"]
         mock_client.table.assert_not_called()
 
 
@@ -150,8 +197,10 @@ class TestOffsetParityWithIngestRoutes:
         from routes.ingest_routes import _claimed_episode_offset
 
         siblings = [
-            {"id": "part1", "principal_slug": "shared", "fallback_slug": None},
-            {"id": "part2", "principal_slug": "shared", "fallback_slug": None},
+            {"id": "part1", "principal_slug": "shared", "fallback_slug": None,
+             "season_order": 1, "episode_count": 12},
+            {"id": "part2", "principal_slug": "shared", "fallback_slug": None,
+             "season_order": 2, "episode_count": 12},
         ]
         ep_rows = [
             {"series_id": "part1", "episode_number": n} for n in range(1, 13)
@@ -161,7 +210,6 @@ class TestOffsetParityWithIngestRoutes:
 
         with patch("db.simulcast.get_series_by_franchise", return_value=siblings), \
              patch("routes.ingest_routes.get_series_by_franchise", return_value=siblings), \
-             patch("routes.ingest_routes.get_episode_count", return_value=12), \
              patch("storage.get_client", return_value=mock_client):
             db_offset = get_slug_sibling_episodes("fr-1", "shared", "part2")["offset"]
             legacy_offset = _claimed_episode_offset("fr-1", "shared", "part2")
@@ -173,7 +221,8 @@ class TestOffsetParityWithIngestRoutes:
         from routes.ingest_routes import _claimed_episode_offset
 
         siblings = [
-            {"id": "solo", "principal_slug": "own-slug", "fallback_slug": None},
+            {"id": "solo", "principal_slug": "own-slug", "fallback_slug": None,
+             "season_order": 1, "episode_count": 12},
         ]
         mock_client = MagicMock()
         mock_client.table.return_value = _chain_mock([])
@@ -185,6 +234,34 @@ class TestOffsetParityWithIngestRoutes:
             legacy_offset = _claimed_episode_offset("fr-1", "own-slug", "solo")
 
         assert db_offset == legacy_offset == 0
+
+    def test_offsets_agree_when_later_sibling_and_when_undeterminable(self):
+        from db.simulcast import get_slug_sibling_episodes
+        from routes.ingest_routes import _claimed_episode_offset
+
+        later = [
+            {"id": "s4", "principal_slug": "slug", "fallback_slug": None,
+             "season_order": 5, "episode_count": 24},
+            {"id": "p2", "principal_slug": None, "fallback_slug": "slug",
+             "season_order": 6, "episode_count": 0},
+        ]
+        unknown = [
+            {"id": "s4", "principal_slug": "slug", "fallback_slug": None,
+             "season_order": 5, "episode_count": None},
+            {"id": "p2", "principal_slug": None, "fallback_slug": "slug",
+             "season_order": 6, "episode_count": 12},
+        ]
+        mock_client = MagicMock()
+        mock_client.table.return_value = _chain_mock([])
+        for rows, sid, expected in ((later, "s4", 0), (later, "p2", 24), (unknown, "p2", None)):
+            with patch("db.simulcast.get_series_by_franchise", return_value=rows), \
+                 patch("routes.ingest_routes.get_series_by_franchise", return_value=rows), \
+                 patch("storage.get_client", return_value=mock_client):
+                db_offset = get_slug_sibling_episodes("fr-1", "slug", sid)["offset"]
+                legacy_offset = _claimed_episode_offset(
+                    "fr-1", "slug", sid, next(r["season_order"] for r in rows if r["id"] == sid)
+                )
+            assert db_offset == legacy_offset == expected
 
 
 # ---------------------------------------------------------------------------
@@ -628,13 +705,18 @@ class TestPagedReadsBeyondRowCap:
         assert result[0]["have"] == 20
         assert result[0]["own_episode_numbers"] == set(range(1, 21))
 
-    def test_slug_sibling_offset_counts_all_rows(self):
+    def test_slug_sibling_nums_paginates_all_rows(self):
+        """Offset comes from official episode_count; sibling_nums must still
+        read every earlier-sibling row past the 1000-row cap."""
         from db.simulcast import get_slug_sibling_episodes
 
         siblings = [
-            {"id": "p1", "principal_slug": "shared", "fallback_slug": None},
-            {"id": "p2", "principal_slug": "shared", "fallback_slug": None},
-            {"id": "me", "principal_slug": "shared", "fallback_slug": None},
+            {"id": "p1", "principal_slug": "shared", "fallback_slug": None,
+             "season_order": 1, "episode_count": 600},
+            {"id": "p2", "principal_slug": "shared", "fallback_slug": None,
+             "season_order": 2, "episode_count": 600},
+            {"id": "me", "principal_slug": "shared", "fallback_slug": None,
+             "season_order": 3, "episode_count": 12},
         ]
         episode_rows = [
             {"series_id": sid, "episode_number": n}
