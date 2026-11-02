@@ -98,13 +98,13 @@ def main(mal_id: int, root_slug: str | None = None) -> None:
     # already-confirmed slug, force it here so the root's turn matches
     # production instead of guessing.
     _root_turn = {"active": False}
-    real_find_best_animeav1_match = ingest_routes.find_best_animeav1_match
+    real_find_animeav1_candidates = ingest_routes.find_animeav1_candidates
     if root_slug:
-        def _find_best_animeav1_match_root_override(query: str, alt_titles=None):
+        def _find_animeav1_candidates_root_override(query: str, alt_titles=None):
             if _root_turn["active"]:
-                return {"slug": root_slug, "title": query}
-            return real_find_best_animeav1_match(query, alt_titles=alt_titles)
-        ingest_routes.find_best_animeav1_match = _find_best_animeav1_match_root_override
+                return [{"slug": root_slug, "title": query}], None
+            return real_find_animeav1_candidates(query, alt_titles=alt_titles)
+        ingest_routes.find_animeav1_candidates = _find_animeav1_candidates_root_override
 
     print(f"Discovering franchise via Jikan relations BFS for mal_id={mal_id}...")
     franchise_entries = ingest_routes._discover_franchise_jikan(mal_id)

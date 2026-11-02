@@ -108,7 +108,7 @@ class TestMemberEndpoint:
         with patch(f"{MODULE}.fetch_anime_by_id", return_value={"mal_id": 301, "title": "S2"}), \
              patch(f"{MODULE}.normalize", return_value={"mal_id": 301, "title": "S2"}), \
              patch(f"{MODULE}.get_series_by_mal_id", return_value=existing), \
-             patch(f"{MODULE}.find_best_animeav1_match", return_value=None), \
+             patch(f"{MODULE}.find_animeav1_candidates", return_value=(None, None)), \
              patch(f"{MODULE}.get_series_by_franchise", return_value=[]), \
              patch(f"{MODULE}.search_kitsu_anime", return_value=None), \
              patch(f"{MODULE}.fetch_kitsu_episodes", return_value={}), \

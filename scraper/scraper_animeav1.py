@@ -12,6 +12,7 @@ import cloudscraper
 from bs4 import BeautifulSoup
 from config import CLOUDSCRAPER_BROWSER
 from fetcher import _extract_base_title
+from domain.source_match import SUGGESTION_MIN_SCORE, split_candidates
 
 logger = logging.getLogger(__name__)
 
@@ -111,93 +112,112 @@ def _score_animeav1_item(item: dict, title: str, base: str) -> int:
     return 0
 
 
+def _all_titles(title: str, alt_titles: list[str] | None) -> list[str]:
+    return [title, *(alt_titles or [])]
+
+
+def _candidate_score(item: dict, title: str, alt_titles: list[str] | None) -> int:
+    """Best _score_animeav1_item of ``item`` against the title and every alt."""
+    scores = [
+        _score_animeav1_item(item, t, _extract_base_title(t))
+        for t in _all_titles(title, alt_titles) if t
+    ]
+    return max(scores, default=0)
+
+
 def select_best_animeav1_match(
     results: list[dict], title: str, alt_titles: list[str] | None = None
 ) -> dict | None:
-    """Pick the AnimeAV1 search result whose own title best matches ours.
+    """Pick the AnimeAV1 search result whose title EXACTLY equals ours.
 
-    AnimeAV1's search endpoint returns multiple candidates with no ranking
-    guarantee. For multi-season franchises it often lists an unrelated season
-    first, and blindly taking ``results[0]`` silently steals that season's
-    slug — confirmed live against Gintama (the 2006 original claimed the
-    Season 5 page) and DanMachi (Season 1 and a recap both claimed the
-    Season 5 page, leaving real Seasons 2-6 with zero episodes). Score every
-    candidate against our title and alt_titles, and only accept the best one
-    when it clears _MIN_ANIMEAV1_SCORE — otherwise return None rather than
-    guess.
+    Exact means equal after ``domain.source_match.normalize_title`` to the
+    title or any alt title (ADR-016). Containment / base-title matches are
+    never returned here: they used to be auto-assigned and stole parent-season
+    pages for recaps and specials (Owarimonogatari Second Season Recaps got
+    "Owarimonogatari"). Use ``select_animeav1_candidates`` for those.
     """
-    if not results:
-        return None
-
-    base = _extract_base_title(title)
-    scored = [(r, _score_animeav1_item(r, title, base)) for r in results]
-
-    for alt in (alt_titles or []):
-        if not alt:
-            continue
-        alt_base = _extract_base_title(alt)
-        scored.extend((r, _score_animeav1_item(r, alt, alt_base)) for r in results)
-
-    best_item, best_score = max(scored, key=lambda pair: pair[1])
-    if best_score < _MIN_ANIMEAV1_SCORE:
-        return None
-    return best_item
+    exacts, _ = select_animeav1_candidates(results, title, alt_titles)
+    return exacts[0] if exacts else None
 
 
-def find_best_animeav1_match(title: str, alt_titles: list[str] | None = None) -> dict | None:
-    """Search AnimeAV1 for the best-matching series, retrying with alt titles.
+def select_animeav1_candidates(
+    results: list[dict], title: str, alt_titles: list[str] | None = None
+) -> tuple[list[dict], dict | None]:
+    """Return ``(exacts, best_non_exact)`` for the search results.
+
+    ``best_non_exact`` is the highest-scoring non-exact result whose score is
+    at least SUGGESTION_MIN_SCORE, with a ``score`` key; it may only ever be
+    stored as a pending suggestion, never auto-assigned.
+    """
+    return split_candidates(
+        results,
+        _all_titles(title, alt_titles),
+        lambda item: _candidate_score(item, title, alt_titles),
+        SUGGESTION_MIN_SCORE,
+    )
+
+
+def find_animeav1_candidates(
+    title: str, alt_titles: list[str] | None = None
+) -> tuple[list[dict], dict | None]:
+    """Search AnimeAV1 by title, then each alt title; return ``(exacts, best_non_exact)``.
 
     AnimeAV1's catalog search does literal matching against titles it hosts
     (typically romaji/Japanese), so querying with only our Jikan title (often
-    English) can come back empty or irrelevant even when the series exists
-    there under a different title — confirmed live for DanMachi, where the
-    real Season 1's own English-title query scored below the floor while
-    shorter/differently-worded siblings happened to match. Mirrors
-    search_kitsu_anime's retry strategy: try the primary title first, then
-    each alt title, always scoring against the *original* title/alt_titles so
-    the final pick is judged consistently regardless of which query surfaced it.
+    English) can come back empty even when the series exists there under a
+    different title (confirmed live for DanMachi). Mirrors search_kitsu_anime's
+    retry strategy: stop at the first query that yields an exact match,
+    otherwise keep the best non-exact candidate seen across all queries.
+    Results are always judged against the *original* title/alt_titles.
     """
-    match = select_best_animeav1_match(search_animeav1(title), title, alt_titles=alt_titles)
-    if match:
-        return match
-
-    for alt in (alt_titles or []):
-        if not alt or alt == title:
-            continue
-        match = select_best_animeav1_match(search_animeav1(alt), title, alt_titles=alt_titles)
-        if match:
-            return match
-
-    return None
+    best: dict | None = None
+    queries = [title, *[a for a in (alt_titles or []) if a and a != title]]
+    for query in queries:
+        exacts, cand = select_animeav1_candidates(search_animeav1(query), title, alt_titles)
+        if exacts:
+            return exacts, None
+        if cand and (best is None or cand["score"] > best["score"]):
+            best = cand
+    return [], best
 
 
-def scrape_animeav1_episodes(slug: str) -> list[dict]:
-    """Fetch the episode list for a series from AnimeAV1.
+def find_best_animeav1_match(title: str, alt_titles: list[str] | None = None) -> dict | None:
+    """Search AnimeAV1 and return only an EXACT title match (or None)."""
+    exacts, _ = find_animeav1_candidates(title, alt_titles)
+    return exacts[0] if exacts else None
 
-    GET https://animeav1.com/media/{slug}
-    Parses episode cards and returns episode_number + thumbnail_url.
-    Episode number comes from href="/media/{slug}/{N}".
-    Thumbnail is best-effort from the CDN pattern; nullable.
 
-    Returns:
-        list of { episode_number: int, thumbnail_url: str | None }
-        Empty list on any error or unknown slug.
+_TYPE_LABELS_YEAR_RE = re.compile(r"^\d{4}$")
+
+
+def _parse_animeav1_page(html: str, slug: str) -> dict:
+    """Parse a /media/{slug} page into title, type, year and episodes.
+
+    Header markup (verified against the live site): ``<h1>`` title followed by
+    ``<div><span>TV Anime</span> <span>•</span> <span>2019</span> <span>•</span>
+    <span>Temporada Primavera</span> ...</div>``. The first span is the type
+    ("TV Anime", "Película", "OVA", "Especial", ...), the first 4-digit span the
+    start year. Missing pieces are None ("unknown").
     """
-    try:
-        resp = _scraper.get(
-            f"{ANIMEAV1_BASE}/media/{slug}",
-            headers=_ZILLA_HEADERS,
-            timeout=20,
-        )
-        resp.raise_for_status()
-    except Exception as exc:
-        logger.warning("scraper_animeav1: HTTP error for slug=%r: %s", slug, exc)
-        return []
+    soup = BeautifulSoup(html, "html.parser")
 
-    soup = BeautifulSoup(resp.text, "html.parser")
+    page_title = media_type = year = None
+    h1 = soup.find("h1")
+    if h1:
+        page_title = h1.get_text(strip=True) or None
+        header = h1.find_next("div", class_="flex-wrap")
+        # The h1 sits in its own wrapper; the info row is the next flex-wrap div.
+        spans = [
+            sp.get_text(strip=True)
+            for sp in (header.find_all("span", recursive=False) if header else [])
+        ]
+        spans = [t for t in spans if t and t != "\u2022"]
+        if spans and not _TYPE_LABELS_YEAR_RE.match(spans[0]):
+            media_type = spans[0]
+        year = next((int(t) for t in spans if _TYPE_LABELS_YEAR_RE.match(t)), None)
 
     # Extract numeric anime_id for CDN thumbnail URLs.
-    # Priority: data-id attr → JS "anime_id" → CDN URL already present in page.
+    # Priority: data-id attr -> JS "anime_id" -> CDN URL already present in page.
     numeric_id = None
     data_id_tag = soup.find(attrs={"data-id": True})
     if data_id_tag:
@@ -211,7 +231,7 @@ def scrape_animeav1_episodes(slug: str) -> list[dict]:
                 break
     if not numeric_id:
         # Last resort: pick numeric_id from any CDN screenshot URL already in the HTML
-        cdn_m = re.search(r'cdn\.animeav1\.com/screenshots/(\d+)/', resp.text)
+        cdn_m = re.search(r'cdn\.animeav1\.com/screenshots/(\d+)/', html)
         if cdn_m:
             numeric_id = cdn_m.group(1)
 
@@ -248,9 +268,53 @@ def scrape_animeav1_episodes(slug: str) -> list[dict]:
         })
 
     episodes.sort(key=lambda e: e["episode_number"])
-    if not episodes:
+    return {
+        "title": page_title,
+        "media_type": media_type,
+        "year": year,
+        "episode_count": len(episodes) or None,
+        "episodes": episodes,
+    }
+
+
+def fetch_animeav1_page(slug: str) -> dict | None:
+    """GET /media/{slug} once and return ``{title, media_type, year,
+    episode_count, episodes}``, or None on any HTTP error.
+
+    Used both to validate a candidate (ADR-016) and to build its episodes, so
+    callers can reuse ``episodes`` instead of fetching the page twice.
+    """
+    try:
+        resp = _scraper.get(
+            f"{ANIMEAV1_BASE}/media/{slug}",
+            headers=_ZILLA_HEADERS,
+            timeout=20,
+        )
+        resp.raise_for_status()
+    except Exception as exc:
+        logger.warning("scraper_animeav1: HTTP error for slug=%r: %s", slug, exc)
+        return None
+    return _parse_animeav1_page(resp.text, slug)
+
+
+def scrape_animeav1_episodes(slug: str) -> list[dict]:
+    """Fetch the episode list for a series from AnimeAV1.
+
+    GET https://animeav1.com/media/{slug}
+    Parses episode cards and returns episode_number + thumbnail_url.
+    Episode number comes from href="/media/{slug}/{N}".
+    Thumbnail is best-effort from the CDN pattern; nullable.
+
+    Returns:
+        list of { episode_number: int, thumbnail_url: str | None }
+        Empty list on any error or unknown slug.
+    """
+    page = fetch_animeav1_page(slug)
+    if page is None:
+        return []
+    if not page["episodes"]:
         logger.warning("scraper_animeav1: page loaded but 0 episodes found for slug=%r", slug)
-    return episodes
+    return page["episodes"]
 
 
 def _extract_hash_from_embeds(html: str, audio_type: Literal["sub", "dub"]) -> str | None:

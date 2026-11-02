@@ -4,6 +4,7 @@ import cloudscraper
 from bs4 import BeautifulSoup
 from config import CLOUDSCRAPER_BROWSER
 from fetcher import _extract_base_title
+from domain.source_match import SUGGESTION_MIN_SCORE, split_candidates
 
 _scraper = cloudscraper.create_scraper(browser=CLOUDSCRAPER_BROWSER)
 
@@ -90,63 +91,80 @@ def _score_jkanime_item(item: dict, title: str, base: str) -> int:
     return 0
 
 
+def _all_titles(title: str, alt_titles: list[str] | None) -> list[str]:
+    return [title, *(alt_titles or [])]
+
+
+def _candidate_score(item: dict, title: str, alt_titles: list[str] | None) -> int:
+    """Best _score_jkanime_item of ``item`` against the title and every alt."""
+    scores = [
+        _score_jkanime_item(item, t, _extract_base_title(t))
+        for t in _all_titles(title, alt_titles) if t
+    ]
+    return max(scores, default=0)
+
+
 def select_best_jkanime_match(
     results: list[dict], title: str, alt_titles: list[str] | None = None
 ) -> dict | None:
-    """Pick the jkanime search result whose own title best matches ours.
+    """Pick the jkanime search result whose title EXACTLY equals ours.
 
-    Same rationale as scraper_animeav1.select_best_animeav1_match: jkanime's
-    search returns multiple candidates with no ranking guarantee, so blindly
-    taking results[0] risks assigning the wrong season's slug.
+    Same rule as scraper_animeav1.select_best_animeav1_match (ADR-016): exact
+    after normalization against the title or any alt title; containment never
+    qualifies. See ``select_jkanime_candidates`` for suggestion candidates.
     """
-    if not results:
-        return None
+    exacts, _ = select_jkanime_candidates(results, title, alt_titles)
+    return exacts[0] if exacts else None
 
-    base = _extract_base_title(title)
-    scored = [(r, _score_jkanime_item(r, title, base)) for r in results]
 
-    for alt in (alt_titles or []):
-        if not alt:
-            continue
-        alt_base = _extract_base_title(alt)
-        scored.extend((r, _score_jkanime_item(r, alt, alt_base)) for r in results)
+def select_jkanime_candidates(
+    results: list[dict], title: str, alt_titles: list[str] | None = None
+) -> tuple[list[dict], dict | None]:
+    """Return ``(exacts, best_non_exact)``; the latter has a ``score`` key and
+    scores at least SUGGESTION_MIN_SCORE (suggestion-only, never auto-assigned)."""
+    return split_candidates(
+        results,
+        _all_titles(title, alt_titles),
+        lambda item: _candidate_score(item, title, alt_titles),
+        SUGGESTION_MIN_SCORE,
+    )
 
-    best_item, best_score = max(scored, key=lambda pair: pair[1])
-    if best_score < _MIN_JKANIME_SCORE:
-        return None
-    return best_item
+
+def find_jkanime_candidates(
+    title: str, alt_titles: list[str] | None = None
+) -> tuple[list[dict], dict | None]:
+    """Search jkanime by title, then each alt title; return ``(exacts, best_non_exact)``.
+
+    Mirrors scraper_animeav1.find_animeav1_candidates: stops at the first exact
+    match, otherwise keeps the best non-exact candidate across all queries.
+    """
+    best: dict | None = None
+    queries = [title, *[a for a in (alt_titles or []) if a and a != title]]
+    for query in queries:
+        exacts, cand = select_jkanime_candidates(search_jkanime(query), title, alt_titles)
+        if exacts:
+            return exacts, None
+        if cand and (best is None or cand["score"] > best["score"]):
+            best = cand
+    return [], best
 
 
 def find_best_jkanime_match(title: str, alt_titles: list[str] | None = None) -> dict | None:
-    """Search jkanime for the best-matching series, retrying with alt titles.
-
-    Mirrors scraper_animeav1.find_best_animeav1_match's retry strategy: try
-    the primary title first, then each alt title, always scoring against the
-    *original* title/alt_titles so the final pick is judged consistently
-    regardless of which query surfaced it.
-    """
-    match = select_best_jkanime_match(search_jkanime(title), title, alt_titles=alt_titles)
-    if match:
-        return match
-
-    for alt in (alt_titles or []):
-        if not alt or alt == title:
-            continue
-        match = select_best_jkanime_match(search_jkanime(alt), title, alt_titles=alt_titles)
-        if match:
-            return match
-
-    return None
+    """Search jkanime and return only an EXACT title match (or None)."""
+    exacts, _ = find_jkanime_candidates(title, alt_titles)
+    return exacts[0] if exacts else None
 
 
 def fetch_jkanime_series_info(slug: str) -> dict | None:
-    """Fetch episode count and airing status from a jkanime series page.
+    """Fetch episode count, status, type and start year from a jkanime page.
 
     GET https://jkanime.net/{slug}/
-    Parses the info sidebar list items for "Episodios: N" and "Estado: ...".
+    Parses the info sidebar list items: "Episodios: N", "Estado: ...",
+    "Tipo: Serie|Pelicula|OVA|Especial" and "Emitido: <date with year>".
 
-    Returns {"episode_count": int | None, "status": str | None}, or None on
-    any error (fail-open — caller falls back to metadata-only episodes).
+    Returns {"episode_count", "status", "media_type", "year", "title"} (each None when
+    absent), or None on any error / empty page (fail-open — caller falls back
+    to metadata-only episodes).
     """
     try:
         resp = _scraper.get(f"{JKANIME_BASE}/{slug}/", timeout=20)
@@ -157,6 +175,11 @@ def fetch_jkanime_series_info(slug: str) -> dict | None:
     soup = BeautifulSoup(resp.text, "html.parser")
     episode_count = None
     status = None
+    media_type = None
+    year = None
+    # og:title looks like "<Title> - anime <Title> online JkAnime".
+    og = soup.find("meta", attrs={"property": "og:title"})
+    title = ((og.get("content") or "").split(" - anime ")[0].strip() or None) if og else None
 
     for li in soup.find_all("li"):
         text = li.get_text(" ", strip=True)
@@ -167,10 +190,22 @@ def fetch_jkanime_series_info(slug: str) -> dict | None:
                 episode_count = int(m.group(1))
         elif low.startswith("estado") and ":" in text:
             status = text.split(":", 1)[-1].strip() or None
+        elif low.startswith("tipo") and ":" in text and media_type is None:
+            media_type = text.split(":", 1)[-1].strip() or None
+        elif low.startswith("emitido") and year is None:
+            m = re.search(r"\b((?:19|20)\d{2})\b", text)
+            if m:
+                year = int(m.group(1))
 
     if episode_count is None and status is None:
         return None
-    return {"episode_count": episode_count, "status": status}
+    return {
+        "episode_count": episode_count,
+        "status": status,
+        "media_type": media_type,
+        "year": year,
+        "title": title,
+    }
 
 
 def scrape_jkanime_m3u8(serie_slug: str, episode_number: int) -> str | None:
