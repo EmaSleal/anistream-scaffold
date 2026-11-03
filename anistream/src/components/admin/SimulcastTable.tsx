@@ -233,6 +233,12 @@ export default function SimulcastTable({ series, unresolvedGaps = [] }: Props) {
         >
           Sync complete — Added {syncResult.added}, Updated {syncResult.updated}, Skipped{" "}
           {syncResult.skipped}, Finished {syncResult.finished}
+          {syncResult.unverified ? `, Unverified ${syncResult.unverified}` : ""}
+          {syncResult.source === "mal"
+            ? " (via MAL — Jikan unavailable)"
+            : syncResult.source === "jikan"
+              ? " (via Jikan)"
+              : ""}
         </div>
       )}
 

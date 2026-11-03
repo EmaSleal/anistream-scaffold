@@ -10,28 +10,38 @@ POST /api/simulcast/refresh/<series_id>
 Admin endpoints (require @require_admin):
   GET  /api/simulcast/list                  — list all simulcast series (camelCase DTO)
   PATCH /api/simulcast/<id>/principal-slug  — update principal_slug for a series
-  POST /api/simulcast/sync-jikan            — sync DB with Jikan seasons/now
+  POST /api/simulcast/sync-jikan            — sync DB with Jikan seasons/now (MAL fallback)
   GET  /api/simulcast/gaps                  — list series with an unresolved
                                                episode gap (simulcast-gap-recovery
                                                Phase 4, read-only visibility)
 """
 from __future__ import annotations
 
+import logging
+import time
 from datetime import datetime, timedelta, timezone
 
 from flask import Blueprint, jsonify, request
 
+import config
 from auth import require_admin, require_service
 from db.series import get_series_list, get_series_by_id, upsert_series_stub
 from db.simulcast import get_series_simulcast_data, update_simulcast_fields, get_unresolved_gaps
 from domain.jikan_refresh import refresh_series_from_jikan
-from fetcher import fetch_kitsu_series_status, fetch_kitsu_episodes, fetch_jikan_episodes, fetch_simulcasts
+from fetcher import fetch_kitsu_series_status, fetch_kitsu_episodes, fetch_jikan_episodes, fetch_simulcasts, fetch_mal_season_airing, fetch_anime_by_id
 from routes.ingest_routes import _build_episodes_from_animeav1, _claimed_episode_offset
 from storage import get_series_by_mal_id, get_client, upsert_episodes
+
+logger = logging.getLogger(__name__)
 
 simulcast_bp = Blueprint("simulcast", __name__, url_prefix="/api/simulcast")
 
 _COOLDOWN_SECONDS = 3600
+
+# MAL-fallback mode runs one fetch_anime_by_id per flagged-but-absent series,
+# sequentially (10 s timeout each). Cap the whole loop well under the gunicorn
+# worker timeout (120 s); series left over are reported as ``unverified``.
+_MAL_LOOKUP_BUDGET_SECONDS = 60
 
 
 def _fill_aired_at_from_cadence(episodes: list[dict]) -> None:
@@ -307,17 +317,43 @@ def sync_jikan():
       - mal_id in DB marked is_simulcast=True but absent from the current
         Jikan airing set (series finished) → set is_simulcast=False → finished
 
+    Source selection (ADR-017): Jikan first; on failure, if MAL_CLIENT_ID is
+    set, the MAL API v2 seasonal list. In MAL mode the list only holds titles
+    that started this season, so "finished" is decided per series from its own
+    MAL record (fetch_anime_by_id); lookup failures leave the flag unchanged
+    and are counted as ``unverified``.
+
     Returns:
-        200  {added, updated, skipped, finished}
-        502  {"error": "Jikan fetch failed"}  — if Jikan is unreachable
+        200  {added, updated, skipped, finished, source: "jikan"|"mal",
+              unverified (MAL mode only)}
+        502  {"error": ..., "source_errors": {"jikan": ..., "mal": ...}}
+             — both sources failed (or MAL not configured); nothing written
         401/403  via @require_admin
     """
+    source_errors: dict[str, str] = {}
+    source = "jikan"
     try:
         entries = fetch_simulcasts()
-    except Exception:
-        return jsonify({"error": "Jikan fetch failed"}), 502
+    except Exception as exc:
+        logger.exception("sync-jikan: Jikan fetch failed (%s: %s)", type(exc).__name__, exc)
+        source_errors["jikan"] = f"{type(exc).__name__}: {exc}"
+        entries = None
+        if not config.MAL_CLIENT_ID:
+            source_errors["mal"] = "MAL_CLIENT_ID not configured"
+        else:
+            try:
+                entries = fetch_mal_season_airing()
+                source = "mal"
+            except Exception as mal_exc:
+                logger.exception(
+                    "sync-jikan: MAL fallback failed (%s: %s)", type(mal_exc).__name__, mal_exc
+                )
+                source_errors["mal"] = f"{type(mal_exc).__name__}: {mal_exc}"
 
-    # Full set of mal_ids Jikan currently reports as airing, unfiltered by the
+    if entries is None:
+        return jsonify({"error": "All simulcast sources failed", "source_errors": source_errors}), 502
+
+    # Full set of mal_ids the source reports as airing, unfiltered by the
     # hentai/score gates below — those gates only decide whether a *new* stub
     # gets added, not whether an already-tracked series is still airing.
     airing_mal_ids = {
@@ -330,6 +366,8 @@ def sync_jikan():
     updated = 0
     skipped = 0
     finished = 0
+    unverified = 0
+    lookup_started = time.monotonic()
 
     for entry in entries:
         # Only process currently airing entries
@@ -387,12 +425,35 @@ def sync_jikan():
     )
     for row in currently_flagged.data or []:
         mal_id = row.get("mal_id")
-        if mal_id is not None and mal_id not in airing_mal_ids:
-            get_client().table("series").update({"is_simulcast": False}).eq(
-                "id", row["id"]
-            ).execute()
-            finished += 1
+        if mal_id is None or mal_id in airing_mal_ids:
+            continue
+        if source == "mal":
+            # Seasonal list lacks continuing series: verify on the series' own record.
+            if time.monotonic() - lookup_started > _MAL_LOOKUP_BUDGET_SECONDS:
+                unverified += 1
+                continue
+            try:
+                status = fetch_anime_by_id(mal_id).get("status")
+            except Exception as exc:
+                logger.warning(
+                    "sync-jikan: could not verify mal_id=%s (%s: %s)", mal_id, type(exc).__name__, exc
+                )
+                unverified += 1
+                continue
+            if status == "Currently Airing":
+                continue
+        get_client().table("series").update({"is_simulcast": False}).eq(
+            "id", row["id"]
+        ).execute()
+        finished += 1
 
-    return jsonify(
-        {"added": added, "updated": updated, "skipped": skipped, "finished": finished}
-    ), 200
+    result = {
+        "added": added,
+        "updated": updated,
+        "skipped": skipped,
+        "finished": finished,
+        "source": source,
+    }
+    if source == "mal":
+        result["unverified"] = unverified
+    return jsonify(result), 200

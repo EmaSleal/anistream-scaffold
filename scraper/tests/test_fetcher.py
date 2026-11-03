@@ -140,3 +140,68 @@ class TestFetchRelatedAnime:
         finally:
             config.MAL_CLIENT_ID = original
         assert result == (None, None)
+
+
+class TestMalSeasonAiring:
+    @staticmethod
+    def _resp(body):
+        r = MagicMock()
+        r.json.return_value = body
+        r.raise_for_status.return_value = None
+        return r
+
+    def test_paginates_unwraps_nodes_and_flags_airing(self):
+        from datetime import date
+        page1 = self._resp({
+            "data": [{"node": {"id": 1, "title": "A", "status": "currently_airing", "mean": 7.5,
+                               "genres": [{"id": 1, "name": "Action"}]}}],
+            "paging": {"next": "https://api.myanimelist.net/v2/anime/season/2026/fall?offset=1"},
+        })
+        page2 = self._resp({
+            "data": [{"node": {"id": 2, "title": "B", "status": "finished_airing"}}],
+            "paging": {},
+        })
+        with patch("fetcher.MAL_CLIENT_ID", "key"), \
+             patch("fetcher.requests.get", side_effect=[page1, page2]) as get:
+            out = fetcher.fetch_mal_season_airing(today=date(2026, 11, 2))
+        assert [e["mal_id"] for e in out] == [1, 2]
+        assert out[0]["airing"] is True and out[1]["airing"] is False
+        assert out[0]["score"] == 7.5 and out[0]["genres"][0]["name"] == "Action"
+        first, second = get.call_args_list
+        assert first.args[0].endswith("/anime/season/2026/fall")
+        assert first.kwargs["headers"] == {"X-MAL-CLIENT-ID": "key"}
+        assert first.kwargs["params"]["limit"] == 500
+        assert "status" in first.kwargs["params"]["fields"]
+        assert second.args[0].endswith("offset=1")
+        assert second.kwargs["headers"] == {"X-MAL-CLIENT-ID": "key"}
+
+    def test_mid_pagination_failure_raises(self):
+        page1 = self._resp({
+            "data": [{"node": {"id": 1, "status": "currently_airing"}}],
+            "paging": {"next": "https://api.myanimelist.net/v2/next"},
+        })
+        with patch("fetcher.MAL_CLIENT_ID", "key"), \
+             patch("fetcher.requests.get", side_effect=[page1, requests.ConnectionError("x")]):
+            with pytest.raises(requests.RequestException):
+                fetcher.fetch_mal_season_airing()
+
+    def test_http_error_raises(self):
+        bad = MagicMock()
+        bad.raise_for_status.side_effect = requests.HTTPError("500")
+        with patch("fetcher.MAL_CLIENT_ID", "key"), patch("fetcher.requests.get", return_value=bad):
+            with pytest.raises(requests.HTTPError):
+                fetcher.fetch_mal_season_airing()
+
+    @pytest.mark.parametrize("d,expected", [
+        ((2026, 1, 1), (2026, "winter")),
+        ((2026, 3, 31), (2026, "winter")),
+        ((2026, 4, 1), (2026, "spring")),
+        ((2026, 6, 30), (2026, "spring")),
+        ((2026, 7, 1), (2026, "summer")),
+        ((2026, 9, 30), (2026, "summer")),
+        ((2026, 10, 1), (2026, "fall")),
+        ((2026, 12, 31), (2026, "fall")),
+    ])
+    def test_season_boundaries(self, d, expected):
+        from datetime import date
+        assert fetcher.mal_season_for(date(*d)) == expected

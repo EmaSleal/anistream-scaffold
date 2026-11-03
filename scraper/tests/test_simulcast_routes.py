@@ -358,10 +358,11 @@ class TestSyncJikanAuthGuard:
 
 class TestSyncJikanFetchFailure:
     def test_jikan_fetch_error_returns_502(self, client):
-        with patch("routes.simulcast_routes.fetch_simulcasts", side_effect=RuntimeError("boom")):
+        with patch("routes.simulcast_routes.fetch_simulcasts", side_effect=RuntimeError("boom")), \
+             patch("routes.simulcast_routes.config.MAL_CLIENT_ID", ""):
             res = client.post("/api/simulcast/sync-jikan", headers=_admin_header())
         assert res.status_code == 502
-        assert json.loads(res.data)["error"] == "Jikan fetch failed"
+        assert "boom" in json.loads(res.data)["source_errors"]["jikan"]
 
 
 class TestSyncJikanReconciliation:
@@ -440,7 +441,7 @@ class TestSyncJikanReconciliation:
 
         assert res.status_code == 200
         data = json.loads(res.data)
-        assert data == {"added": 1, "updated": 1, "skipped": 1, "finished": 1}
+        assert data == {"added": 1, "updated": 1, "skipped": 1, "finished": 1, "source": "jikan"}
 
         updates_by_id = {}
         for upd_call, eq_call in zip(mock_table.update.call_args_list, update_chain.eq.call_args_list):
@@ -452,6 +453,146 @@ class TestSyncJikanReconciliation:
         assert "skipped-id" not in updates_by_id
         assert "hentai-still-airing-id" not in updates_by_id
         assert "no-mal-id" not in updates_by_id
+
+
+# ---------------------------------------------------------------------------
+# sync-jikan MAL fallback (ADR-017)
+# ---------------------------------------------------------------------------
+
+def _sync_mocks(flagged):
+    select_chain = MagicMock()
+    select_chain.eq.return_value = select_chain
+    select_chain.execute.return_value = MagicMock(data=flagged)
+    update_chain = MagicMock()
+    update_chain.eq.return_value = update_chain
+    table = MagicMock()
+    table.select.return_value = select_chain
+    table.update.return_value = update_chain
+    mock_client = MagicMock()
+    mock_client.table.return_value = table
+    return mock_client, table, update_chain
+
+
+def _updated_ids(table, update_chain):
+    return {
+        eq.args[1]: upd.args[0]
+        for upd, eq in zip(table.update.call_args_list, update_chain.eq.call_args_list)
+    }
+
+
+def _mal_entries():
+    return [
+        {"mal_id": 1, "airing": True, "genres": [{"name": "Action"}], "score": 7.5},
+        {"mal_id": 2, "airing": False, "genres": [{"name": "Action"}], "score": 7.5},
+        {"mal_id": 3, "airing": True, "genres": [{"name": "Hentai"}], "score": 7.5},
+    ]
+
+
+class TestSyncJikanMalFallback:
+    def _post(self, client, flagged, *, jikan_exc=RuntimeError("down"), mal_id="key",
+              mal_entries=None, mal_exc=None, by_id=None):
+        mock_client, table, update_chain = _sync_mocks(flagged)
+        calls = {"n": 0}
+
+        def by_mal(mid):
+            if mid == 1:
+                calls["n"] += 1
+                return None if calls["n"] == 1 else {"id": "new-id"}
+            return None
+
+        mal_patch = (
+            patch("routes.simulcast_routes.fetch_mal_season_airing", side_effect=mal_exc)
+            if mal_exc else
+            patch("routes.simulcast_routes.fetch_mal_season_airing",
+                  return_value=mal_entries if mal_entries is not None else _mal_entries())
+        )
+        with patch("routes.simulcast_routes.fetch_simulcasts", side_effect=jikan_exc), \
+             patch("routes.simulcast_routes.config.MAL_CLIENT_ID", mal_id), \
+             mal_patch as mal_mock, \
+             patch("routes.simulcast_routes.fetch_anime_by_id", side_effect=by_id) as by_id_mock, \
+             patch("routes.simulcast_routes.get_series_by_mal_id", side_effect=by_mal), \
+             patch("routes.simulcast_routes.get_series_by_id", return_value=None), \
+             patch("routes.simulcast_routes.upsert_series_stub") as stub, \
+             patch("routes.simulcast_routes.get_client", return_value=mock_client) as gc:
+            res = client.post("/api/simulcast/sync-jikan", headers=_admin_header())
+        return res, table, update_chain, stub, gc, by_id_mock, mal_mock
+
+    def test_jikan_failure_uses_mal_and_applies_filters(self, client):
+        res, table, uc, stub, _, _, mal_mock = self._post(client, [])
+        assert res.status_code == 200
+        data = json.loads(res.data)
+        assert data == {"added": 1, "updated": 0, "skipped": 0, "finished": 0,
+                        "source": "mal", "unverified": 0}
+        stub.assert_called_once()
+        assert stub.call_args.args[0] == 1  # not-airing and Hentai entries skipped
+        assert _updated_ids(table, uc) == {"new-id": {"is_simulcast": True}}
+
+    def test_continuing_series_still_airing_not_finished(self, client):
+        res, table, uc, _, _, by_id_mock, _ = self._post(
+            client, [{"id": "cont", "mal_id": 50}],
+            by_id=lambda mid: {"mal_id": mid, "status": "Currently Airing"},
+        )
+        data = json.loads(res.data)
+        assert data["finished"] == 0 and data["unverified"] == 0
+        by_id_mock.assert_called_once_with(50)
+        assert "cont" not in _updated_ids(table, uc)
+
+    def test_absent_and_finished_on_mal_is_finished(self, client):
+        res, table, uc, *_ = self._post(
+            client, [{"id": "done", "mal_id": 51}],
+            by_id=lambda mid: {"mal_id": mid, "status": "Finished Airing"},
+        )
+        assert json.loads(res.data)["finished"] == 1
+        assert _updated_ids(table, uc)["done"] == {"is_simulcast": False}
+
+    def test_lookup_failure_is_unverified_flag_unchanged(self, client):
+        def boom(mid):
+            raise RuntimeError("mal down")
+
+        res, table, uc, *_ = self._post(client, [{"id": "unk", "mal_id": 52}], by_id=boom)
+        data = json.loads(res.data)
+        assert data["finished"] == 0 and data["unverified"] == 1
+        assert "unk" not in _updated_ids(table, uc)
+
+    def test_lookup_budget_exceeded_marks_rest_unverified(self, client):
+        # Clock: start=0, first check=1 (within budget), second check=1000 (over).
+        ticks = iter([0, 1, 1000, 1001, 1002])
+        with patch("routes.simulcast_routes.time.monotonic", side_effect=lambda: next(ticks)):
+            res, table, uc, _, _, by_id_mock, _ = self._post(
+                client,
+                [{"id": "a", "mal_id": 60}, {"id": "b", "mal_id": 61}, {"id": "c", "mal_id": 62}],
+                by_id=lambda mid: {"mal_id": mid, "status": "Finished Airing"},
+            )
+        data = json.loads(res.data)
+        assert data["finished"] == 1 and data["unverified"] == 2
+        by_id_mock.assert_called_once_with(60)
+        updated = _updated_ids(table, uc)
+        assert updated["a"] == {"is_simulcast": False}
+        assert "b" not in updated and "c" not in updated
+
+    def test_series_in_mal_list_not_looked_up(self, client):
+        res, _, _, _, _, by_id_mock, _ = self._post(client, [{"id": "a", "mal_id": 1}])
+        by_id_mock.assert_not_called()
+
+    def test_both_sources_fail_returns_502_and_writes_nothing(self, client):
+        res, table, _, stub, gc, _, _ = self._post(client, [], mal_exc=RuntimeError("mal boom"))
+        assert res.status_code == 502
+        body = json.loads(res.data)
+        assert "error" in body
+        assert "RuntimeError: down" in body["source_errors"]["jikan"]
+        assert "mal boom" in body["source_errors"]["mal"]
+        stub.assert_not_called()
+        gc.assert_not_called()
+        table.update.assert_not_called()
+
+    def test_mal_client_id_unset_returns_502(self, client):
+        res, table, _, stub, gc, _, mal_mock = self._post(client, [], mal_id="")
+        assert res.status_code == 502
+        body = json.loads(res.data)
+        assert "jikan" in body["source_errors"] and "mal" in body["source_errors"]
+        mal_mock.assert_not_called()
+        stub.assert_not_called()
+        gc.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
