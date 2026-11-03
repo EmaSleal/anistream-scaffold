@@ -17,6 +17,10 @@ export interface SyncResult {
   updated: number;
   skipped: number;
   finished: number;
+  /** Data source Flask used; "mal" means Jikan was unavailable. */
+  source?: "jikan" | "mal";
+  /** MAL mode only: flagged series whose status could not be verified. */
+  unverified?: number;
 }
 
 export interface UnresolvedGap {
@@ -110,9 +114,14 @@ export async function syncFromJikan(): Promise<SyncResult> {
 
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
-    throw new Error(
-      (data as { error?: string }).error ?? `Request failed with status ${res.status}`,
-    );
+    const body = data as { error?: string; source_errors?: Record<string, string> };
+    const base = body.error ?? `Request failed with status ${res.status}`;
+    const details = body.source_errors
+      ? Object.entries(body.source_errors)
+          .map(([src, msg]) => `${src}: ${msg}`)
+          .join("; ")
+      : "";
+    throw new Error(details ? `${base} (${details})` : base);
   }
 
   return res.json() as Promise<SyncResult>;

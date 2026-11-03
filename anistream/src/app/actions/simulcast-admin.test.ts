@@ -16,7 +16,7 @@ vi.mock("next/headers", () => ({
 // ---------------------------------------------------------------------------
 // Import after mocks are set up
 // ---------------------------------------------------------------------------
-import { getUnresolvedGaps } from "./simulcast-admin";
+import { getUnresolvedGaps, syncFromJikan } from "./simulcast-admin";
 
 describe("getUnresolvedGaps", () => {
   beforeEach(() => {
@@ -89,5 +89,46 @@ describe("getUnresolvedGaps", () => {
     expect(mockFetch).toHaveBeenCalledOnce();
     const calledUrl = mockFetch.mock.calls[0][0] as string;
     expect(calledUrl).toContain("/api/admin/simulcast/gaps");
+  });
+});
+
+describe("syncFromJikan", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("throws a message naming both sources on a 502 with source_errors", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 502,
+        json: async () => ({
+          error: "All simulcast sources failed",
+          source_errors: { jikan: "Timeout: slow", mal: "HTTPError: 500" },
+        }),
+      }),
+    );
+
+    await expect(syncFromJikan()).rejects.toThrow(
+      /All simulcast sources failed.*jikan: Timeout: slow.*mal: HTTPError: 500/,
+    );
+  });
+
+  it("returns the SyncResult with source and unverified on 200", async () => {
+    const body = {
+      added: 1,
+      updated: 0,
+      skipped: 2,
+      finished: 0,
+      source: "mal",
+      unverified: 3,
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => body }),
+    );
+
+    await expect(syncFromJikan()).resolves.toEqual(body);
   });
 });
