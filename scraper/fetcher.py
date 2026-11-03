@@ -1,5 +1,6 @@
 import re
 import time
+from datetime import date, datetime, timezone
 import requests
 from config import JIKAN_BASE, KITSU_BASE, REQUEST_DELAY, MAL_CLIENT_ID
 
@@ -399,6 +400,55 @@ def fetch_simulcasts() -> list[dict]:
         if not pagination.get("has_next_page"):
             break
         page += 1
+    return results
+
+
+def mal_season_for(today: date | None = None) -> tuple[int, str]:
+    """Return (year, season) for a date (default: today in UTC).
+
+    Jan-Mar winter, Apr-Jun spring, Jul-Sep summer, Oct-Dec fall.
+    """
+    if today is None:
+        today = datetime.now(timezone.utc).date()
+    season = ("winter", "spring", "summer", "fall")[(today.month - 1) // 3]
+    return today.year, season
+
+
+_MAL_SEASON_FIELDS = (
+    "alternative_titles,main_picture,num_episodes,status,mean,rank,popularity,"
+    "media_type,rating,genres,synopsis,start_date,start_season,broadcast"
+)
+
+
+def fetch_mal_season_airing(today: date | None = None) -> list[dict]:
+    """Fetch the current season's anime list from MAL API v2 (Jikan fallback).
+
+    GET /v2/anime/season/{year}/{season}, paginated via ``paging.next``.
+    Entries are returned in the Jikan shape (``airing`` is True when MAL
+    status is currently_airing). ``nsfw=true`` is requested so adult titles
+    are not silently hidden; callers still apply their own Hentai filter.
+
+    Note: the MAL seasonal list only holds titles that *started* that season,
+    so it must not be treated as the complete set of airing series.
+
+    Raises:
+        requests.RequestException: if any page fails (never a partial list).
+    """
+    year, season = mal_season_for(today)
+    url: str | None = f"{_MAL_BASE}/anime/season/{year}/{season}"
+    params: dict | None = {"limit": 500, "nsfw": "true", "fields": _MAL_SEASON_FIELDS}
+    headers = {"X-MAL-CLIENT-ID": MAL_CLIENT_ID}
+    results: list[dict] = []
+    while url:
+        resp = requests.get(url, params=params, headers=headers, timeout=10)
+        resp.raise_for_status()
+        body = resp.json()
+        for item in body.get("data", []):
+            node = item.get("node") if isinstance(item, dict) else None
+            if node:
+                results.append(_mal_node_to_jikan(node))
+        url = (body.get("paging") or {}).get("next")
+        params = None  # paging.next already carries its query string
     return results
 
 

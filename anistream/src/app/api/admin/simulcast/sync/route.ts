@@ -10,7 +10,8 @@ import { flaskAuthPost } from "@/lib/flask-client";
  * mints a short-lived HS256 internal JWT, and proxies to Flask POST
  * /api/simulcast/sync-jikan.
  *
- * Returns {added, updated, skipped} on success, or {error} on failure.
+ * Returns {added, updated, skipped, finished, source, unverified?} on success,
+ * or {error, source_errors?} on failure.
  */
 export async function POST(): Promise<NextResponse> {
   const session = await auth();
