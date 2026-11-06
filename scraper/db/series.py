@@ -247,6 +247,19 @@ def upsert_series_stub(mal_id: int, entry: dict | None = None) -> None:
         logging.exception("upsert_series_stub failed for mal_id=%s", mal_id)
 
 
+def get_series_title_year_by_id(series_id: str) -> dict | None:
+    """Return ``{title, year}`` for the series row with this id, or ``None``."""
+    client = storage.get_client()
+    result = (
+        client.table("series")
+        .select("title, year")
+        .eq("id", series_id)
+        .maybe_single()
+        .execute()
+    )
+    return result.data if result else None
+
+
 def get_series_identity_by_id(series_id: str) -> dict | None:
     """Return ``{id, mal_id, franchise_id}`` for the series row with this id, or ``None``."""
     client = storage.get_client()

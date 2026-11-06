@@ -1,0 +1,6 @@
+# Test-only dependencies (ff-mpeg from requirements.txt is not needed; ffmpeg is mocked)
+fastapi==0.115.0
+python-multipart==0.0.12
+yt-dlp==2025.1.15
+httpx==0.28.1
+pytest
