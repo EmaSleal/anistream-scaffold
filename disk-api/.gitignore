@@ -1,0 +1,6 @@
+# Secrets and runtime state: never commit
+.env
+venv/
+*.db
+__pycache__/
+*.pyc

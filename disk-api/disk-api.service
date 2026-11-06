@@ -1,0 +1,28 @@
+[Unit]
+Description=astro1 Disk API
+Documentation=https://github.com/EmaSleal/anistream-scaffold
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+User=m4n0
+Group=m4n0
+
+WorkingDirectory=/home/m4n0/disk-api-skeleton
+EnvironmentFile=/home/m4n0/disk-api-skeleton/.env
+
+ExecStart=/home/m4n0/disk-api-skeleton/venv/bin/uvicorn \
+    app.main:app \
+    --host 0.0.0.0 \
+    --port 8888 \
+    --workers 1
+
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=disk-api
+
+[Install]
+WantedBy=multi-user.target
