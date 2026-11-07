@@ -207,3 +207,47 @@ class TestGetJobStatus:
         monkeypatch.setattr(nas_jobs_module, "NAS_BASE_URL", "")
         monkeypatch.setattr(nas_jobs_module, "NAS_API_KEY", "")
         assert get_job_status("job-1") == {"status": "unknown"}
+
+
+# ---------------------------------------------------------------------------
+# list_downloaded_episodes
+# ---------------------------------------------------------------------------
+
+class TestListDownloadedEpisodes:
+    @pytest.fixture(autouse=True)
+    def _setup(self, monkeypatch):
+        from cache import TTLCache
+        monkeypatch.setattr(nas_jobs_module, "NAS_BASE_URL", "http://nas")
+        monkeypatch.setattr(nas_jobs_module, "NAS_API_KEY", "k")
+        monkeypatch.setattr(nas_jobs_module, "_DOWNLOADED_CACHE", TTLCache(ttl_seconds=60))
+
+    def test_ok(self):
+        resp = _mock_response(200, {"series_id": "s", "episode_numbers": [3, 1]})
+        with patch("domain.nas_jobs.requests.get", return_value=resp) as g:
+            assert nas_jobs_module.list_downloaded_episodes("s") == [1, 3]
+        assert g.call_args[0][0] == "http://nas/api/episodes/s"
+
+    def test_not_configured(self, monkeypatch):
+        monkeypatch.setattr(nas_jobs_module, "NAS_BASE_URL", "")
+        with patch("domain.nas_jobs.requests.get") as g:
+            assert nas_jobs_module.list_downloaded_episodes("s") == []
+        g.assert_not_called()
+
+    def test_non_ok_not_cached(self):
+        with patch("domain.nas_jobs.requests.get", return_value=_mock_response(404)) as g:
+            assert nas_jobs_module.list_downloaded_episodes("s") == []
+            assert nas_jobs_module.list_downloaded_episodes("s") == []
+        assert g.call_count == 2
+
+    def test_unreachable_not_cached(self):
+        with patch("domain.nas_jobs.requests.get", side_effect=Exception("boom")) as g:
+            assert nas_jobs_module.list_downloaded_episodes("s") == []
+            assert nas_jobs_module.list_downloaded_episodes("s") == []
+        assert g.call_count == 2
+
+    def test_ok_is_cached(self):
+        resp = _mock_response(200, {"episode_numbers": [1]})
+        with patch("domain.nas_jobs.requests.get", return_value=resp) as g:
+            nas_jobs_module.list_downloaded_episodes("s")
+            assert nas_jobs_module.list_downloaded_episodes("s") == [1]
+        assert g.call_count == 1

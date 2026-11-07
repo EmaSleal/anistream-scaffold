@@ -790,3 +790,11 @@ class TestUpdateStreamSource:
             result = db_series_mod.update_stream_source("nonexistent", "some-fallback-slug")
 
         assert result is False
+
+
+def test_downloaded_episodes_public_route(client):
+    with patch("routes.series_routes.list_downloaded_episodes", return_value=[1, 2]) as m:
+        resp = client.get("/api/series/abc/downloaded-episodes")
+    assert resp.status_code == 200
+    assert resp.get_json() == {"episodeNumbers": [1, 2]}
+    m.assert_called_once_with("abc")

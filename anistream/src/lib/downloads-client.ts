@@ -38,3 +38,17 @@ export async function pollJob(jobId: string): Promise<{ status: JobPhase; error?
   if (!res.ok) return { status: "unknown" };
   return res.json().catch(() => ({ status: "unknown" }));
 }
+
+/** Episode numbers of a series stored on the NAS. Returns [] on any failure. */
+export async function fetchDownloadedEpisodes(seriesId: string): Promise<number[]> {
+  try {
+    const res = await fetch(`/api/series/${seriesId}/downloaded-episodes`, {
+      cache: "no-store",
+    });
+    if (!res.ok) return [];
+    const data = await res.json();
+    return Array.isArray(data?.episodeNumbers) ? data.episodeNumbers : [];
+  } catch {
+    return [];
+  }
+}

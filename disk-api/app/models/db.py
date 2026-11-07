@@ -136,6 +136,17 @@ def get_file_by_episode(series_id: str, episode_number: int):
         return dict(row) if row else None
 
 
+def list_episode_numbers(series_id: str) -> list[int]:
+    with get_connection() as conn:
+        rows = conn.execute(
+            "SELECT DISTINCT episode_number FROM files "
+            "WHERE series_id = ? AND episode_number IS NOT NULL "
+            "ORDER BY episode_number",
+            (series_id,),
+        ).fetchall()
+        return [r["episode_number"] for r in rows]
+
+
 def delete_file_record(file_id: int) -> bool:
     with get_connection() as conn:
         cursor = conn.execute("DELETE FROM files WHERE id = ?", (file_id,))

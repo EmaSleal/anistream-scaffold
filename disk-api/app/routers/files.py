@@ -143,6 +143,12 @@ async def list_files(
     return db.list_files(category=category, limit=limit, offset=offset)
 
 
+@router.get("/episodes/{series_id}")
+async def list_episode_numbers(series_id: str):
+    """Bulk status: episode numbers stored for a series (empty list if unknown)."""
+    return {"series_id": series_id, "episode_numbers": db.list_episode_numbers(series_id)}
+
+
 @router.get("/episodes/{series_id}/{episode_number}")
 async def get_episode_file(series_id: str, episode_number: int):
     """
