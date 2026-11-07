@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect } from "react";
 import type { Episode } from "@/types";
 import { EpisodeCard } from "@/components/shared/EpisodeCard";
+import { fetchDownloadedEpisodes } from "@/lib/downloads-client";
 import styles from "./EpisodesSection.module.css";
 
 interface Season {
@@ -56,6 +57,21 @@ export function EpisodesSection({ seasons, initialSeasonIdx = 0, isAdmin = false
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
   }, []);
+
+  const seriesId = seasons[seasonIdx]?.episodes[0]?.seriesId;
+  const [downloaded, setDownloaded] = useState<Set<number>>(new Set());
+
+  useEffect(() => {
+    setDownloaded(new Set());
+    if (!seriesId) return;
+    let cancelled = false;
+    fetchDownloadedEpisodes(seriesId).then((nums) => {
+      if (!cancelled) setDownloaded(new Set(nums));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [seriesId]);
 
   if (seasons.length === 0) return null;
 
@@ -140,7 +156,13 @@ export function EpisodesSection({ seasons, initialSeasonIdx = 0, isAdmin = false
 
       <div className={styles.grid}>
         {episodes.map((ep) => (
-          <EpisodeCard key={ep.id} ep={ep} showSeenBadge isAdmin={isAdmin} />
+          <EpisodeCard
+            key={ep.id}
+            ep={ep}
+            showSeenBadge
+            isAdmin={isAdmin}
+            isDownloaded={downloaded.has(ep.episode)}
+          />
         ))}
       </div>
 

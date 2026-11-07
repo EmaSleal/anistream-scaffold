@@ -22,6 +22,11 @@ _TIMEOUT = 5
 _STATUS_CACHE = TTLCache(ttl_seconds=60)
 
 
+# Caches the per-series downloaded-episodes list (same policy: failures are
+# never cached).
+_DOWNLOADED_CACHE = TTLCache(ttl_seconds=60)
+
+
 class NasUnavailable(Exception):
     """Raised when the NAS is unreachable or returns a server error."""
 
@@ -165,3 +170,44 @@ def get_job_status(job_id: str) -> dict:
     if data.get("error"):
         result["error"] = data["error"]
     return result
+
+
+def list_downloaded_episodes(series_id: str) -> list[int]:
+    """Return the episode numbers of a series stored on the NAS (one bulk call).
+
+    Fail-open: NAS not configured, unreachable or non-OK responses yield [].
+    Only successful responses are cached.
+    """
+    if not nas_configured():
+        return []
+
+    cached = _DOWNLOADED_CACHE.get(series_id)
+    if cached is not None:
+        return cached
+
+    try:
+        resp = requests.get(
+            f"{NAS_BASE_URL}/api/episodes/{series_id}",
+            headers={"X-API-Key": NAS_API_KEY},
+            timeout=_TIMEOUT,
+        )
+    except Exception:
+        logger.warning("[nas_jobs] NAS unreachable for list_downloaded_episodes series=%s", series_id)
+        return []
+
+    if not resp.ok:
+        logger.warning(
+            "[nas_jobs] unexpected NAS status %s for list_downloaded_episodes series=%s",
+            resp.status_code,
+            series_id,
+        )
+        return []
+
+    try:
+        numbers = sorted(int(n) for n in resp.json().get("episode_numbers", []))
+    except Exception:
+        logger.warning("[nas_jobs] bad payload for list_downloaded_episodes series=%s", series_id)
+        return []
+
+    _DOWNLOADED_CACHE.set(series_id, numbers)
+    return numbers

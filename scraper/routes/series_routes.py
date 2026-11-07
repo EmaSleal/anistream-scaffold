@@ -18,6 +18,7 @@ from fetcher import fetch_related_anime, fetch_jikan_by_genre, search_animeflv
 from scraper_animeav1 import search_animeav1
 from scraper_jkanime import search_jkanime
 from cache import TTLCache
+from domain.nas_jobs import list_downloaded_episodes
 from routes.ingest_routes import backfill_episodes_from_metadata, backfill_episodes_from_jkanime
 
 series_bp = Blueprint("series", __name__, url_prefix="/api/series")
@@ -441,6 +442,12 @@ def series_seasons(series_id: str):
     # correctly.
     payload["hasOwnEpisodes"] = bool(released_by_series.get(series_id))
     return jsonify(payload)
+
+
+@series_bp.get("/<series_id>/downloaded-episodes")
+def series_downloaded_episodes(series_id: str):
+    """GET /api/series/<id>/downloaded-episodes — episode numbers stored on the NAS (public)."""
+    return jsonify({"episodeNumbers": list_downloaded_episodes(series_id)})
 
 
 @series_bp.get("/<series_id>/episodes")

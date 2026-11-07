@@ -13,6 +13,30 @@ interface EpisodeCardProps {
   durationDisplay?: "total" | "remaining";
   size?: "sm" | "md";
   isAdmin?: boolean;
+  isDownloaded?: boolean;
+}
+
+function DownloadedIcon() {
+  return (
+    <svg
+      className={styles.downloadedIcon}
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      role="img"
+      aria-label="Descargado"
+    >
+      <title>Descargado</title>
+      <path d="M12 4v11" />
+      <polyline points="7 11 12 16 17 11" />
+      <path d="M5 20h14" />
+    </svg>
+  );
 }
 
 export function EpisodeCard({
@@ -23,6 +47,7 @@ export function EpisodeCard({
   durationDisplay = "total",
   size = "md",
   isAdmin = false,
+  isDownloaded = false,
 }: EpisodeCardProps) {
   const pct =
     ep.duration > 0 && ep.progressSeconds
@@ -74,7 +99,8 @@ export function EpisodeCard({
           <>
             <p className={styles.seriesTitle}>{ep.seriesTitle}</p>
             <p className={styles.meta}>
-              {formatEpisodeLabel(ep.episode, ep.season)} · {durationText}
+              <span>{formatEpisodeLabel(ep.episode, ep.season)} · {durationText}</span>
+              {isDownloaded && <DownloadedIcon />}
             </p>
           </>
         ) : (
@@ -83,7 +109,8 @@ export function EpisodeCard({
               {formatEpisodeLabel(ep.episode, ep.season)}: {ep.title}
             </p>
             <p className={styles.meta}>
-              {durationText} · Sub | Dub
+              <span>{durationText} · Sub | Dub</span>
+              {isDownloaded && <DownloadedIcon />}
             </p>
           </>
         )}
