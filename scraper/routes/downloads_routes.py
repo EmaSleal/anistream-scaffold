@@ -8,6 +8,8 @@ Endpoints:
   GET  /api/admin/downloads/sources/<series_id>?episode_number=N
   POST /api/admin/downloads/trigger
   GET  /api/admin/downloads/jobs/<job_id>
+  POST /api/admin/downloads/series/<series_id>/enqueue
+  GET  /api/admin/downloads/series/<series_id>/queue
 """
 from __future__ import annotations
 
@@ -17,10 +19,12 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from flask import Blueprint, jsonify, request
 
 from auth import require_admin
+from db import download_queue as db_download_queue
 from db import episodes as db_episodes
 from db import series as db_series
+from domain import download_queue
 from domain.download_sources import probe_sources, resolve_source
-from domain.nas_jobs import NasUnavailable, check_episode_status, create_download_job, get_job_status, nas_configured
+from domain.nas_jobs import NasUnavailable, check_episode_status, create_download_job, get_job_status, list_downloaded_episodes, nas_configured
 
 logger = logging.getLogger(__name__)
 
@@ -271,3 +275,45 @@ def get_job(job_id: str):
     """
     result = get_job_status(job_id)
     return jsonify(result), 200
+
+
+@downloads_bp.post("/series/<series_id>/enqueue")
+@require_admin
+def enqueue_series_downloads(series_id: str):
+    """Queue every missing, released episode of a series (ADR-019).
+
+    Idempotent: episodes already queued/downloading are counted, not duplicated.
+
+    Returns:
+        200  {"queued": int, "alreadyQueued": int}
+    """
+    result = download_queue.enqueue_series(series_id)
+    return jsonify(result), 200
+
+
+@downloads_bp.get("/series/<series_id>/queue")
+@require_admin
+def series_download_queue(series_id: str):
+    """Return the queue rows of a series.
+
+    Returns:
+        200  {"items": [{episodeNumber, status, error}], "downloadedEpisodes"?: [int]}
+             (downloadedEpisodes present only when some item is done, uncached)
+    """
+    rows = db_download_queue.list_for_series(series_id)
+    body: dict = {
+        "items": [
+            {
+                "episodeNumber": r["episode_number"],
+                "status": r["status"],
+                "error": r.get("error"),
+            }
+            for r in rows
+        ]
+    }
+    if any(r.get("status") == "done" for r in rows):
+        # The dispatcher runs in another process and gunicorn has several workers,
+        # so a per-worker cache invalidation cannot work: return a fresh NAS list
+        # in the response so the UI refreshes its icons from it directly.
+        body["downloadedEpisodes"] = list_downloaded_episodes(series_id, use_cache=False)
+    return jsonify(body), 200

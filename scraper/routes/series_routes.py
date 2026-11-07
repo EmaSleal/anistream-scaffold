@@ -1,7 +1,6 @@
 """Flask Blueprint for public series endpoints."""
 import logging
 import threading
-from datetime import date
 from flask import Blueprint, request, jsonify, g
 import storage
 from db import series as db_series
@@ -12,6 +11,7 @@ from domain.series import (
     consolidate_franchises,
     build_seasons,
     strip_to_catalog,
+    is_released as _is_released,
 )
 from auth import require_admin, require_auth
 from fetcher import fetch_related_anime, fetch_jikan_by_genre, search_animeflv
@@ -25,27 +25,6 @@ series_bp = Blueprint("series", __name__, url_prefix="/api/series")
 
 _recommendations_cache = TTLCache(ttl_seconds=600)
 
-
-def _is_released(date_str: str | None, thumbnail_url: str | None = None) -> bool:
-    """True if the episode should be visible to viewers.
-
-    A set aired_at is authoritative: released only if it's today or earlier —
-    this also catches the simulcast weekly-cadence fill
-    (routes/simulcast_routes.py::_fill_aired_at_from_cadence) extrapolating a
-    future date for an episode AnimeAV1 has only pre-generated a thumbnail
-    for.
-
-    With no aired_at at all, fall back to thumbnail_url: jkanime-only
-    placeholder rows (a source that reports just a total episode count, see
-    _build_episodes_from_jkanime) have neither and must stay hidden. But
-    AnimeAV1-sourced episodes always carry a real screenshot thumbnail even
-    when Jikan/Kitsu enrichment failed to supply aired_at (confirmed live on
-    Slime Season 1) — treat those as already released rather than masking a
-    working ingest as "no episodes" and looping the reingest UI.
-    """
-    if date_str:
-        return str(date_str)[:10] <= date.today().isoformat()
-    return bool(thumbnail_url)
 
 # In-process guard against spawning duplicate concurrent backfill threads for
 # the same series when several requests land before the first one finishes.

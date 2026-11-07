@@ -3,7 +3,13 @@
 import { useState, useRef, useEffect } from "react";
 import type { Episode } from "@/types";
 import { EpisodeCard } from "@/components/shared/EpisodeCard";
-import { fetchDownloadedEpisodes } from "@/lib/downloads-client";
+import {
+  enqueueSeries,
+  fetchDownloadedEpisodes,
+  fetchSeriesQueue,
+  summarizeQueue,
+  type QueueSummary,
+} from "@/lib/downloads-client";
 import styles from "./EpisodesSection.module.css";
 
 interface Season {
@@ -19,6 +25,8 @@ interface EpisodesSectionProps {
 }
 
 type SeasonGroup = "tv" | "movie" | "ova" | "special";
+
+const QUEUE_POLL_MS = 5000;
 
 const GROUP_ORDER: SeasonGroup[] = ["tv", "movie", "ova", "special"];
 
@@ -60,23 +68,87 @@ export function EpisodesSection({ seasons, initialSeasonIdx = 0, isAdmin = false
 
   const seriesId = seasons[seasonIdx]?.episodes[0]?.seriesId;
   const [downloaded, setDownloaded] = useState<Set<number>>(new Set());
+  const [downloadedLoaded, setDownloadedLoaded] = useState(false);
+  const [queue, setQueue] = useState<QueueSummary | null>(null);
+  const [enqueueing, setEnqueueing] = useState(false);
+  // Bumped to (re)start queue polling: on mount, after enqueueing a series.
+  const [pollKey, setPollKey] = useState(0);
 
   useEffect(() => {
     setDownloaded(new Set());
+    setDownloadedLoaded(false);
     if (!seriesId) return;
     let cancelled = false;
     fetchDownloadedEpisodes(seriesId).then((nums) => {
-      if (!cancelled) setDownloaded(new Set(nums));
+      if (cancelled) return;
+      setDownloaded(new Set(nums));
+      setDownloadedLoaded(true);
     });
     return () => {
       cancelled = true;
     };
   }, [seriesId]);
 
+  // Admin only: poll the series queue while items are queued/downloading and
+  // refresh the downloaded icons (from the fresh list the queue response carries)
+  // whenever the number of finished items grows.
+  useEffect(() => {
+    setQueue(null);
+    if (!isAdmin || !seriesId) return;
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let lastDone = -1;
+
+    const tick = async () => {
+      const { items, downloadedEpisodes } = await fetchSeriesQueue(seriesId);
+      if (cancelled) return;
+      const summary = summarizeQueue(items);
+      setQueue(summary);
+      const done = items.filter((i) => i.status === "done").length;
+      if (lastDone !== -1 && done > lastDone && downloadedEpisodes) {
+        setDownloaded(new Set(downloadedEpisodes));
+      }
+      lastDone = done;
+      if (summary.active) timer = setTimeout(tick, QUEUE_POLL_MS);
+    };
+    tick();
+
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, [isAdmin, seriesId, pollKey]);
+
+  const handleDownloadSeries = async () => {
+    if (!seriesId || enqueueing) return;
+    setEnqueueing(true);
+    try {
+      await enqueueSeries(seriesId);
+      setPollKey((k) => k + 1);
+    } catch {
+      // Leave the button available so the admin can retry.
+    } finally {
+      setEnqueueing(false);
+    }
+  };
+
   if (seasons.length === 0) return null;
 
   const current = seasons[seasonIdx];
   const episodes = oldest ? current.episodes : [...current.episodes].reverse();
+
+  const downloadedCount = current.episodes.filter((e) => downloaded.has(e.episode)).length;
+  const allDownloaded = current.episodes.length > 0 && downloadedCount === current.episodes.length;
+  const showDownloadBtn =
+    isAdmin && !!seriesId && downloadedLoaded && current.episodes.length > 0 && !allDownloaded;
+  const queueLabel =
+    queue && queue.active
+      ? `En cola: ${queue.queued}` +
+        (queue.downloadingEpisode !== null
+          ? ` · Descargando E${String(queue.downloadingEpisode).padStart(2, "0")}`
+          : "") +
+        (queue.failed > 0 ? ` · Fallidos: ${queue.failed}` : "")
+      : null;
 
   return (
     <section className={styles.section}>
@@ -119,6 +191,23 @@ export function EpisodesSection({ seasons, initialSeasonIdx = 0, isAdmin = false
         </div>
 
         <div className={styles.right}>
+          {isAdmin && queueLabel && (
+            <span className={styles.queueStatus} role="status">
+              {queueLabel}
+            </span>
+          )}
+          {showDownloadBtn && (
+            <>
+              <button
+                className={styles.sortBtn}
+                onClick={handleDownloadSeries}
+                disabled={enqueueing || !!queue?.active}
+              >
+                {downloadedCount === 0 ? "Descargar serie" : "Terminar de descargar serie"}
+              </button>
+              <span className={styles.divider} aria-hidden="true" />
+            </>
+          )}
           <button
             className={styles.sortBtn}
             onClick={() => setOldest((v) => !v)}

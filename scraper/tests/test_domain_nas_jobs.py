@@ -251,3 +251,17 @@ class TestListDownloadedEpisodes:
             nas_jobs_module.list_downloaded_episodes("s")
             assert nas_jobs_module.list_downloaded_episodes("s") == [1]
         assert g.call_count == 1
+
+
+class TestListDownloadedEpisodesUseCache:
+    def test_use_cache_false_bypasses_cached_value_and_refreshes_it(self):
+        nas_jobs_module._DOWNLOADED_CACHE.set("uc-series", [1])
+        resp = MagicMock(ok=True)
+        resp.json.return_value = {"episode_numbers": [1, 2]}
+        with patch("domain.nas_jobs.nas_configured", return_value=True), \
+             patch("domain.nas_jobs.requests.get", return_value=resp) as get:
+            assert nas_jobs_module.list_downloaded_episodes("uc-series") == [1]
+            get.assert_not_called()
+            assert nas_jobs_module.list_downloaded_episodes("uc-series", use_cache=False) == [1, 2]
+            get.assert_called_once()
+        assert nas_jobs_module._DOWNLOADED_CACHE.get("uc-series") == [1, 2]

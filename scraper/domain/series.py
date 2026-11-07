@@ -4,6 +4,7 @@ No database access here — all functions accept raw dicts and return
 transformed dicts or values. This keeps business logic testable in isolation.
 """
 import re
+from datetime import date
 
 # ---------------------------------------------------------------------------
 # Media-type rank: higher number = higher priority when picking the
@@ -313,3 +314,25 @@ def build_seasons(
         initial_idx = base_titles.index(first_base) if first_base in base_titles else 0
 
     return {"seasons": seasons, "initialSeasonIdx": initial_idx}
+
+
+def is_released(date_str: str | None, thumbnail_url: str | None = None) -> bool:
+    """True if the episode should be visible to viewers.
+
+    A set aired_at is authoritative: released only if it's today or earlier —
+    this also catches the simulcast weekly-cadence fill
+    (routes/simulcast_routes.py::_fill_aired_at_from_cadence) extrapolating a
+    future date for an episode AnimeAV1 has only pre-generated a thumbnail
+    for.
+
+    With no aired_at at all, fall back to thumbnail_url: jkanime-only
+    placeholder rows (a source that reports just a total episode count, see
+    _build_episodes_from_jkanime) have neither and must stay hidden. But
+    AnimeAV1-sourced episodes always carry a real screenshot thumbnail even
+    when Jikan/Kitsu enrichment failed to supply aired_at (confirmed live on
+    Slime Season 1) — treat those as already released rather than masking a
+    working ingest as "no episodes" and looping the reingest UI.
+    """
+    if date_str:
+        return str(date_str)[:10] <= date.today().isoformat()
+    return bool(thumbnail_url)

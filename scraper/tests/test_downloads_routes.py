@@ -350,3 +350,55 @@ class TestJobsRoute:
         data = json.loads(res.data)
         assert data["status"] == "failed"
         assert data["error"] == "disk full"
+
+
+# ---------------------------------------------------------------------------
+# T-015 — series download queue endpoints (ADR-019)
+# ---------------------------------------------------------------------------
+
+class TestSeriesQueueRoutes:
+    def test_enqueue_requires_auth_and_admin(self, client):
+        assert client.post("/api/admin/downloads/series/s1/enqueue").status_code == 401
+        res = client.post("/api/admin/downloads/series/s1/enqueue", headers=_user_headers())
+        assert res.status_code == 403
+
+    def test_queue_requires_auth_and_admin(self, client):
+        assert client.get("/api/admin/downloads/series/s1/queue").status_code == 401
+        res = client.get("/api/admin/downloads/series/s1/queue", headers=_user_headers())
+        assert res.status_code == 403
+
+    def test_enqueue_returns_counts(self, client):
+        with patch("routes.downloads_routes.download_queue.enqueue_series",
+                   return_value={"queued": 3, "alreadyQueued": 1}) as m:
+            res = client.post("/api/admin/downloads/series/s1/enqueue", headers=_admin_headers())
+        assert res.status_code == 200
+        assert res.get_json() == {"queued": 3, "alreadyQueued": 1}
+        m.assert_called_once_with("s1")
+
+    def test_queue_returns_items(self, client):
+        rows = [
+            {"episode_number": 1, "status": "done", "error": None, "id": "x"},
+            {"episode_number": 2, "status": "failed", "error": "no_source"},
+        ]
+        with patch("routes.downloads_routes.db_download_queue.list_for_series", return_value=rows), \
+             patch("routes.downloads_routes.list_downloaded_episodes", return_value=[1]):
+            res = client.get("/api/admin/downloads/series/s1/queue", headers=_admin_headers())
+        assert res.status_code == 200
+        assert res.get_json() == {"items": [
+            {"episodeNumber": 1, "status": "done", "error": None},
+            {"episodeNumber": 2, "status": "failed", "error": "no_source"},
+        ], "downloadedEpisodes": [1]}
+
+    def test_queue_includes_fresh_downloaded_episodes_only_when_done(self, client):
+        done = [{"episode_number": 1, "status": "done", "error": None}]
+        pending = [{"episode_number": 2, "status": "queued", "error": None}]
+        with patch("routes.downloads_routes.db_download_queue.list_for_series", return_value=done), \
+             patch("routes.downloads_routes.list_downloaded_episodes", return_value=[1]) as lde:
+            res = client.get("/api/admin/downloads/series/s1/queue", headers=_admin_headers())
+        assert res.get_json()["downloadedEpisodes"] == [1]
+        lde.assert_called_once_with("s1", use_cache=False)
+        with patch("routes.downloads_routes.db_download_queue.list_for_series", return_value=pending), \
+             patch("routes.downloads_routes.list_downloaded_episodes") as lde:
+            res = client.get("/api/admin/downloads/series/s1/queue", headers=_admin_headers())
+        assert "downloadedEpisodes" not in res.get_json()
+        lde.assert_not_called()

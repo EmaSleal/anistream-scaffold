@@ -172,16 +172,17 @@ def get_job_status(job_id: str) -> dict:
     return result
 
 
-def list_downloaded_episodes(series_id: str) -> list[int]:
+def list_downloaded_episodes(series_id: str, *, use_cache: bool = True) -> list[int]:
     """Return the episode numbers of a series stored on the NAS (one bulk call).
 
     Fail-open: NAS not configured, unreachable or non-OK responses yield [].
-    Only successful responses are cached.
+    Only successful responses are cached. ``use_cache=False`` skips the cache
+    read (the fresh OK result is still stored).
     """
     if not nas_configured():
         return []
 
-    cached = _DOWNLOADED_CACHE.get(series_id)
+    cached = _DOWNLOADED_CACHE.get(series_id) if use_cache else None
     if cached is not None:
         return cached
 
@@ -211,3 +212,4 @@ def list_downloaded_episodes(series_id: str) -> list[int]:
 
     _DOWNLOADED_CACHE.set(series_id, numbers)
     return numbers
+
