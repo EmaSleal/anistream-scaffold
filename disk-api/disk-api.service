@@ -9,6 +9,10 @@ Type=simple
 User=m4n0
 Group=m4n0
 
+# Files/dirs created here must be group-writable: Jellyfin (via NFS, gid media)
+# manages them; the setgid bit on series-dl gives them the media group.
+UMask=0002
+
 WorkingDirectory=/home/m4n0/disk-api-skeleton
 EnvironmentFile=/home/m4n0/disk-api-skeleton/.env
 

@@ -71,6 +71,13 @@ def init_db():
         _add_column_if_missing(conn, "download_jobs", "series_id", "TEXT")
         _add_column_if_missing(conn, "download_jobs", "episode_number", "INTEGER")
 
+        # Single uvicorn worker: background tasks cannot survive a restart, and a
+        # stale active job would block re-downloads via get_active_job_for_episode.
+        conn.execute(
+            "UPDATE download_jobs SET status = 'failed', error = 'interrupted by restart', "
+            "updated_at = ? WHERE status IN ('pending', 'downloading')",
+            (datetime.utcnow().isoformat(),),
+        )
         conn.commit()
 
 
@@ -146,17 +153,33 @@ def create_job(
     category: str,
     series_id: str | None = None,
     episode_number: int | None = None,
+    status: str = "pending",
+    file_id: int | None = None,
 ) -> dict:
     now = datetime.utcnow().isoformat()
     with get_connection() as conn:
         conn.execute(
             """INSERT INTO download_jobs
-               (id, url, category, series_id, episode_number, status, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, 'pending', ?, ?)""",
-            (job_id, url, category, series_id, episode_number, now, now)
+               (id, url, category, series_id, episode_number, status, file_id,
+                created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (job_id, url, category, series_id, episode_number, status, file_id, now, now)
         )
         conn.commit()
     return get_job(job_id)
+
+
+def get_active_job_for_episode(series_id: str, episode_number: int) -> dict | None:
+    """Oldest pending/downloading job for this episode, if any."""
+    with get_connection() as conn:
+        row = conn.execute(
+            """SELECT * FROM download_jobs
+               WHERE series_id = ? AND episode_number = ?
+                 AND status IN ('pending', 'downloading')
+               ORDER BY created_at LIMIT 1""",
+            (series_id, episode_number),
+        ).fetchone()
+    return dict(row) if row else None
 
 
 def get_job(job_id: str) -> dict | None:
