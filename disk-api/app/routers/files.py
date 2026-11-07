@@ -1,6 +1,8 @@
 """
 Endpoints REST para gestión de archivos sobre el pool de MergerFS.
 """
+import os
+import re
 import shutil
 from pathlib import Path
 from datetime import datetime
@@ -14,7 +16,15 @@ from app.models import db
 router = APIRouter()
 
 # Punto de montaje del pool MergerFS — ajustar si cambia
-STORAGE_ROOT = Path("/mnt/data_safe/storage")
+STORAGE_ROOT = Path(os.environ.get("DISK_STORAGE_ROOT", "/mnt/data_safe/storage"))
+
+# Optional Jellyfin media root (ADR-018). When unset, the legacy
+# videos/episodes/<series_id>/ layout under STORAGE_ROOT is used.
+MEDIA_ROOT: Path | None = (
+    Path(os.environ["DISK_MEDIA_ROOT"]) if os.environ.get("DISK_MEDIA_ROOT") else None
+)
+
+_FORBIDDEN_CHARS = re.compile(r'[/\\:*?"<>|\x00-\x1f\x7f]')
 
 CATEGORY_MAP = {
     ".jpg": "photos", ".jpeg": "photos", ".png": "photos", ".heic": "photos", ".webp": "photos",
@@ -28,11 +38,46 @@ def categorize(filename: str) -> str:
     return CATEGORY_MAP.get(ext, "other")
 
 
+def sanitize_name(name: str | None, fallback: str) -> str:
+    """Make ``name`` safe as a single path component.
+
+    Removes / \\ : * ? " < > | and control chars, collapses whitespace and
+    strips leading/trailing spaces and dots. Falls back to ``fallback`` when
+    nothing is left.
+    """
+    cleaned = re.sub(r"\s+", " ", name or "")  # tabs/newlines become spaces first
+    cleaned = _FORBIDDEN_CHARS.sub("", cleaned)
+    cleaned = re.sub(r" {2,}", " ", cleaned).strip(" .")
+    return cleaned or fallback
+
+
+def jellyfin_episode_target(
+    series_id: str | None,
+    episode_number: int | None,
+    series_title: str | None,
+    series_year: int | None,
+) -> tuple[Path, str] | None:
+    """Return (directory, base name without extension) for the Jellyfin layout.
+
+    ``<MEDIA_ROOT>/<Show>/Season 01/<Show> S01E<NN>``. Returns None (legacy
+    layout) unless MEDIA_ROOT is set and series_id, episode_number and
+    series_title are all present.
+    """
+    if MEDIA_ROOT is None or not series_id or episode_number is None or not series_title:
+        return None
+    show = sanitize_name(series_title, series_id)
+    if isinstance(series_year, int) and not isinstance(series_year, bool) and series_year > 0:
+        show = f"{show} ({series_year})"
+    return MEDIA_ROOT / show / "Season 01", f"{show} S01E{episode_number:02d}"
+
+
 @router.post("/upload")
 async def upload_file(
     file: UploadFile = File(...),
     series_id: Optional[str] = Form(default=None),
     episode_number: Optional[int] = Form(default=None),
+    series_title: Optional[str] = Form(default=None),
+    series_year: Optional[int] = Form(default=None),
 ):
     """
     Sube un archivo. Opcionalmente acepta series_id y episode_number (Form fields)
@@ -41,14 +86,19 @@ async def upload_file(
     category = categorize(file.filename)
     now = datetime.utcnow()
 
-    if series_id and episode_number is not None:
+    jellyfin = jellyfin_episode_target(series_id, episode_number, series_title, series_year)
+    stored_name = file.filename
+    if jellyfin:
+        subdir, base = jellyfin
+        stored_name = base + (Path(file.filename).suffix or ".mp4")
+    elif series_id and episode_number is not None:
         subdir = STORAGE_ROOT / "videos" / "episodes" / series_id
     else:
         subdir = STORAGE_ROOT / category / f"{now.year:04d}-{now.month:02d}"
 
     subdir.mkdir(parents=True, exist_ok=True)
 
-    destination = subdir / file.filename
+    destination = subdir / stored_name
     if destination.exists():
         stem, suffix = destination.stem, destination.suffix
         destination = subdir / f"{stem}_{now.strftime('%Y%m%d%H%M%S')}{suffix}"
@@ -64,7 +114,7 @@ async def upload_file(
     size_bytes = destination.stat().st_size
 
     file_id = db.insert_file(
-        filename=file.filename,
+        filename=stored_name,
         stored_path=str(destination),
         content_type=file.content_type,
         size_bytes=size_bytes,
@@ -75,7 +125,7 @@ async def upload_file(
 
     return {
         "id": file_id,
-        "filename": file.filename,
+        "filename": stored_name,
         "category": category,
         "size_bytes": size_bytes,
         "stored_path": str(destination),

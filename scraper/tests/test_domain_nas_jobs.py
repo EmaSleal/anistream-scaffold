@@ -128,6 +128,26 @@ class TestCreateDownloadJob:
         assert result["jobId"] == "abc-123"
         assert result["status"] == "pending"
 
+    def test_payload_includes_title_and_year_when_given(self, monkeypatch):
+        monkeypatch.setattr(nas_jobs_module, "NAS_BASE_URL", "http://nas")
+        monkeypatch.setattr(nas_jobs_module, "NAS_API_KEY", "key")
+        resp = _mock_response(200, {"job_id": "abc", "status": "pending"})
+        with patch("domain.nas_jobs.requests.post", return_value=resp) as mock_post:
+            create_download_job("s1", 1, "http://cdn/e.m3u8", "animeav1",
+                                series_title="Frieren", series_year=2023)
+        payload = mock_post.call_args.kwargs["json"]
+        assert payload["series_title"] == "Frieren"
+        assert payload["series_year"] == 2023
+
+    def test_payload_omits_title_and_year_when_absent(self, monkeypatch):
+        monkeypatch.setattr(nas_jobs_module, "NAS_BASE_URL", "http://nas")
+        monkeypatch.setattr(nas_jobs_module, "NAS_API_KEY", "key")
+        resp = _mock_response(200, {"job_id": "abc", "status": "pending"})
+        with patch("domain.nas_jobs.requests.post", return_value=resp) as mock_post:
+            create_download_job("s1", 1, "http://cdn/e.m3u8", "animeav1")
+        payload = mock_post.call_args.kwargs["json"]
+        assert "series_title" not in payload and "series_year" not in payload
+
     def test_raises_nas_unavailable_on_5xx(self, monkeypatch):
         monkeypatch.setattr(nas_jobs_module, "NAS_BASE_URL", "http://nas")
         monkeypatch.setattr(nas_jobs_module, "NAS_API_KEY", "key")

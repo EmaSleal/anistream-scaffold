@@ -76,9 +76,17 @@ def check_episode_status(series_id: str, episode_number: int) -> str:
 
 
 def create_download_job(
-    series_id: str, episode_number: int, source_url: str, source: str
+    series_id: str,
+    episode_number: int,
+    source_url: str,
+    source: str,
+    series_title: str | None = None,
+    series_year: int | None = None,
 ) -> dict:
     """POST /api/jobs to the NAS and return {jobId, status}.
+
+    series_title / series_year are sent only when present so the NAS can name
+    the file for Jellyfin (ADR-018).
 
     Raises NasUnavailable when the NAS is unreachable or returns 5xx.
     """
@@ -91,6 +99,10 @@ def create_download_job(
         "series_id": series_id,
         "episode_number": episode_number,
     }
+    if series_title:
+        payload["series_title"] = series_title
+    if series_year:
+        payload["series_year"] = series_year
 
     try:
         resp = requests.post(

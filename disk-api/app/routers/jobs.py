@@ -11,6 +11,7 @@ Para links directos simples (sin plataforma especial) usa httpx para
 eficiencia, y cae a yt-dlp si httpx detecta redirección a plataforma conocida.
 """
 import asyncio
+import glob
 import subprocess
 import uuid
 import mimetypes
@@ -23,7 +24,8 @@ from fastapi import APIRouter, HTTPException, BackgroundTasks
 from pydantic import BaseModel, HttpUrl
 
 from app.models import db
-from app.routers.files import STORAGE_ROOT, categorize
+from app.routers import files as files_mod
+from app.routers.files import categorize, jellyfin_episode_target
 
 router = APIRouter()
 
@@ -43,6 +45,8 @@ class DownloadRequest(BaseModel):
     category: str = "other"
     series_id: str | None = None
     episode_number: int | None = None
+    series_title: str | None = None
+    series_year: int | None = None
 
 
 _ZILLA_DOMAIN = "player.zilla-networks.com"
@@ -73,23 +77,30 @@ async def _run_download(
     category: str,
     series_id: str | None = None,
     episode_number: int | None = None,
+    series_title: str | None = None,
+    series_year: int | None = None,
 ):
     """
     Tarea en background. Actualiza el estado del job en SQLite a medida que avanza.
     """
     db.update_job(job_id, status="downloading")
 
-    if series_id and episode_number is not None:
-        subdir = STORAGE_ROOT / "videos" / "episodes" / series_id
+    storage_root = files_mod.STORAGE_ROOT
+    jellyfin = jellyfin_episode_target(series_id, episode_number, series_title, series_year)
+    fixed_stem: str | None = None
+    if jellyfin:
+        subdir, fixed_stem = jellyfin
+    elif series_id and episode_number is not None:
+        subdir = storage_root / "videos" / "episodes" / series_id
     else:
-        subdir = STORAGE_ROOT / category / datetime.utcnow().strftime("%Y-%m")
+        subdir = storage_root / category / datetime.utcnow().strftime("%Y-%m")
     subdir.mkdir(parents=True, exist_ok=True)
 
     try:
         if _needs_ytdlp(url):
-            file_id = await _download_with_ytdlp(job_id, url, category, subdir, series_id, episode_number, _ytdlp_extra_opts(url))
+            file_id = await _download_with_ytdlp(job_id, url, category, subdir, series_id, episode_number, _ytdlp_extra_opts(url), fixed_stem)
         else:
-            file_id = await _download_direct(job_id, url, category, subdir, series_id, episode_number)
+            file_id = await _download_direct(job_id, url, category, subdir, series_id, episode_number, fixed_stem)
 
         db.update_job(job_id, status="done", file_id=file_id)
 
@@ -100,6 +111,7 @@ async def _run_download(
 async def _download_direct(
     job_id: str, url: str, category: str, subdir: Path,
     series_id: str | None = None, episode_number: int | None = None,
+    fixed_stem: str | None = None,
 ) -> int:
     """Descarga un link directo con httpx en modo streaming."""
     async with httpx.AsyncClient(follow_redirects=True, timeout=300) as client:
@@ -114,6 +126,11 @@ async def _download_direct(
                 filename = Path(str(url).split("?")[0]).name or f"download_{job_id[:8]}"
 
             content_type = response.headers.get("content-type", "application/octet-stream").split(";")[0]
+
+            if fixed_stem:
+                # Jellyfin layout: fixed name, extension from the resolved name/content-type
+                ext = Path(filename).suffix or mimetypes.guess_extension(content_type) or ".mp4"
+                filename = fixed_stem + ext
 
             # Recategorizar si el content-type revela algo diferente a lo pedido
             guessed_cat = categorize(filename)
@@ -140,6 +157,7 @@ async def _download_with_ytdlp(
     job_id: str, url: str, category: str, subdir: Path,
     series_id: str | None = None, episode_number: int | None = None,
     extra_opts: dict | None = None,
+    fixed_stem: str | None = None,
 ) -> int:
     """Descarga usando yt-dlp. Corre en threadpool para no bloquear el event loop."""
 
@@ -149,7 +167,11 @@ async def _download_with_ytdlp(
         from urllib.parse import urlsplit
         is_hls = "m3u8" in urlsplit(url).path.lower()
 
-        outtmpl = str(subdir / "%(title)s.%(ext)s")
+        if fixed_stem:
+            # Escape % so sanitized titles are not read as yt-dlp template fields
+            outtmpl = str(subdir / (fixed_stem.replace("%", "%%") + ".%(ext)s"))
+        else:
+            outtmpl = str(subdir / "%(title)s.%(ext)s")
 
         if is_hls:
             # HLS streams: download fragments and remux to proper MP4 via ffmpeg.
@@ -187,7 +209,7 @@ async def _download_with_ytdlp(
     filepath = Path(output_path["filename"])
     if not filepath.exists():
         # yt-dlp puede cambiar la extensión tras el merge — buscar archivo con mismo stem
-        matches = list(filepath.parent.glob(f"{filepath.stem}.*"))
+        matches = list(filepath.parent.glob(f"{glob.escape(filepath.stem)}.*"))
         if not matches:
             raise FileNotFoundError(f"yt-dlp no generó archivo en {subdir}")
         filepath = matches[0]
@@ -253,6 +275,7 @@ async def enqueue_download(request: DownloadRequest,
     background_tasks.add_task(
         _run_download, job_id, str(request.url), request.category,
         request.series_id, request.episode_number,
+        request.series_title, request.series_year,
     )
 
     return {

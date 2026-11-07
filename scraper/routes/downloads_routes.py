@@ -238,8 +238,20 @@ def trigger_download():
     if not url:
         return jsonify({"error": "no_source"}), 422
 
+    series_title = None
+    series_year = None
     try:
-        job = create_download_job(series_id, episode_number, url, source)
+        meta = db_series.get_series_title_year_by_id(series_id) or {}
+        series_title = meta.get("title") or None
+        series_year = meta.get("year") or None
+    except Exception:
+        logger.warning("[downloads] could not load title/year for series=%s", series_id)
+
+    try:
+        job = create_download_job(
+            series_id, episode_number, url, source,
+            series_title=series_title, series_year=series_year,
+        )
     except NasUnavailable:
         return jsonify({"error": "nas_unavailable"}), 503
 

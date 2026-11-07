@@ -243,6 +243,7 @@ class TestSourcesRoute:
 class TestTriggerRoute:
     def test_202_on_success(self, client):
         with patch("routes.downloads_routes.db_series.get_stream_config", return_value=_STREAM_CONFIG), \
+             patch("routes.downloads_routes.db_series.get_series_title_year_by_id", return_value=None), \
              patch("routes.downloads_routes.resolve_source", return_value="http://cdn/ep1.m3u8"), \
              patch("routes.downloads_routes.create_download_job", return_value={"jobId": "job-1", "status": "pending"}):
             res = client.post(
@@ -253,6 +254,36 @@ class TestTriggerRoute:
         assert res.status_code == 202
         data = json.loads(res.data)
         assert data["jobId"] == "job-1"
+
+    def test_passes_title_and_year_to_job(self, client):
+        with patch("routes.downloads_routes.db_series.get_stream_config", return_value=_STREAM_CONFIG), \
+             patch("routes.downloads_routes.db_series.get_series_title_year_by_id",
+                   return_value={"title": "Frieren", "year": 2023}), \
+             patch("routes.downloads_routes.resolve_source", return_value="http://cdn/ep1.m3u8"), \
+             patch("routes.downloads_routes.create_download_job",
+                   return_value={"jobId": "job-1", "status": "pending"}) as mock_job:
+            res = client.post(
+                "/api/admin/downloads/trigger",
+                json={"series_id": "series-1", "episode_number": 1, "source": "animeav1"},
+                headers=_admin_headers(),
+            )
+        assert res.status_code == 202
+        assert mock_job.call_args.kwargs == {"series_title": "Frieren", "series_year": 2023}
+
+    def test_job_still_created_when_title_lookup_fails(self, client):
+        with patch("routes.downloads_routes.db_series.get_stream_config", return_value=_STREAM_CONFIG), \
+             patch("routes.downloads_routes.db_series.get_series_title_year_by_id",
+                   side_effect=RuntimeError("db down")), \
+             patch("routes.downloads_routes.resolve_source", return_value="http://cdn/ep1.m3u8"), \
+             patch("routes.downloads_routes.create_download_job",
+                   return_value={"jobId": "job-1", "status": "pending"}) as mock_job:
+            res = client.post(
+                "/api/admin/downloads/trigger",
+                json={"series_id": "series-1", "episode_number": 1, "source": "animeav1"},
+                headers=_admin_headers(),
+            )
+        assert res.status_code == 202
+        assert mock_job.call_args.kwargs == {"series_title": None, "series_year": None}
 
     def test_422_when_source_cannot_resolve(self, client):
         with patch("routes.downloads_routes.db_series.get_stream_config", return_value=_STREAM_CONFIG), \
@@ -268,6 +299,7 @@ class TestTriggerRoute:
     def test_503_when_nas_unavailable(self, client):
         from domain.nas_jobs import NasUnavailable
         with patch("routes.downloads_routes.db_series.get_stream_config", return_value=_STREAM_CONFIG), \
+             patch("routes.downloads_routes.db_series.get_series_title_year_by_id", return_value=None), \
              patch("routes.downloads_routes.resolve_source", return_value="http://cdn/ep1.m3u8"), \
              patch("routes.downloads_routes.create_download_job", side_effect=NasUnavailable("down")):
             res = client.post(

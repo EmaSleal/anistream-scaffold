@@ -94,3 +94,23 @@ curl -O http://astro1:8000/api/files/5/download
 - Generación de thumbnails para fotos/videos (cuidado: cualquier
   procesamiento de imagen/video consume CPU real en este hardware,
   evaluar antes de implementar).
+
+## Jellyfin layout (ADR-018)
+
+- `DISK_STORAGE_ROOT` (default `/mnt/data_safe/storage`) — legacy storage root.
+- `DISK_MEDIA_ROOT` (default unset) — when set, jobs/uploads that carry
+  `series_id`, `episode_number` and `series_title` (plus optional `series_year`)
+  are written to `<root>/<Title> (<Year>)/Season 01/<Title> (<Year>) S01E<NN>.<ext>`.
+  Without it (or without `series_title`) the legacy `videos/episodes/<series_id>/`
+  layout is used. Target on astro1: `/srv/media/media/series-dl`.
+
+## Tests
+
+```bash
+python3 -m venv .venv
+.venv/bin/pip install fastapi==0.115.0 python-multipart==0.0.12 yt-dlp==2025.1.15 httpx==0.28.1 pytest
+# or: .venv/bin/pip install -r requirements-dev.txt
+.venv/bin/python -m pytest tests -q
+```
+
+Tests use tmp_path roots and a temporary SQLite DB; no network or ffmpeg needed.
