@@ -218,10 +218,7 @@ async def _download_with_ytdlp(
     # know duration immediately and can seek without downloading the full file.
     if filepath.suffix == ".mp4":
         tmp = filepath.with_suffix(".faststart.mp4")
-        result = subprocess.run(
-            ["ffmpeg", "-y", "-i", str(filepath), "-c", "copy", "-movflags", "faststart", str(tmp)],
-            capture_output=True,
-        )
+        result = await loop.run_in_executor(None, _run_faststart, filepath, tmp)
         if result.returncode == 0:
             tmp.replace(filepath)
         else:
@@ -239,6 +236,14 @@ async def _download_with_ytdlp(
         category=final_category,
         series_id=series_id,
         episode_number=episode_number,
+    )
+
+
+def _run_faststart(src: Path, tmp: Path) -> subprocess.CompletedProcess:
+    """Blocking ffmpeg remux; call it through run_in_executor, never on the loop."""
+    return subprocess.run(
+        ["ffmpeg", "-y", "-i", str(src), "-c", "copy", "-movflags", "faststart", str(tmp)],
+        capture_output=True,
     )
 
 
@@ -263,6 +268,37 @@ async def enqueue_download(request: DownloadRequest,
             status_code=422,
             detail=f"Categoría inválida. Opciones: {sorted(VALID_CATEGORIES)}"
         )
+
+    # Idempotency per episode. No await between check and create: with a single
+    # uvicorn worker this section is atomic. Reuse cases also answer 202 so
+    # clients (Flask polling GET /api/jobs/{id}) need no special handling.
+    if request.series_id and request.episode_number is not None:
+        active = db.get_active_job_for_episode(
+            request.series_id, request.episode_number)
+        if active:
+            return {
+                "job_id": active["id"],
+                "status": active["status"],
+                "message": "Ya hay una descarga activa para este episodio.",
+            }
+        existing = db.get_file_by_episode(
+            request.series_id, request.episode_number)
+        if existing:
+            done_id = str(uuid.uuid4())
+            db.create_job(
+                job_id=done_id,
+                url=str(request.url),
+                category=request.category,
+                series_id=request.series_id,
+                episode_number=request.episode_number,
+                status="done",
+                file_id=existing["id"],
+            )
+            return {
+                "job_id": done_id,
+                "status": "done",
+                "message": "El episodio ya existe; no se descargó de nuevo.",
+            }
 
     job_id = str(uuid.uuid4())
     db.create_job(
