@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  enqueueErrorMessage,
   enqueueSeries,
   fetchDownloadedEpisodes,
   fetchSeriesQueue,
@@ -54,6 +55,17 @@ describe("enqueueSeries", () => {
       vi.fn().mockResolvedValue({ ok: false, status: 403, json: async () => ({ error: "Forbidden" }) })
     );
     await expect(enqueueSeries("s1")).rejects.toThrow("Forbidden");
+  });
+});
+
+describe("enqueueErrorMessage", () => {
+  it("explains a missing jkanime slug", () => {
+    expect(enqueueErrorMessage(new Error("no_jkanime_slug"))).toMatch(/slug de jkanime/);
+  });
+
+  it("falls back to a generic message", () => {
+    expect(enqueueErrorMessage(new Error("HTTP 500"))).toBe("No se pudo encolar la serie. Intentá de nuevo.");
+    expect(enqueueErrorMessage("boom")).toBe("No se pudo encolar la serie. Intentá de nuevo.");
   });
 });
 

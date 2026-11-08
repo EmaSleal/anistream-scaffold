@@ -208,8 +208,10 @@ def test_empty_queue_is_noop(env):
 
 
 class TestEnqueueSeries:
-    def _run(self, fq, rows, downloaded):
+    def _run(self, fq, rows, downloaded, config=None):
+        config = {"fallback_slug": "slug"} if config is None else config
         with patch.object(dom, "db_queue", fq), \
+             patch.object(dom.db_series, "get_stream_config", return_value=config), \
              patch.object(dom.db_episodes, "get_episodes_by_series", return_value=rows), \
              patch.object(dom, "list_downloaded_episodes", return_value=downloaded):
             return dom.enqueue_series("s1")
@@ -236,3 +238,15 @@ class TestEnqueueSeries:
     def test_nothing_missing(self):
         fq = FakeQueue()
         assert self._run(fq, self.ROWS, [1, 2, 5]) == {"queued": 0, "alreadyQueued": 0}
+
+    def test_no_jkanime_slug_raises_without_queueing(self):
+        fq = FakeQueue()
+        with pytest.raises(dom.NoJkanimeSlug):
+            self._run(fq, self.ROWS, [], config={"fallback_slug": None})
+        assert fq.items == []
+
+    def test_unknown_series_raises_without_queueing(self):
+        fq = FakeQueue()
+        with pytest.raises(dom.NoJkanimeSlug):
+            self._run(fq, self.ROWS, [], config={})
+        assert fq.items == []

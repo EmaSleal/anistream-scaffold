@@ -375,6 +375,14 @@ class TestSeriesQueueRoutes:
         assert res.get_json() == {"queued": 3, "alreadyQueued": 1}
         m.assert_called_once_with("s1")
 
+    def test_enqueue_without_jkanime_slug_returns_422(self, client):
+        from domain.download_queue import NoJkanimeSlug
+        with patch("routes.downloads_routes.download_queue.enqueue_series",
+                   side_effect=NoJkanimeSlug("s1")):
+            res = client.post("/api/admin/downloads/series/s1/enqueue", headers=_admin_headers())
+        assert res.status_code == 422
+        assert res.get_json() == {"error": "no_jkanime_slug"}
+
     def test_queue_returns_items(self, client):
         rows = [
             {"episode_number": 1, "status": "done", "error": None, "id": "x"},

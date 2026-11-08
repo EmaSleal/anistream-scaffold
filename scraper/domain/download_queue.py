@@ -28,6 +28,10 @@ DEFAULT_TIMEOUT_MINUTES = 120
 MAX_ITEMS_PER_TICK = 25
 
 
+class NoJkanimeSlug(Exception):
+    """The series has no jkanime slug, so no episode could ever be resolved."""
+
+
 def _timeout_minutes() -> float:
     try:
         return float(os.getenv("DOWNLOAD_QUEUE_TIMEOUT_MINUTES", DEFAULT_TIMEOUT_MINUTES))
@@ -47,7 +51,14 @@ def missing_episodes(series_id: str) -> list[int]:
 
 
 def enqueue_series(series_id: str) -> dict:
-    """Queue every missing episode; returns {"queued": n, "alreadyQueued": m}."""
+    """Queue every missing episode; returns {"queued": n, "alreadyQueued": m}.
+
+    Raises NoJkanimeSlug when the series has no jkanime slug: every item would
+    otherwise fail later with no_source at dispatch time.
+    """
+    stream_config = db_series.get_stream_config(series_id) or {}
+    if not stream_config.get("fallback_slug"):
+        raise NoJkanimeSlug(series_id)
     missing = missing_episodes(series_id)
     if not missing:
         return {"queued": 0, "alreadyQueued": 0}

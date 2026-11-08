@@ -170,6 +170,12 @@
 .pageBtn:hover { opacity: 0.75; }
 .pageBtn:disabled { color: var(--color-text-muted); cursor: default; opacity: 1; }
 
+.enqueueError {
+  color: var(--color-error);
+  font-size: 1rem;
+  font-weight: 700;
+}
+
 .queueStatus {
   color: var(--color-text-secondary);
   font-size: 1rem;
