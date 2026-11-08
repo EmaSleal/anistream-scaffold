@@ -286,8 +286,12 @@ def enqueue_series_downloads(series_id: str):
 
     Returns:
         200  {"queued": int, "alreadyQueued": int}
+        422  {"error": "no_jkanime_slug"} when the series has no jkanime slug
     """
-    result = download_queue.enqueue_series(series_id)
+    try:
+        result = download_queue.enqueue_series(series_id)
+    except download_queue.NoJkanimeSlug:
+        return jsonify({"error": "no_jkanime_slug"}), 422
     return jsonify(result), 200
 
 

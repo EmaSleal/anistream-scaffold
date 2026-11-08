@@ -77,6 +77,14 @@ export async function enqueueSeries(
   return { queued: data.queued ?? 0, alreadyQueued: data.alreadyQueued ?? 0 };
 }
 
+/** User-facing message for an enqueueSeries failure. */
+export function enqueueErrorMessage(err: unknown): string {
+  if (err instanceof Error && err.message === "no_jkanime_slug") {
+    return "Esta serie no tiene slug de jkanime: asignalo desde la página de un episodio antes de descargar.";
+  }
+  return "No se pudo encolar la serie. Intentá de nuevo.";
+}
+
 export interface SeriesQueue {
   items: QueueItem[];
   /** Fresh NAS list; the server includes it only when some item is done. */

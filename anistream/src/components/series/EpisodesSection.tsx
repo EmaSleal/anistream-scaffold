@@ -4,6 +4,7 @@ import { useState, useRef, useEffect } from "react";
 import type { Episode } from "@/types";
 import { EpisodeCard } from "@/components/shared/EpisodeCard";
 import {
+  enqueueErrorMessage,
   enqueueSeries,
   fetchDownloadedEpisodes,
   fetchSeriesQueue,
@@ -71,6 +72,7 @@ export function EpisodesSection({ seasons, initialSeasonIdx = 0, isAdmin = false
   const [downloadedLoaded, setDownloadedLoaded] = useState(false);
   const [queue, setQueue] = useState<QueueSummary | null>(null);
   const [enqueueing, setEnqueueing] = useState(false);
+  const [enqueueError, setEnqueueError] = useState<string | null>(null);
   // Bumped to (re)start queue polling: on mount, after enqueueing a series.
   const [pollKey, setPollKey] = useState(0);
 
@@ -122,11 +124,13 @@ export function EpisodesSection({ seasons, initialSeasonIdx = 0, isAdmin = false
   const handleDownloadSeries = async () => {
     if (!seriesId || enqueueing) return;
     setEnqueueing(true);
+    setEnqueueError(null);
     try {
       await enqueueSeries(seriesId);
       setPollKey((k) => k + 1);
-    } catch {
+    } catch (err) {
       // Leave the button available so the admin can retry.
+      setEnqueueError(enqueueErrorMessage(err));
     } finally {
       setEnqueueing(false);
     }
@@ -194,6 +198,11 @@ export function EpisodesSection({ seasons, initialSeasonIdx = 0, isAdmin = false
           {isAdmin && queueLabel && (
             <span className={styles.queueStatus} role="status">
               {queueLabel}
+            </span>
+          )}
+          {showDownloadBtn && enqueueError && (
+            <span className={styles.enqueueError} role="alert">
+              {enqueueError}
             </span>
           )}
           {showDownloadBtn && (
