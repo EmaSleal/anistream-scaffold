@@ -106,12 +106,17 @@ describe("summarizeQueue", () => {
 
   it("counts queued, finds the downloading episode and flags active", () => {
     const s = summarizeQueue([item(1, "done"), item(2, "downloading"), item(3, "queued"), item(4, "queued")]);
-    expect(s).toEqual({ queued: 2, downloadingEpisode: 2, failed: 0, active: true });
+    expect(s).toEqual({ queued: 2, downloadingEpisodes: [2], failed: 0, active: true });
+  });
+
+  it("lists every downloading episode in ascending order", () => {
+    const s = summarizeQueue([item(4, "downloading"), item(3, "downloading"), item(5, "queued")]);
+    expect(s).toEqual({ queued: 1, downloadingEpisodes: [3, 4], failed: 0, active: true });
   });
 
   it("is inactive when nothing is queued or downloading", () => {
     const s = summarizeQueue([item(1, "done"), item(2, "failed")]);
-    expect(s).toMatchObject({ active: false, failed: 1, downloadingEpisode: null });
+    expect(s).toMatchObject({ active: false, failed: 1, downloadingEpisodes: [] });
   });
 
   it("ignores a failed row superseded by a later retry", () => {

@@ -86,6 +86,18 @@ def test_get_active_none_when_no_rows():
         assert dq.get_active() is None
 
 
+def test_list_active_returns_all_downloading_rows():
+    client = MagicMock()
+    chain = client.table.return_value.select.return_value.eq.return_value.order.return_value
+    chain.execute.return_value = MagicMock(data=[{"id": "a"}, {"id": "b"}])
+    with patch("storage.get_client", return_value=client):
+        assert dq.list_active() == [{"id": "a"}, {"id": "b"}]
+    client.table.return_value.select.return_value.eq.assert_called_with("status", "downloading")
+    chain.execute.return_value = MagicMock(data=[])
+    with patch("storage.get_client", return_value=client):
+        assert dq.list_active() == []
+
+
 def test_mark_transitions_update_status():
     client = MagicMock()
     update = client.table.return_value.update
