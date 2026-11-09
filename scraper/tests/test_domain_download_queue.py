@@ -38,8 +38,8 @@ class FakeQueue:
                                "error": None, "started_at": None})
         return len(new), len(set(nums)) - len(new)
 
-    def get_active(self):
-        return next((i for i in self.items if i["status"] == "downloading"), None)
+    def list_active(self):
+        return [i for i in self.items if i["status"] == "downloading"]
 
     def next_queued(self):
         return next((i for i in self.items if i["status"] == "queued"), None)
@@ -57,6 +57,11 @@ class FakeQueue:
 
     def count(self, status):
         return sum(1 for i in self.items if i["status"] == status)
+
+
+@pytest.fixture(autouse=True)
+def _clear_concurrency_env(monkeypatch):
+    monkeypatch.delenv("DOWNLOAD_QUEUE_CONCURRENCY", raising=False)
 
 
 @pytest.fixture
@@ -263,3 +268,102 @@ class TestEnqueueSeries:
         with pytest.raises(dom.NoJkanimeSlug):
             self._run(fq, self.ROWS, [], config={})
         assert fq.items == []
+
+
+# --- ADR-022: concurrency > 1 ---
+
+@pytest.fixture
+def env2(env, monkeypatch):
+    monkeypatch.setenv("DOWNLOAD_QUEUE_CONCURRENCY", "2")
+    return env
+
+
+@pytest.mark.parametrize("raw,expected", [
+    (None, 1), ("abc", 1), ("", 1), ("0", 1), ("-4", 1), ("1", 1), ("2", 2), ("3", 3), ("10", 3),
+])
+def test_concurrency_parsing(monkeypatch, raw, expected):
+    if raw is None:
+        monkeypatch.delenv("DOWNLOAD_QUEUE_CONCURRENCY", raising=False)
+    else:
+        monkeypatch.setenv("DOWNLOAD_QUEUE_CONCURRENCY", raw)
+    assert dom._concurrency() == expected
+
+
+def test_n2_first_tick_dispatches_exactly_two(env2):
+    fq, m = env2
+    dom.dispatch_tick()
+    assert fq.count("downloading") == 2 and fq.count("queued") == 1
+    assert m.create.call_count == 2
+
+
+def test_n2_never_more_than_two_downloading(env2):
+    fq, m = env2
+    for _ in range(4):
+        dom.dispatch_tick()
+        assert fq.count("downloading") <= 2
+    assert m.create.call_count == 2
+
+
+def test_n2_one_finishing_dispatches_exactly_one_more(env2):
+    fq, m = env2
+    dom.dispatch_tick()
+    m.status.side_effect = lambda job_id: {"status": "done" if job_id == "job-1" else "downloading"}
+    dom.dispatch_tick()
+    assert fq._get("i1")["status"] == "done"
+    assert fq._get("i2")["status"] == "downloading"
+    assert fq._get("i3")["status"] == "downloading"
+    assert fq.count("downloading") == 2
+    assert m.create.call_count == 3
+
+
+def test_n2_timeout_on_one_frees_one_slot(env2):
+    fq, m = env2
+    dom.dispatch_tick()
+    fq._get("i1")["started_at"] = (datetime.now(timezone.utc) - timedelta(minutes=500)).isoformat()
+    dom.dispatch_tick()
+    assert fq._get("i1")["status"] == "failed" and fq._get("i1")["error"] == "timeout"
+    assert fq._get("i2")["status"] == "downloading"
+    assert fq._get("i3")["status"] == "downloading"
+    assert fq.count("downloading") == 2
+
+
+def test_n2_nas_unavailable_stops_tick_and_leaves_queued(env2):
+    fq, m = env2
+    m.create.side_effect = NasUnavailable("down")
+    dom.dispatch_tick()
+    assert fq.count("downloading") == 0 and fq.count("queued") == 3
+    assert m.create.call_count == 1
+
+
+def test_n2_no_source_skipped_and_bounded(env2):
+    fq, m = env2
+    m.resolve.side_effect = lambda cfg, ep, src: None if ep == 1 else f"http://cdn/{ep}"
+    dom.dispatch_tick()
+    assert fq._get("i1")["status"] == "failed" and fq._get("i1")["error"] == "no_source"
+    assert fq.count("downloading") == 2
+
+    many = FakeQueue(range(1, dom.MAX_ITEMS_PER_TICK + 10))
+    m.resolve.side_effect = lambda cfg, ep, src: None
+    with patch.object(dom, "db_queue", many):
+        dom.dispatch_tick()
+    assert many.count("failed") == dom.MAX_ITEMS_PER_TICK
+    assert many.count("downloading") == 0
+
+
+def test_n2_nas_done_on_create_does_not_consume_slot(env2):
+    fq, m = env2
+    m.create.side_effect = lambda *a, **k: {
+        "jobId": f"job-{a[1]}", "status": "done" if a[1] == 1 else "pending"}
+    dom.dispatch_tick()
+    assert fq._get("i1")["status"] == "done"
+    assert fq._get("i2")["status"] == "downloading"
+    assert fq._get("i3")["status"] == "downloading"
+    assert fq.count("downloading") == 2
+
+
+def test_concurrency_clamped_to_three(env, monkeypatch):
+    monkeypatch.setenv("DOWNLOAD_QUEUE_CONCURRENCY", "10")
+    fq, m = env
+    fq.items += FakeQueue([4, 5]).items
+    dom.dispatch_tick()
+    assert fq.count("downloading") == 3 and fq.count("queued") == 2

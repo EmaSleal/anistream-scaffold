@@ -148,8 +148,8 @@ export function EpisodesSection({ seasons, initialSeasonIdx = 0, isAdmin = false
   const queueLabel =
     queue && queue.active
       ? `En cola: ${queue.queued}` +
-        (queue.downloadingEpisode !== null
-          ? ` · Descargando E${String(queue.downloadingEpisode).padStart(2, "0")}`
+        (queue.downloadingEpisodes.length > 0
+          ? ` · Descargando ${queue.downloadingEpisodes.map((n) => `E${String(n).padStart(2, "0")}`).join(", ")}`
           : "") +
         (queue.failed > 0 ? ` · Fallidos: ${queue.failed}` : "")
       : null;

@@ -1,9 +1,10 @@
-"""Serial download queue (ADR-019) — no Flask import.
+"""Download queue (ADR-019, concurrency per ADR-022) — no Flask import.
 
 ``enqueue_series`` records the missing episodes of a series; ``dispatch_tick``
 is called periodically by the scheduler worker (never by the web process) and
-keeps at most one item downloading on the NAS at a time. The CDN URL is
-resolved only when an item is dispatched, because those URLs are short-lived.
+keeps up to DOWNLOAD_QUEUE_CONCURRENCY items (default 1, max 3) downloading on
+the NAS at a time. The CDN URL is resolved only when an item is dispatched,
+because those URLs are short-lived.
 """
 from __future__ import annotations
 
@@ -27,6 +28,8 @@ DEFAULT_TIMEOUT_MINUTES = 120
 # NAS (no_source) are skipped within the same tick; this bounds that loop so a
 # long run of unresolvable items cannot monopolise a tick.
 MAX_ITEMS_PER_TICK = 25
+DEFAULT_CONCURRENCY = 1
+MAX_CONCURRENCY = 3
 
 
 class NoJkanimeSlug(Exception):
@@ -38,6 +41,15 @@ def _timeout_minutes() -> float:
         return float(os.getenv("DOWNLOAD_QUEUE_TIMEOUT_MINUTES", DEFAULT_TIMEOUT_MINUTES))
     except ValueError:
         return DEFAULT_TIMEOUT_MINUTES
+
+
+def _concurrency() -> int:
+    """Parallel NAS jobs allowed (ADR-022): invalid or < 1 -> 1, clamped to MAX_CONCURRENCY."""
+    try:
+        n = int(os.getenv("DOWNLOAD_QUEUE_CONCURRENCY", DEFAULT_CONCURRENCY))
+    except ValueError:
+        return DEFAULT_CONCURRENCY
+    return max(1, min(n, MAX_CONCURRENCY))
 
 
 def missing_episodes(series_id: str) -> list[int]:
@@ -78,7 +90,7 @@ def _parse_ts(value: str | None) -> datetime | None:
 
 
 def _poll_active(item: dict) -> bool:
-    """Advance the downloading item. Returns True when the slot is now free."""
+    """Advance a downloading item. Returns True when the slot is now free."""
     status = get_job_status(item.get("nas_job_id") or "")
     phase = status.get("status")
     if phase == "done":
@@ -97,8 +109,11 @@ def _poll_active(item: dict) -> bool:
     return False
 
 
-def _dispatch_next() -> None:
+def _dispatch_next(slots: int) -> None:
+    """Dispatch queued items until ``slots`` of them are downloading."""
     for _ in range(MAX_ITEMS_PER_TICK):
+        if slots <= 0:
+            return
         item = db_queue.next_queued()
         if not item:
             return
@@ -124,12 +139,10 @@ def _dispatch_next() -> None:
             db_queue.mark_done(item["id"])
             continue
         db_queue.mark_downloading(item["id"], job.get("jobId", ""))
-        return
+        slots -= 1
 
 
 def dispatch_tick() -> None:
-    """One iteration of the serial loop; at most one item is ever downloading."""
-    active = db_queue.get_active()
-    if active and not _poll_active(active):
-        return
-    _dispatch_next()
+    """One iteration: poll every downloading item, then fill the free slots."""
+    busy = sum(1 for item in db_queue.list_active() if not _poll_active(item))
+    _dispatch_next(_concurrency() - busy)

@@ -109,7 +109,7 @@ export async function fetchSeriesQueue(seriesId: string): Promise<SeriesQueue> {
 
 export interface QueueSummary {
   queued: number;
-  downloadingEpisode: number | null;
+  downloadingEpisodes: number[];
   failed: number;
   active: boolean;
 }
@@ -120,15 +120,18 @@ export interface QueueSummary {
  */
 export function summarizeQueue(items: QueueItem[]): QueueSummary {
   const queued = items.filter((i) => i.status === "queued").length;
-  const downloading = items.find((i) => i.status === "downloading");
+  const downloadingEpisodes = items
+    .filter((i) => i.status === "downloading")
+    .map((i) => i.episodeNumber)
+    .sort((a, b) => a - b);
   const latest = new Map<number, QueueStatus>();
   for (const i of items) latest.set(i.episodeNumber, i.status);
   let failed = 0;
   for (const s of latest.values()) if (s === "failed") failed++;
   return {
     queued,
-    downloadingEpisode: downloading ? downloading.episodeNumber : null,
+    downloadingEpisodes,
     failed,
-    active: queued > 0 || !!downloading,
+    active: queued > 0 || downloadingEpisodes.length > 0,
   };
 }

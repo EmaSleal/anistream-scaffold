@@ -141,3 +141,16 @@ def list_done_series_ids() -> list[str]:
         .order("id")
     )
     return sorted({r["series_id"] for r in rows})
+
+
+def list_active() -> list[dict]:
+    """Every item currently downloading, oldest first."""
+    client = storage.get_client()
+    result = (
+        client.table(_TABLE)
+        .select("*")
+        .eq("status", "downloading")
+        .order("started_at")
+        .execute()
+    )
+    return (result.data if result else None) or []

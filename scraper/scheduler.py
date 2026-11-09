@@ -3,7 +3,7 @@
 Runs in its own dedicated process (see ``scheduler_worker.py``), decoupled
 from the gunicorn/Flask process. This avoids the multi-worker duplication
 bug where each gunicorn worker forked its own APScheduler instance (it also
-keeps the serial download dispatcher out of the web workers).
+keeps the download dispatcher (ADR-019/ADR-022) out of the web workers).
 
 Provides ``run_scheduler_forever()``, which blocks for the lifetime of the
 process. Each job is opt-in through its own env flag (off by default):
