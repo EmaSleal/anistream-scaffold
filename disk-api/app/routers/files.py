@@ -56,19 +56,28 @@ def jellyfin_episode_target(
     episode_number: int | None,
     series_title: str | None,
     series_year: int | None,
+    *,
+    season_number: int | None = None,
+    file_episode_number: int | None = None,
+    media_root: Path | None = None,
 ) -> tuple[Path, str] | None:
     """Return (directory, base name without extension) for the Jellyfin layout.
 
-    ``<MEDIA_ROOT>/<Show>/Season 01/<Show> S01E<NN>``. Returns None (legacy
-    layout) unless MEDIA_ROOT is set and series_id, episode_number and
-    series_title are all present.
+    ``<MEDIA_ROOT>/<Show>/Season NN/<Show> SNNE<NN>``. ``season_number`` and
+    ``file_episode_number`` (ADR-020, franchise layout) default to season 1 and
+    ``episode_number``. ``media_root`` overrides MEDIA_ROOT (relocation script).
+    Returns None (legacy layout) unless the root is set and series_id,
+    episode_number and series_title are all present.
     """
-    if MEDIA_ROOT is None or not series_id or episode_number is None or not series_title:
+    root = media_root if media_root is not None else MEDIA_ROOT
+    if root is None or not series_id or episode_number is None or not series_title:
         return None
     show = sanitize_name(series_title, series_id)
     if isinstance(series_year, int) and not isinstance(series_year, bool) and series_year > 0:
         show = f"{show} ({series_year})"
-    return MEDIA_ROOT / show / "Season 01", f"{show} S01E{episode_number:02d}"
+    season = 1 if season_number is None else season_number
+    file_ep = episode_number if file_episode_number is None else file_episode_number
+    return root / show / f"Season {season:02d}", f"{show} S{season:02d}E{file_ep:02d}"
 
 
 @router.post("/upload")

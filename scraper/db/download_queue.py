@@ -129,3 +129,15 @@ def list_for_series(series_id: str) -> list[dict]:
         .order("episode_number")
         .order("created_at")
     )
+
+
+def list_done_series_ids() -> list[str]:
+    """Distinct series ids that have at least one 'done' queue row."""
+    client = storage.get_client()
+    rows = fetch_all(
+        lambda: client.table(_TABLE)
+        .select("id, series_id")
+        .eq("status", "done")
+        .order("id")
+    )
+    return sorted({r["series_id"] for r in rows})

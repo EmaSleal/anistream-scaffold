@@ -47,6 +47,8 @@ class DownloadRequest(BaseModel):
     episode_number: int | None = None
     series_title: str | None = None
     series_year: int | None = None
+    season_number: int | None = None
+    file_episode_number: int | None = None
 
 
 _ZILLA_DOMAIN = "player.zilla-networks.com"
@@ -79,6 +81,8 @@ async def _run_download(
     episode_number: int | None = None,
     series_title: str | None = None,
     series_year: int | None = None,
+    season_number: int | None = None,
+    file_episode_number: int | None = None,
 ):
     """
     Tarea en background. Actualiza el estado del job en SQLite a medida que avanza.
@@ -86,7 +90,10 @@ async def _run_download(
     db.update_job(job_id, status="downloading")
 
     storage_root = files_mod.STORAGE_ROOT
-    jellyfin = jellyfin_episode_target(series_id, episode_number, series_title, series_year)
+    jellyfin = jellyfin_episode_target(
+        series_id, episode_number, series_title, series_year,
+        season_number=season_number, file_episode_number=file_episode_number,
+    )
     fixed_stem: str | None = None
     if jellyfin:
         subdir, fixed_stem = jellyfin
@@ -308,10 +315,18 @@ async def enqueue_download(request: DownloadRequest,
         series_id=request.series_id,
         episode_number=request.episode_number,
     )
+    # Franchise layout fields (ADR-020) are passed only when present.
+    layout = {
+        k: v for k, v in (
+            ("season_number", request.season_number),
+            ("file_episode_number", request.file_episode_number),
+        ) if v is not None
+    }
     background_tasks.add_task(
         _run_download, job_id, str(request.url), request.category,
         request.series_id, request.episode_number,
         request.series_title, request.series_year,
+        **layout,
     )
 
     return {
