@@ -11,6 +11,7 @@ os.environ.setdefault("INTERNAL_JWT_SECRET", "test-internal-secret-for-tests-onl
 os.environ.setdefault("SERVICE_SECRET", "test-service-secret")
 
 from domain import download_queue as dom
+from domain import jellyfin_placement as jp
 from domain.nas_jobs import NasUnavailable
 
 
@@ -69,11 +70,14 @@ def env():
          patch.object(dom.db_series, "get_stream_config", return_value={"fallback_slug": "x"}) as sc, \
          patch.object(dom.db_series, "get_series_title_year_by_id",
                       return_value={"title": "T", "year": 2020}), \
+         patch.object(jp, "placement",
+                      return_value={"show_title": "Show", "show_year": 2018,
+                                    "season_number": 0, "episode_offset": 2}) as pl, \
          patch.object(dom, "resolve_source", side_effect=lambda cfg, ep, src: f"http://cdn/{ep}") as rs, \
          patch.object(dom, "create_download_job",
                       side_effect=lambda *a, **k: {"jobId": f"job-{a[1]}", "status": "pending"}) as cj, \
          patch.object(dom, "get_job_status", return_value={"status": "downloading"}) as gs:
-        m.stream_config, m.resolve, m.create, m.status = sc, rs, cj, gs
+        m.stream_config, m.resolve, m.create, m.status, m.placement = sc, rs, cj, gs, pl
         yield fq, m
 
 
@@ -131,7 +135,16 @@ def test_url_resolved_at_dispatch_time_not_enqueue(env):
     assert m.resolve.call_count == 1
     assert m.resolve.call_args.args[1] == 1
     assert m.create.call_args.args[2] == "http://cdn/1"
+    assert m.create.call_args.kwargs == {
+        "series_title": "Show", "series_year": 2018, "season_number": 0, "file_episode_number": 3}
+
+
+def test_dispatch_falls_back_to_own_title_when_placement_fails(env):
+    fq, m = env
+    m.placement.side_effect = RuntimeError("db down")
+    dom.dispatch_tick()
     assert m.create.call_args.kwargs == {"series_title": "T", "series_year": 2020}
+    assert fq._get("i1")["status"] == "downloading"  # job still created
 
 
 def test_no_source_fails_and_continues_in_same_tick(env):

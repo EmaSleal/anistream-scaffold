@@ -87,11 +87,14 @@ def create_download_job(
     source: str,
     series_title: str | None = None,
     series_year: int | None = None,
+    season_number: int | None = None,
+    file_episode_number: int | None = None,
 ) -> dict:
     """POST /api/jobs to the NAS and return {jobId, status}.
 
     series_title / series_year are sent only when present so the NAS can name
-    the file for Jellyfin (ADR-018).
+    the file for Jellyfin (ADR-018). season_number / file_episode_number (ADR-020)
+    are sent only when not None; season 0 (specials) is a valid value.
 
     Raises NasUnavailable when the NAS is unreachable or returns 5xx.
     """
@@ -108,6 +111,10 @@ def create_download_job(
         payload["series_title"] = series_title
     if series_year:
         payload["series_year"] = series_year
+    if season_number is not None:
+        payload["season_number"] = season_number
+    if file_episode_number is not None:
+        payload["file_episode_number"] = file_episode_number
 
     try:
         resp = requests.post(

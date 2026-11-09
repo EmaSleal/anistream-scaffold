@@ -245,3 +245,57 @@ def test_ytdlp_fallback_lookup_with_glob_chars_in_title(roots, monkeypatch):
     assert db.get_job("j3")["status"] == "done", db.get_job("j3")
     expected = media / "[Oshi no Ko] (2023)" / "Season 01" / "[Oshi no Ko] (2023) S01E01.mp4"
     assert db.get_file_by_episode("s4", 1)["stored_path"] == str(expected)
+
+
+# --- franchise layout (ADR-020) ---------------------------------------------
+
+def test_target_season_and_file_episode(roots):
+    _, media = roots
+    d, base = files_mod.jellyfin_episode_target(
+        "s1", 2, "Show", 2020, season_number=2, file_episode_number=5)
+    assert d == media / "Show (2020)" / "Season 02"
+    assert base == "Show (2020) S02E05"
+
+
+def test_target_season_zero_specials(roots):
+    _, media = roots
+    d, base = files_mod.jellyfin_episode_target(
+        "s1", 1, "Show", 2020, season_number=0, file_episode_number=3)
+    assert d == media / "Show (2020)" / "Season 00"
+    assert base == "Show (2020) S00E03"
+
+
+def test_target_without_new_fields_unchanged(roots):
+    _, media = roots
+    d, base = files_mod.jellyfin_episode_target("s1", 7, "Show", 2020)
+    assert (d, base) == (media / "Show (2020)" / "Season 01", "Show (2020) S01E07")
+
+
+def test_target_media_root_override(roots, tmp_path):
+    d, _ = files_mod.jellyfin_episode_target("s1", 1, "Show", None, media_root=tmp_path / "x")
+    assert d == tmp_path / "x" / "Show" / "Season 01"
+
+
+def test_direct_download_franchise_layout(roots, monkeypatch):
+    _, media = roots
+    _patch_httpx(monkeypatch, {"content-type": "video/mp4"})
+    job = _run(series_id="s1", episode_number=2, series_title="Show", series_year=2020,
+               season_number=2, file_episode_number=5)
+    assert job["status"] == "done"
+    assert (media / "Show (2020)" / "Season 02" / "Show (2020) S02E05.mp4").exists()
+    assert db.get_file_by_episode("s1", 2) is not None
+
+
+def test_enqueue_passes_season_fields(roots, client, monkeypatch):
+    seen = {}
+
+    async def fake_run(*args, **kwargs):
+        seen["kwargs"] = kwargs
+
+    monkeypatch.setattr(jobs_mod, "_run_download", fake_run)
+    r = client.post("/api/jobs", json={
+        "url": "http://x/y.mp4", "category": "videos", "series_id": "s1",
+        "episode_number": 2, "series_title": "Show", "series_year": 2020,
+        "season_number": 0, "file_episode_number": 3})
+    assert r.status_code == 202
+    assert seen["kwargs"] == {"season_number": 0, "file_episode_number": 3}

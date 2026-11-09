@@ -24,6 +24,7 @@ from db import episodes as db_episodes
 from db import series as db_series
 from domain import download_queue
 from domain.download_sources import probe_sources, resolve_source
+from domain.jellyfin_placement import job_naming
 from domain.nas_jobs import NasUnavailable, check_episode_status, create_download_job, get_job_status, list_downloaded_episodes, nas_configured
 
 logger = logging.getLogger(__name__)
@@ -242,20 +243,9 @@ def trigger_download():
     if not url:
         return jsonify({"error": "no_source"}), 422
 
-    series_title = None
-    series_year = None
+    naming = job_naming(series_id, episode_number)
     try:
-        meta = db_series.get_series_title_year_by_id(series_id) or {}
-        series_title = meta.get("title") or None
-        series_year = meta.get("year") or None
-    except Exception:
-        logger.warning("[downloads] could not load title/year for series=%s", series_id)
-
-    try:
-        job = create_download_job(
-            series_id, episode_number, url, source,
-            series_title=series_title, series_year=series_year,
-        )
+        job = create_download_job(series_id, episode_number, url, source, **naming)
     except NasUnavailable:
         return jsonify({"error": "nas_unavailable"}), 503
 

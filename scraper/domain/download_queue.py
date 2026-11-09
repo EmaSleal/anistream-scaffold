@@ -15,6 +15,7 @@ from db import download_queue as db_queue
 from db import episodes as db_episodes
 from db import series as db_series
 from domain.download_sources import resolve_source
+from domain.jellyfin_placement import job_naming
 from domain.nas_jobs import NasUnavailable, create_download_job, get_job_status, list_downloaded_episodes
 from domain.series import is_released
 
@@ -96,15 +97,6 @@ def _poll_active(item: dict) -> bool:
     return False
 
 
-def _load_title_year(series_id: str) -> tuple[str | None, int | None]:
-    try:
-        meta = db_series.get_series_title_year_by_id(series_id) or {}
-        return meta.get("title") or None, meta.get("year") or None
-    except Exception:
-        logger.warning("[download_queue] could not load title/year for series=%s", series_id)
-        return None, None
-
-
 def _dispatch_next() -> None:
     for _ in range(MAX_ITEMS_PER_TICK):
         item = db_queue.next_queued()
@@ -119,11 +111,9 @@ def _dispatch_next() -> None:
             db_queue.mark_failed(item["id"], "no_source")
             continue
 
-        title, year = _load_title_year(series_id)
+        naming = job_naming(series_id, ep)
         try:
-            job = create_download_job(
-                series_id, ep, url, source, series_title=title, series_year=year
-            )
+            job = create_download_job(series_id, ep, url, source, **naming)
         except NasUnavailable:
             logger.warning("[download_queue] NAS unavailable, will retry series=%s ep=%s", series_id, ep)
             return
