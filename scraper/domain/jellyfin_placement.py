@@ -1,7 +1,8 @@
 """Jellyfin placement of NAS downloads (ADR-020) — no Flask import.
 
-A whole franchise is one Jellyfin show: TV entries become "Season NN" (the same
-sequential index the series page shows), movies/OVAs/specials go to "Season 00"
+A whole franchise is one Jellyfin show, named after its first TV member
+(ADR-021): TV entries become "Season NN" (the same sequential index the series
+page shows), movies/OVAs/specials go to "Season 00"
 numbered consecutively. ``compute_placement`` is a pure function over rows that
 are already loaded; ``placement`` loads them; ``job_naming`` builds the naming
 kwargs for ``create_download_job`` with the ADR-018 fallback.
@@ -56,7 +57,9 @@ def compute_placement(
     if series_id not in order:
         raise LookupError(series_id)
 
-    first = members[0]
+    # ADR-021: name the show after the first TV member — season_order is
+    # chronological, so a prequel movie may come first.
+    first = next((m for m in members if _is_tv_slot(m.get("mediaType"))), members[0])
     show = {
         "show_title": _base_title(first.get("title")),
         "show_year": first.get("year") or None,
