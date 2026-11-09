@@ -84,6 +84,25 @@ class TestComputePlacement:
         p = jp.compute_placement("b", members, {"p2": _eps(1), "b": _eps(1)})
         assert p["show_title"] == "Grand Show" and p["show_year"] == 2021
 
+    def test_show_named_after_first_tv_member_when_a_movie_comes_first(self):
+        # ADR-021: a prequel movie with season_order 1 must not name the show.
+        members = [
+            _m("jjk0", "Jujutsu Kaisen 0", "movie", 1, 2021),
+            _m("jjk", "Jujutsu Kaisen", "tv", 2, 2020),
+            _m("jjk2", "Jujutsu Kaisen Season 2", "tv", 3, 2023),
+        ]
+        eps = {"jjk0": _eps(1), "jjk": _eps(*range(1, 25)), "jjk2": _eps(1)}
+        for sid, season, offset in (("jjk", 1, 0), ("jjk2", 2, 0), ("jjk0", 0, 0)):
+            p = jp.compute_placement(sid, members, eps)
+            assert p == {"show_title": "Jujutsu Kaisen", "show_year": 2020,
+                         "season_number": season, "episode_offset": offset}
+
+    def test_show_falls_back_to_first_member_without_tv(self):
+        members = [_m("m1", "Movie One", "movie", 1, 2010), _m("m2", "Movie Two", "movie", 2, 2012)]
+        p = jp.compute_placement("m2", members, {"m1": _eps(1), "m2": _eps(1)})
+        assert (p["show_title"], p["show_year"], p["season_number"], p["episode_offset"]) == (
+            "Movie One", 2010, 0, 1)
+
     def test_zero_year_becomes_none(self):
         members = [_m("a", "Show", year=0)]
         assert jp.compute_placement("a", members, {"a": _eps(1)})["show_year"] is None
