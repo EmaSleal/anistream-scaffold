@@ -11,17 +11,21 @@ import {
   summarizeQueue,
   type QueueSummary,
 } from "@/lib/downloads-client";
+import { partsOf, selectPart, showPartTabs, type SeasonPart } from "./seasonParts";
 import styles from "./EpisodesSection.module.css";
 
 interface Season {
   label: string;
   mediaType?: string | null;
+  seriesId?: string;
   episodes: Episode[];
+  parts?: SeasonPart<Episode>[];
 }
 
 interface EpisodesSectionProps {
   seasons: Season[];
   initialSeasonIdx?: number;
+  initialPartIdx?: number;
   isAdmin?: boolean;
 }
 
@@ -50,8 +54,18 @@ function groupOf(mediaType?: string | null): SeasonGroup {
   return "tv";
 }
 
-export function EpisodesSection({ seasons, initialSeasonIdx = 0, isAdmin = false }: EpisodesSectionProps) {
+export function EpisodesSection({
+  seasons,
+  initialSeasonIdx = 0,
+  initialPartIdx = 0,
+  isAdmin = false,
+}: EpisodesSectionProps) {
   const [seasonIdx, setSeasonIdx] = useState(initialSeasonIdx);
+  const [partIdx, setPartIdx] = useState(initialPartIdx);
+  const changeSeason = (idx: number) => {
+    setSeasonIdx(idx);
+    setPartIdx(0);
+  };
   const [oldest, setOldest] = useState(true);
   const [optionsOpen, setOptionsOpen] = useState(false);
   const [selectOpen, setSelectOpen] = useState(false);
@@ -67,7 +81,9 @@ export function EpisodesSection({ seasons, initialSeasonIdx = 0, isAdmin = false
     return () => document.removeEventListener("mousedown", handler);
   }, []);
 
-  const seriesId = seasons[seasonIdx]?.episodes[0]?.seriesId;
+  // The selected part's own series: admin download/queue actions target it.
+  const selected = seasons[seasonIdx] ? selectPart(seasons[seasonIdx], partIdx) : null;
+  const seriesId = selected?.seriesId;
   const [downloaded, setDownloaded] = useState<Set<number>>(new Set());
   const [downloadedLoaded, setDownloadedLoaded] = useState(false);
   const [queue, setQueue] = useState<QueueSummary | null>(null);
@@ -139,12 +155,13 @@ export function EpisodesSection({ seasons, initialSeasonIdx = 0, isAdmin = false
   if (seasons.length === 0) return null;
 
   const current = seasons[seasonIdx];
-  const episodes = oldest ? current.episodes : [...current.episodes].reverse();
+  const partEpisodes = selected!.part.episodes;
+  const episodes = oldest ? partEpisodes : [...partEpisodes].reverse();
 
-  const downloadedCount = current.episodes.filter((e) => downloaded.has(e.episode)).length;
-  const allDownloaded = current.episodes.length > 0 && downloadedCount === current.episodes.length;
+  const downloadedCount = partEpisodes.filter((e) => downloaded.has(e.episode)).length;
+  const allDownloaded = partEpisodes.length > 0 && downloadedCount === partEpisodes.length;
   const showDownloadBtn =
-    isAdmin && !!seriesId && downloadedLoaded && current.episodes.length > 0 && !allDownloaded;
+    isAdmin && !!seriesId && downloadedLoaded && partEpisodes.length > 0 && !allDownloaded;
   const queueLabel =
     queue && queue.active
       ? `En cola: ${queue.queued}` +
@@ -182,7 +199,7 @@ export function EpisodesSection({ seasons, initialSeasonIdx = 0, isAdmin = false
                       <button
                         key={`${s.label}-${i}`}
                         className={`${styles.seasonOption} ${i === seasonIdx ? styles.seasonOptionActive : ""}`}
-                        onClick={() => { setSeasonIdx(i); setSelectOpen(false); }}
+                        onClick={() => { changeSeason(i); setSelectOpen(false); }}
                       >
                         {s.label}
                       </button>
@@ -252,6 +269,22 @@ export function EpisodesSection({ seasons, initialSeasonIdx = 0, isAdmin = false
         </div>
       </div>
 
+      {showPartTabs(current) && (
+        <div className={styles.partTabs} role="tablist">
+          {partsOf(current).map((p, i) => (
+            <button
+              key={`${p.seriesId}-${i}`}
+              role="tab"
+              aria-selected={i === selected!.partIdx}
+              className={`${styles.partTab} ${i === selected!.partIdx ? styles.partTabActive : ""}`}
+              onClick={() => setPartIdx(i)}
+            >
+              {p.label}
+            </button>
+          ))}
+        </div>
+      )}
+
       <div className={styles.grid}>
         {episodes.map((ep) => (
           <EpisodeCard
@@ -268,14 +301,14 @@ export function EpisodesSection({ seasons, initialSeasonIdx = 0, isAdmin = false
         <button
           className={styles.pageBtn}
           disabled={seasonIdx === 0}
-          onClick={() => setSeasonIdx((i) => i - 1)}
+          onClick={() => changeSeason(seasonIdx - 1)}
         >
           ← ANTERIOR TEMPORADA
         </button>
         <button
           className={styles.pageBtn}
           disabled={seasonIdx === seasons.length - 1}
-          onClick={() => setSeasonIdx((i) => i + 1)}
+          onClick={() => changeSeason(seasonIdx + 1)}
         >
           SIGUIENTE TEMPORADA →
         </button>

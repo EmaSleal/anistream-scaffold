@@ -139,6 +139,30 @@
 .optionItem:hover { background: rgba(255,255,255,0.06); color: #fff; }
 
 /* Episode grid */
+.partTabs {
+  display: flex;
+  gap: var(--space-4);
+  margin-bottom: var(--space-4);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.partTab {
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  color: var(--color-text-secondary, rgba(255,255,255,0.6));
+  font-size: 0.9rem;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  padding: 0.4rem 0;
+  transition: color var(--transition-fast);
+}
+
+.partTab:hover { color: #fff; }
+.partTabActive { color: var(--color-brand); border-bottom-color: var(--color-brand); }
+
 .grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(20rem, 1fr));

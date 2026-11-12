@@ -231,7 +231,7 @@ class TestPartMerge:
             "seasonOrder": 1,
         }
 
-    def test_part1_and_part2_collapse(self):
+    def test_part1_and_part2_collapse_into_parts(self):
         ep1 = map_episode_row(make_episode(id="ep1", episode_number=1))
         ep2 = map_episode_row(make_episode(id="ep2", episode_number=2))
 
@@ -240,7 +240,8 @@ class TestPartMerge:
 
         result = part_merge([part1, part2])
         assert len(result) == 1
-        assert len(result[0]["episodes"]) == 2
+        assert [p["seriesId"] for p in result[0]["parts"]] == ["s1", "s2"]
+        assert [p["label"] for p in result[0]["parts"]] == ["Parte 1", "Parte 2"]
 
     def test_different_base_titles_not_merged(self):
         ep1 = map_episode_row(make_episode(id="ep1"))
@@ -252,9 +253,7 @@ class TestPartMerge:
         result = part_merge([item1, item2])
         assert len(result) == 2
 
-    def test_overlapping_episode_numbers_deduplicated(self):
-        # Simulates Jikan/Kitsu restarting numbering per part, or both parts
-        # ingesting from the same underlying source (e.g. Slime S4 Part 1/2).
+    def test_overlapping_episode_numbers_are_kept_per_part(self):
         p1_ep1 = map_episode_row(make_episode(id="p1-ep1", episode_number=1))
         p1_ep2 = map_episode_row(make_episode(id="p1-ep2", episode_number=2))
         p2_ep1 = map_episode_row(make_episode(id="p2-ep1", episode_number=1))
@@ -264,22 +263,9 @@ class TestPartMerge:
         part2 = self._make_item("Temporada 1", "s2", [p2_ep1, p2_ep3], base_title="Series")
 
         result = part_merge([part1, part2])
-        assert len(result) == 1
-        numbers = [e["episode"] for e in result[0]["episodes"]]
-        assert numbers == [1, 2, 3]
-        # The kept episode 1 is part1's (first-seen wins)
-        assert result[0]["episodes"][0]["id"] == "p1-ep1"
-
-    def test_merged_episodes_sorted_by_number(self):
-        ep3 = map_episode_row(make_episode(id="ep3", episode_number=3))
-        ep1 = map_episode_row(make_episode(id="ep1", episode_number=1))
-
-        part1 = self._make_item("Temporada 1", "s1", [ep3], base_title="Series")
-        part2 = self._make_item("Temporada 1", "s2", [ep1], base_title="Series")
-
-        result = part_merge([part1, part2])
-        assert result[0]["episodes"][0]["episode"] == 1
-        assert result[0]["episodes"][1]["episode"] == 3
+        parts = result[0]["parts"]
+        assert [e["id"] for e in parts[0]["episodes"]] == ["p1-ep1", "p1-ep2"]
+        assert [e["id"] for e in parts[1]["episodes"]] == ["p2-ep1", "p2-ep3"]
 
 
 # ---------------------------------------------------------------------------
@@ -343,6 +329,66 @@ class TestBuildSeasons:
             "s2": [map_episode_row(make_episode(id="e2", series_id="s2", episode_number=2))],
         }
         result = build_seasons([s1, s2], eps)
-        # Parts 1 and 2 share base title "Series" → merged into one
+        # Parts 1 and 2 share base title "Series" -> one season with two parts
         assert len(result["seasons"]) == 1
-        assert len(result["seasons"][0]["episodes"]) == 2
+        assert [len(p["episodes"]) for p in result["seasons"][0]["parts"]] == [1, 1]
+
+    def _mushoku(self):
+        s1 = self._make_mapped_series("s2a", "X Season 2", season_order=1)
+        s2 = self._make_mapped_series("s2b", "X Season 2 Part 2", season_order=2)
+        eps = {
+            "s2a": [map_episode_row(make_episode(id=f"a{n}", series_id="s2a", episode_number=n)) for n in range(0, 12)],
+            "s2b": [map_episode_row(make_episode(id=f"b{n}", series_id="s2b", episode_number=n)) for n in range(1, 13)],
+        }
+        return s1, s2, eps
+
+    def test_parts_keep_all_their_own_episodes(self):
+        s1, s2, eps = self._mushoku()
+        seasons = build_seasons([s1, s2], eps)["seasons"]
+        assert len(seasons) == 1
+        parts = seasons[0]["parts"]
+        assert [p["label"] for p in parts] == ["Parte 1", "Parte 2"]
+        assert [p["seriesId"] for p in parts] == ["s2a", "s2b"]
+        assert [len(p["episodes"]) for p in parts] == [12, 12]
+        # top level mirrors the first part
+        assert seasons[0]["seriesId"] == "s2a"
+        assert seasons[0]["episodes"] == parts[0]["episodes"]
+
+    def test_single_member_season_has_one_part(self):
+        s1 = self._make_mapped_series("s1", "My Series", season_order=1)
+        eps = {"s1": [map_episode_row(make_episode(id="e1", series_id="s1", episode_number=1))]}
+        season = build_seasons([s1], eps)["seasons"][0]
+        assert len(season["parts"]) == 1
+        assert season["parts"][0]["seriesId"] == season["seriesId"] == "s1"
+        assert season["parts"][0]["episodes"] == season["episodes"]
+        assert season["label"] == "Temporada 1" and season["mediaType"] == "tv"
+
+    def test_part_without_episodes_omitted_but_label_stable(self):
+        s1, s2, eps = self._mushoku()
+        eps["s2a"] = []
+        season = build_seasons([s1, s2], eps)["seasons"][0]
+        assert [p["seriesId"] for p in season["parts"]] == ["s2b"]
+        assert season["parts"][0]["label"] == "Parte 2"
+        assert season["seriesId"] == "s2b"
+
+    def test_season_with_no_episodes_in_any_part_dropped(self):
+        s1, s2, eps = self._mushoku()
+        eps["s2a"] = []
+        eps["s2b"] = []
+        assert build_seasons([s1, s2], eps)["seasons"] == []
+
+    def test_renumbering_counts_multi_part_season_once(self):
+        a = self._make_mapped_series("a", "X", season_order=1)
+        b = self._make_mapped_series("b", "X Season 2", season_order=2)
+        c = self._make_mapped_series("c", "X Season 2 Part 2", season_order=3)
+        eps = {k: [map_episode_row(make_episode(id=f"{k}1", series_id=k, episode_number=1))] for k in "abc"}
+        assert [s["label"] for s in build_seasons([a, b, c], eps)["seasons"]] == ["Temporada 1", "Temporada 2"]
+
+    def test_initial_part_idx_for_requested_part(self):
+        s1, s2, eps = self._mushoku()
+        r = build_seasons([s1, s2], eps, requested_series_id="s2b")
+        assert (r["initialSeasonIdx"], r["initialPartIdx"]) == (0, 1)
+        r = build_seasons([s1, s2], eps, requested_series_id="s2a")
+        assert (r["initialSeasonIdx"], r["initialPartIdx"]) == (0, 0)
+        assert build_seasons([s1, s2], eps)["initialPartIdx"] == 0
+        assert build_seasons([], {})["initialPartIdx"] == 0

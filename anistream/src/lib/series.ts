@@ -141,11 +141,19 @@ export async function getSeriesStreamConfig(
   }
 }
 
+export interface SeasonPartEntry {
+  seriesId: string;
+  label: string;
+  episodes: Episode[];
+}
+
 export interface SeasonEntry {
   label: string;
+  // Top-level seriesId/episodes are those of the first part.
   seriesId: string;
   mediaType: string | null;
   episodes: Episode[];
+  parts: SeasonPartEntry[];
 }
 
 function mapEpisodeRow(row: Record<string, unknown>): Episode {
@@ -173,28 +181,42 @@ interface RawSeasonEntry {
   seriesId: string;
   mediaType: string | null;
   episodes: Record<string, unknown>[];
+  parts?: { seriesId: string; label: string; episodes: Record<string, unknown>[] }[];
 }
 
 export async function getSeriesSeasons(
   seriesId: string,
-): Promise<{ seasons: SeasonEntry[]; initialSeasonIdx: number; hasOwnEpisodes: boolean }> {
+): Promise<{
+  seasons: SeasonEntry[];
+  initialSeasonIdx: number;
+  initialPartIdx: number;
+  hasOwnEpisodes: boolean;
+}> {
   try {
     const res = await fetch(`${BASE_URL}/api/series/${seriesId}/seasons`, { cache: "no-store" });
-    if (!res.ok) return { seasons: [], initialSeasonIdx: 0, hasOwnEpisodes: false };
+    if (!res.ok) return { seasons: [], initialSeasonIdx: 0, initialPartIdx: 0, hasOwnEpisodes: false };
     const data = (await res.json()) as {
       seasons: RawSeasonEntry[];
       initialSeasonIdx: number;
+      initialPartIdx?: number;
       hasOwnEpisodes: boolean;
     };
-    const seasons: SeasonEntry[] = data.seasons.map((s) => ({
-      label: s.label,
-      seriesId: s.seriesId,
-      mediaType: s.mediaType,
-      episodes: s.episodes.map(mapEpisodeRow),
-    }));
-    return { seasons, initialSeasonIdx: data.initialSeasonIdx, hasOwnEpisodes: data.hasOwnEpisodes };
+    const seasons: SeasonEntry[] = data.seasons.map((s) => {
+      const episodes = s.episodes.map(mapEpisodeRow);
+      // An older backend without `parts` is one part holding the season's episodes.
+      const parts: SeasonPartEntry[] = s.parts?.length
+        ? s.parts.map((p) => ({ seriesId: p.seriesId, label: p.label, episodes: p.episodes.map(mapEpisodeRow) }))
+        : [{ seriesId: s.seriesId, label: "Parte 1", episodes }];
+      return { label: s.label, seriesId: s.seriesId, mediaType: s.mediaType, episodes, parts };
+    });
+    return {
+      seasons,
+      initialSeasonIdx: data.initialSeasonIdx,
+      initialPartIdx: data.initialPartIdx ?? 0,
+      hasOwnEpisodes: data.hasOwnEpisodes,
+    };
   } catch {
-    return { seasons: [], initialSeasonIdx: 0, hasOwnEpisodes: false };
+    return { seasons: [], initialSeasonIdx: 0, initialPartIdx: 0, hasOwnEpisodes: false };
   }
 }
 
