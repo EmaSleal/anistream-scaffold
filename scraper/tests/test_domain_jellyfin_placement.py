@@ -15,8 +15,9 @@ from domain import jellyfin_placement as jp
 BB = "Rascal Does Not Dream of Bunny Girl Senpai"
 
 
-def _m(sid, title, media="tv", order=1, year=2018):
-    return {"id": sid, "title": title, "mediaType": media, "seasonOrder": order, "year": year}
+def _m(sid, title, media="tv", order=1, year=2018, count=0):
+    return {"id": sid, "title": title, "mediaType": media, "seasonOrder": order, "year": year,
+            "episodeCount": count}
 
 
 def _eps(*nums):
@@ -69,6 +70,30 @@ class TestComputePlacement:
         members = [_m("a", "Show"), _m("p1", "Show 2 Part 1", order=2), _m("p2", "Show 2 Part 2", order=3)]
         eps = {"a": _eps(1), "p1": _eps(1, 2), "p2": []}
         assert jp.compute_placement("p2", members, eps)["season_number"] == 2
+
+    def test_restarting_part_two_is_offset_by_official_count_of_part_one(self):
+        members = [_m("p1", "Show 2", order=1, count=12), _m("p2", "Show 2 Part 2", order=2, count=12)]
+        eps = {"p1": _eps(*range(0, 12)), "p2": _eps(*range(1, 13))}
+        p1 = jp.compute_placement("p1", members, eps)
+        p2 = jp.compute_placement("p2", members, eps)
+        assert (p1["season_number"], p1["episode_offset"]) == (1, 0)
+        assert (p2["season_number"], p2["episode_offset"]) == (1, 12)  # ep 1 -> file episode 13
+
+    def test_continuation_part_two_has_no_offset(self):
+        members = [_m("p1", "Show 2", order=1, count=13), _m("p2", "Show 2 Part 2", order=2, count=12)]
+        eps = {"p1": _eps(*range(1, 14)), "p2": _eps(*range(14, 26))}
+        assert jp.compute_placement("p2", members, eps)["episode_offset"] == 0
+
+    def test_part_without_released_episodes_has_no_offset(self):
+        members = [_m("p1", "Show 2", order=1, count=12), _m("p2", "Show 2 Part 2", order=2)]
+        eps = {"p1": _eps(1, 2), "p2": []}
+        assert jp.compute_placement("p2", members, eps)["episode_offset"] == 0
+
+    def test_non_tv_offset_counts_episodes_across_all_parts_of_earlier_slots(self):
+        members = [_m("tv", "Show"), _m("o1", "Show OVA", "ova", 2), _m("o2", "Show OVA Part 2", "ova", 3),
+                   _m("sp", "Show Special", "special", 4)]
+        eps = {"tv": _eps(1), "o1": _eps(1, 2), "o2": _eps(1, 2, 3), "sp": _eps(1)}
+        assert jp.compute_placement("sp", members, eps)["episode_offset"] == 5
 
     def test_series_with_no_released_episodes_gets_next_tv_index(self):
         members = [_m("a", "Show"), _m("b", "Show 2", order=2)]

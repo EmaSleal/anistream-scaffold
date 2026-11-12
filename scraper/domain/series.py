@@ -177,7 +177,7 @@ def consolidate_franchises(series_list: list[dict]) -> list[dict]:
 
 
 def part_merge(members_with_episodes: list[dict]) -> list[dict]:
-    """Merge franchise members that share a base title (Part 1 / Part 2 splitting).
+    """Group franchise members that share a base title into one slot (ADR-023).
 
     Each item in ``members_with_episodes`` must be a dict with:
       - ``seriesId``: str
@@ -187,33 +187,29 @@ def part_merge(members_with_episodes: list[dict]) -> list[dict]:
       - ``baseTitle``: str   (pre-stripped base title, or computed here)
       - ``seasonOrder``: int | None
 
-    Returns a list with Part 1 / Part 2 siblings collapsed into one entry.
-    Episodes are merged and sorted by ``episode`` key ascending. Episode
-    numbers already present from an earlier part are skipped — Jikan/Kitsu
-    sometimes restarts numbering per part (or both parts get ingested from
-    the same underlying source), which otherwise surfaces the same episode
-    twice in the merged season.
+    Returns one slot per base title, led by its first item, with ``parts``: a
+    list of ``{seriesId, label, episodes}`` in input order. The part label is
+    "Parte N" from the part's position among ALL siblings (so it stays stable
+    when an earlier part has no episodes). Each part keeps its own episodes —
+    nothing is deduplicated or dropped; parts with no episodes are kept here
+    and filtered by the caller.
     """
     part_map: dict[str, dict] = {}
 
     for item in members_with_episodes:
         base = item.get("baseTitle") or _PART_RE.sub("", item.get("label", "")).strip()
-        if base in part_map:
-            existing = part_map[base]
-            seen_numbers = {e.get("episode") for e in existing["episodes"]}
-            new_eps = [e for e in item["episodes"] if e.get("episode") not in seen_numbers]
-            merged_eps = existing["episodes"] + new_eps
-            merged_eps.sort(key=lambda e: e.get("episode", 0))
-            existing["episodes"] = merged_eps
-        else:
-            part_map[base] = {
-                "label": item["label"],
-                "seriesId": item["seriesId"],
-                "episodes": list(item["episodes"]),
-                "mediaType": item.get("mediaType"),
-                "baseTitle": base,
-                "seasonOrder": item.get("seasonOrder"),
-            }
+        slot = part_map.setdefault(base, {
+            "label": item["label"],
+            "mediaType": item.get("mediaType"),
+            "baseTitle": base,
+            "seasonOrder": item.get("seasonOrder"),
+            "parts": [],
+        })
+        slot["parts"].append({
+            "seriesId": item["seriesId"],
+            "label": f"Parte {len(slot['parts']) + 1}",
+            "episodes": list(item["episodes"]),
+        })
 
     return list(part_map.values())
 
@@ -229,25 +225,31 @@ def build_seasons(
         franchise_members: camelCase series dicts (from map_series_row), ordered by seasonOrder.
         episodes_by_series: mapping of seriesId -> list of camelCase episode dicts.
         requested_series_id: the series_id that was originally requested (used to set
-            initialSeasonIdx to the correct season instead of always defaulting to the
-            first franchise member).
+            initialSeasonIdx / initialPartIdx to the correct season and part instead
+            of always defaulting to the first franchise member).
 
     Returns:
         {
-            "seasons": [{"label": str, "seriesId": str, "episodes": list}],
-            "initialSeasonIdx": int
+            "seasons": [{"label", "seriesId", "mediaType", "episodes",
+                         "parts": [{"seriesId", "label", "episodes"}]}],
+            "initialSeasonIdx": int,
+            "initialPartIdx": int
         }
+
+    A season's top-level ``seriesId``/``episodes`` are those of its first part,
+    so a single-member season looks exactly as before.
 
     Steps:
         1. For each member, compute the base title and initial label.
-        2. Call part_merge to collapse Part splits.
-        3. Re-number TV seasons sequentially (Temporada 1, 2, …).
-        4. Filter out seasons with zero episodes.
-        5. Compute initialSeasonIdx: prefer the slot matching requested_series_id,
-           fall back to the first franchise_member's baseTitle.
+        2. Call part_merge to group Part splits into one slot with ``parts``.
+        3. Drop parts with zero episodes, then slots with no parts left.
+        4. Re-number TV seasons sequentially (Temporada 1, 2, …).
+        5. Compute initialSeasonIdx/initialPartIdx: prefer the slot holding
+           requested_series_id, fall back to the requested (or first) member's
+           baseTitle.
     """
     if not franchise_members:
-        return {"seasons": [], "initialSeasonIdx": 0}
+        return {"seasons": [], "initialSeasonIdx": 0, "initialPartIdx": 0}
 
     # Build pre-merge items
     pre_merge: list[dict] = []
@@ -271,49 +273,56 @@ def build_seasons(
             "seasonOrder": member.get("seasonOrder"),
         })
 
-    merged = part_merge(pre_merge)
-
-    # Filter to entries with at least one episode
-    merged = [s for s in merged if s["episodes"]]
+    merged = []
+    for slot in part_merge(pre_merge):
+        parts = [p for p in slot["parts"] if p["episodes"]]
+        if parts:
+            merged.append({**slot, "parts": parts})
 
     # Renumber TV seasons sequentially
     tv_count = 0
     seasons: list[dict] = []
     for slot in merged:
-        if slot["label"].startswith("Temporada"):
+        label = slot["label"]
+        if label.startswith("Temporada"):
             tv_count += 1
-            slot = {**slot, "label": f"Temporada {tv_count}"}
+            label = f"Temporada {tv_count}"
         seasons.append({
-            "label": slot["label"],
-            "seriesId": slot["seriesId"],
+            "label": label,
+            "seriesId": slot["parts"][0]["seriesId"],
             "mediaType": slot.get("mediaType"),
-            "episodes": slot["episodes"],
+            "episodes": slot["parts"][0]["episodes"],
+            "parts": slot["parts"],
         })
 
     # initialSeasonIdx: prefer the slot that matches the requested series, then fall
     # back to the first franchise member's baseTitle.
     initial_idx = 0
+    initial_part_idx = 0
+    base_titles = [s.get("baseTitle", "") for s in merged]
+    found = False
     if requested_series_id:
         for i, s in enumerate(seasons):
-            if s["seriesId"] == requested_series_id:
-                initial_idx = i
+            for j, part in enumerate(s["parts"]):
+                if part["seriesId"] == requested_series_id:
+                    initial_idx, initial_part_idx, found = i, j, True
+                    break
+            if found:
                 break
-        else:
-            # requested series may have been part-merged under a different seriesId;
+        if not found:
+            # requested series has no episodes of its own (its part was dropped);
             # fall back to baseTitle matching against the requested series title
             req_title = next(
                 (m.get("title") or "" for m in franchise_members if m.get("id") == requested_series_id),
                 "",
             )
             req_base = _PART_RE.sub("", req_title).strip()
-            base_titles = [s.get("baseTitle", "") for s in merged]
             initial_idx = base_titles.index(req_base) if req_base in base_titles else 0
     else:
         first_base = _PART_RE.sub("", (franchise_members[0].get("title") or "")).strip()
-        base_titles = [s.get("baseTitle", "") for s in merged]
         initial_idx = base_titles.index(first_base) if first_base in base_titles else 0
 
-    return {"seasons": seasons, "initialSeasonIdx": initial_idx}
+    return {"seasons": seasons, "initialSeasonIdx": initial_idx, "initialPartIdx": initial_part_idx}
 
 
 def is_released(date_str: str | None, thumbnail_url: str | None = None) -> bool:

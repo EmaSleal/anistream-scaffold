@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import type { Metadata } from "next";
+import type { Episode } from "@/types";
 import { auth } from "@/auth";
 import { getSeriesById, getSeriesSeasons, getSeriesByFranchiseId } from "@/lib/series";
 import { isBroadcastDay, isCooldownElapsed } from "@/lib/simulcast";
@@ -37,7 +38,7 @@ export default async function SeriesPage({ params }: SeriesPageProps) {
 
   const userId = session?.user?.id;
 
-  const [{ seasons: rawSeasons, initialSeasonIdx, hasOwnEpisodes }, franchiseMembers, progressMap] =
+  const [{ seasons: rawSeasons, initialSeasonIdx, initialPartIdx, hasOwnEpisodes }, franchiseMembers, progressMap] =
     await Promise.all([
       getSeriesSeasons(id),
       series.franchiseId ? getSeriesByFranchiseId(series.franchiseId) : Promise.resolve([]),
@@ -46,9 +47,8 @@ export default async function SeriesPage({ params }: SeriesPageProps) {
         : Promise.resolve(new Map<string, { progressSec: number; durationSec: number }>()),
     ]);
 
-  const seasons = rawSeasons.map((s) => ({
-    ...s,
-    episodes: s.episodes.map((ep) => {
+  const withProgress = (eps: Episode[]) =>
+    eps.map((ep) => {
       const prog = progressMap.get(ep.id);
       if (!prog) return ep;
       const durationSec = prog.durationSec || ep.duration;
@@ -59,7 +59,12 @@ export default async function SeriesPage({ params }: SeriesPageProps) {
         progressSeconds: prog.progressSec,
         isSeen,
       };
-    }),
+    });
+
+  const seasons = rawSeasons.map((s) => ({
+    ...s,
+    episodes: withProgress(s.episodes),
+    parts: s.parts.map((p) => ({ ...p, episodes: withProgress(p.episodes) })),
   }));
 
   // Franchise members with zero episodes are filtered out of `seasons`, so a
@@ -97,7 +102,12 @@ export default async function SeriesPage({ params }: SeriesPageProps) {
         />
       )}
       {!noEpisodes ? (
-        <EpisodesSection seasons={seasons} initialSeasonIdx={initialSeasonIdx} isAdmin={isAdmin} />
+        <EpisodesSection
+          seasons={seasons}
+          initialSeasonIdx={initialSeasonIdx}
+          initialPartIdx={initialPartIdx}
+          isAdmin={isAdmin}
+        />
       ) : isAdmin && series.malId ? (
         <IngestTrigger seriesId={series.id} malId={series.malId} principalSlug={series.principalSlug} />
       ) : (

@@ -33,6 +33,26 @@ def _is_tv_slot(media_type: str | None) -> bool:
     return season_label(media_type, 1).startswith("Temporada")
 
 
+def _part_offset(
+    series_id: str,
+    members: list[dict],
+    episodes_by_series: dict[str, list[dict]],
+    order: dict[str, int],
+) -> int:
+    """Episode offset of a TV part within its season (ADR-023/024); 0 for a first part."""
+    me = members[order[series_id]]
+    base = _base_title(me.get("title"))
+    earlier = [
+        m for m in members
+        if order[m["id"]] < order[series_id] and _base_title(m.get("title")) == base
+    ]
+    mine = [e.get("episode", 0) for e in episodes_by_series.get(series_id, [])]
+    prior = [e.get("episode", 0) for m in earlier for e in episodes_by_series.get(m["id"], [])]
+    if not earlier or not mine or not prior or min(mine) > max(prior):
+        return 0
+    return sum(m.get("episodeCount") or 0 for m in earlier)
+
+
 def compute_placement(
     series_id: str,
     members: list[dict],
@@ -45,12 +65,19 @@ def compute_placement(
     episode dicts — the same input as ``build_seasons`` / ``/api/series/<id>/seasons``.
 
     Part siblings (same base title) collapse into one slot led by the first
-    sibling. TV slots are numbered like the series page. Slots with no released
+    sibling and share its season number (ADR-023). TV slots are numbered like
+    the series page. Slots with no released
     episodes are dropped by build_seasons, so for the requested series' own slot
     the season is derived from its position instead: TV index = number of
     output TV seasons led by an earlier member + 1 (it therefore shares a number
     with the next populated season until it gains released episodes). Empty
-    non-TV slots contribute 0 to later offsets. Raises LookupError when
+    non-TV slots contribute 0 to later offsets; non-TV offsets count episodes
+    across all parts of earlier slots. A later TV part is offset by the sum of
+    the official ``episodeCount`` of the earlier parts of its season (not the
+    max episode number: AnimeAV1 pages can start at episode 0) only when its
+    numbering restarts (ADR-024: its lowest released episode <= the highest
+    released episode of the earlier parts); a continuation keeps offset 0, and
+    so does a part with no released episodes. Raises LookupError when
     series_id is not among ``members``.
     """
     order = {m["id"]: i for i, m in enumerate(members)}
@@ -75,16 +102,19 @@ def compute_placement(
     tv_before = 0
     offset = 0
     for s in seasons:
-        idx = order.get(s["seriesId"], len(members))
+        idx = min(order.get(p["seriesId"], len(members)) for p in s["parts"])
         if idx >= leader_idx:
             continue
         if _is_tv_slot(s.get("mediaType")):
             tv_before += 1
         else:
-            offset += max((e.get("episode", 0) for e in s["episodes"]), default=0)
+            offset += sum(
+                max((e.get("episode", 0) for e in p["episodes"]), default=0) for p in s["parts"]
+            )
 
     if _is_tv_slot(leader.get("mediaType")):
-        return {**show, "season_number": tv_before + 1, "episode_offset": 0}
+        return {**show, "season_number": tv_before + 1,
+                "episode_offset": _part_offset(series_id, members, episodes_by_series, order)}
     return {**show, "season_number": 0, "episode_offset": offset}
 
 
